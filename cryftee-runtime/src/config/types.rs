@@ -264,6 +264,11 @@ pub struct CryfteeConfig {
     /// Instance name
     pub instance_name: String,
 
+    /// Binary hash verified by cryftgo (set via CRYFTEE_VERIFIED_BINARY_HASH)
+    /// If set, this is trusted as it came from an external verifier
+    /// If not set, cryftee will compute its own hash (less secure)
+    pub verified_binary_hash: Option<String>,
+
     /// Root path for modules directory
     pub module_dir: PathBuf,
 
@@ -330,6 +335,7 @@ impl Default for CryfteeConfig {
     fn default() -> Self {
         Self {
             instance_name: default_instance_name(),
+            verified_binary_hash: None,
             module_dir: default_module_dir(),
             manifest_path: None,
             ui_dir: PathBuf::from("ui"),

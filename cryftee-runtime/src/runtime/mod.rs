@@ -167,8 +167,24 @@ impl RuntimeState {
         config: &CryfteeConfig,
         registry: &ModuleRegistry,
     ) -> Result<()> {
-        // Compute core binary hash (placeholder - would hash actual binary)
-        let core_binary_hash = format!("sha256:{}", hex::encode(Sha256::digest(CRYFTEE_VERSION.as_bytes())));
+        // Use externally-verified hash from cryftgo if available
+        // Otherwise fall back to self-hashing (less secure but useful for dev)
+        let core_binary_hash = if let Some(ref verified_hash) = config.verified_binary_hash {
+            // Trusted: hash was computed and verified by cryftgo before launching us
+            verified_hash.clone()
+        } else {
+            // Self-reported: compute our own hash (a malicious binary could lie)
+            match Self::compute_self_hash() {
+                Ok(hash) => {
+                    tracing::warn!("Using self-reported binary hash (not externally verified)");
+                    hash
+                }
+                Err(e) => {
+                    tracing::error!("Failed to compute self hash: {}", e);
+                    format!("sha256:error:{}", e)
+                }
+            }
+        };
 
         // Compute manifest hash
         let manifest_path = config.get_manifest_path();
@@ -192,6 +208,16 @@ impl RuntimeState {
         });
 
         Ok(())
+    }
+}
+
+impl RuntimeState {
+    /// Compute SHA256 hash of the running binary
+    /// This is a fallback when no external verifier (cryftgo) provides the hash
+    fn compute_self_hash() -> Result<String> {
+        let exe_path = std::env::current_exe()?;
+        let binary = std::fs::read(&exe_path)?;
+        Ok(format!("sha256:{}", hex::encode(Sha256::digest(&binary))))
     }
 }
 

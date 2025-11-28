@@ -69,6 +69,28 @@ All endpoints available over both UDS and HTTPS:
 - `CRYFTEE_HTTP_ADDR` - HTTP bind address (default: 0.0.0.0:323)
 - `CRYFTEE_TLS_CERT` - TLS certificate path
 - `CRYFTEE_TLS_KEY` - TLS private key path
+- `CRYFTEE_VERIFIED_BINARY_HASH` - Externally-verified binary hash (set by cryftgo)
+
+## Binary Attestation (cryftgo Integration)
+
+To ensure the `core_binary_hash` in attestation cannot be faked:
+
+1. **cryftgo** computes the SHA256 hash of the cryftee binary before launching it
+2. **cryftgo** compares against a known-good hash (from release artifacts or Cryft Labs)
+3. **cryftgo** sets `CRYFTEE_VERIFIED_BINARY_HASH=sha256:<hex>` when spawning cryftee
+4. **cryftee** reports this externally-verified hash in attestation responses
+5. **cryftgo** can optionally re-verify `/proc/<pid>/exe` periodically
+
+If `CRYFTEE_VERIFIED_BINARY_HASH` is not set, cryftee falls back to self-hashing 
+(reading its own binary), which is less secure as a malicious binary could lie.
+
+Example cryftgo launch:
+```go
+hash := sha256.Sum256(binaryBytes)
+env := fmt.Sprintf("CRYFTEE_VERIFIED_BINARY_HASH=sha256:%x", hash)
+cmd := exec.Command(cryfteeePath, args...)
+cmd.Env = append(os.Environ(), env)
+```
 
 ## Module Manifest Format
 

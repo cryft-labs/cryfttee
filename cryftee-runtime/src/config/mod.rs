@@ -92,6 +92,17 @@ impl CryfteeConfig {
         // Load trust configuration
         config.trust = Self::load_trust_config(&config.trust_config_path)?;
 
+        // Check for externally-verified binary hash from cryftgo
+        if let Ok(hash) = std::env::var("CRYFTEE_VERIFIED_BINARY_HASH") {
+            if !hash.is_empty() {
+                info!("Using externally-verified binary hash from cryftgo");
+                config.verified_binary_hash = Some(hash);
+            }
+        }
+        if config.verified_binary_hash.is_none() {
+            warn!("No CRYFTEE_VERIFIED_BINARY_HASH set - attestation will use self-reported hash (less secure)");
+        }
+
         info!("Instance: {}", config.instance_name);
         info!("Module directory: {:?}", config.module_dir);
         info!("Manifest path: {:?}", config.manifest_path);
