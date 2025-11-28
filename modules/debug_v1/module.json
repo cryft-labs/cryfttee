@@ -1,0 +1,12 @@
+{
+  "id": "debug_v1",
+  "name": "Debug Module",
+  "version": "1.0.0",
+  "description": "Debugging and diagnostics module for runtime inspection and testing.",
+  "minCryfteeVersion": "0.4.0",
+  "publisherId": "cryft-labs",
+  "capabilities": ["debug_echo", "debug_info", "debug_panic"],
+  "defaultFor": [],
+  "hasGui": true,
+  "guiPath": "gui"
+}

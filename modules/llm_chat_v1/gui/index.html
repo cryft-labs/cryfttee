@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    
+    /* Header with tabs */
+    .chat-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border, #e5e7eb);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-panel, #ffffff);
+    }
+    
+    .chat-tabs {
+      display: flex;
+      gap: 0.25rem;
+      flex: 1;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    
+    .chat-tabs::-webkit-scrollbar { display: none; }
+    
+    .chat-tab {
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      color: var(--text-dim, #64748b);
+      background: transparent;
+      border: none;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    
+    .chat-tab:hover { background: var(--bg-subtle, #f6f8fb); }
+    .chat-tab.active {
+      background: var(--accent, #008080);
+      color: white;
+    }
+    
+    .chat-tab .tab-close {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      opacity: 0.6;
+    }
+    
+    .chat-tab .tab-close:hover { opacity: 1; background: rgba(0,0,0,0.1); }
+    
+    .new-chat-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 0.5rem;
+      background: var(--bg-subtle, #f6f8fb);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      color: var(--text-dim, #64748b);
+      flex-shrink: 0;
+    }
+    
+    .new-chat-btn:hover { background: var(--border, #e5e7eb); }
+    
+    .header-actions {
+      display: flex;
+      gap: 0.25rem;
+      margin-left: 0.5rem;
+    }
+    
+    .header-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 0.5rem;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      color: var(--text-dim, #64748b);
+    }
+    
+    .header-btn:hover { background: var(--bg-subtle, #f6f8fb); }
+    
+    /* Profile selector */
+    .profile-selector {
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border, #e5e7eb);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--bg-subtle, #f6f8fb);
+    }
+    
+    .profile-label {
+      font-size: 0.75rem;
+      color: var(--text-dim, #64748b);
+      font-weight: 500;
+    }
+    
+    .profile-select {
+      flex: 1;
+      padding: 0.4rem 0.6rem;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 0.375rem;
+      font-size: 0.8rem;
+      background: var(--bg-panel, #ffffff);
+      outline: none;
+    }
+    
+    .profile-select:focus { border-color: var(--accent, #008080); }
+    
+    /* Messages area */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .message {
+      display: flex;
+      gap: 0.75rem;
+      max-width: 90%;
+    }
+    
+    .message.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    
+    .message-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    
+    .message.user .message-avatar {
+      background: var(--accent, #008080);
+      color: white;
+    }
+    
+    .message.assistant .message-avatar {
+      background: var(--bg-subtle, #f6f8fb);
+      color: var(--text-main, #0f172a);
+      border: 1px solid var(--border, #e5e7eb);
+    }
+    
+    .message-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .message-bubble {
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      line-height: 1.6;
+      font-size: 0.9rem;
+    }
+    
+    .message.user .message-bubble {
+      background: var(--accent, #008080);
+      color: white;
+      border-bottom-right-radius: 0.25rem;
+    }
+    
+    .message.assistant .message-bubble {
+      background: var(--bg-subtle, #f6f8fb);
+      color: var(--text-main, #0f172a);
+      border: 1px solid var(--border, #e5e7eb);
+      border-bottom-left-radius: 0.25rem;
+    }
+    
+    /* Markdown styling */
+    .message-bubble p { margin: 0.5em 0; }
+    .message-bubble p:first-child { margin-top: 0; }
+    .message-bubble p:last-child { margin-bottom: 0; }
+    .message-bubble pre {
+      background: rgba(0,0,0,0.06);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      overflow-x: auto;
+      margin: 0.5em 0;
+      font-size: 0.85rem;
+    }
+    .message-bubble code {
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9em;
+    }
+    .message-bubble code:not(pre code) {
+      background: rgba(0,0,0,0.06);
+      padding: 0.15em 0.35em;
+      border-radius: 0.25rem;
+    }
+    .message-bubble ul, .message-bubble ol {
+      margin: 0.5em 0;
+      padding-left: 1.5em;
+    }
+    
+    /* Reasoning panel */
+    .reasoning-panel {
+      margin-bottom: 0.5rem;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+    
+    .reasoning-header {
+      padding: 0.5rem 0.75rem;
+      background: var(--bg-subtle, #f6f8fb);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-dim, #64748b);
+    }
+    
+    .reasoning-header:hover { background: var(--border, #e5e7eb); }
+    
+    .reasoning-body {
+      padding: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--text-dim, #64748b);
+      border-top: 1px solid var(--border, #e5e7eb);
+      display: none;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .reasoning-body.open { display: block; }
+    
+    /* Composer */
+    .chat-composer {
+      padding: 1rem;
+      border-top: 1px solid var(--border, #e5e7eb);
+      background: var(--bg-panel, #ffffff);
+    }
+    
+    .composer-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .chat-input {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 1.5rem;
+      font-size: 0.9rem;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+      min-height: 44px;
+      max-height: 120px;
+      line-height: 1.5;
+    }
+    
+    .chat-input:focus {
+      border-color: var(--accent, #008080);
+      box-shadow: 0 0 0 3px rgba(0, 128, 128, 0.1);
+    }
+    
+    .send-btn {
+      width: 44px;
+      height: 44px;
+      background: var(--accent, #008080);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.2s;
+    }
+    
+    .send-btn:hover:not(:disabled) { opacity: 0.9; }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim, #64748b);
+      text-align: center;
+      padding: 2rem;
+    }
+    
+    .empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
+    .empty-title {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-main, #0f172a);
+    }
+    
+    /* Typing indicator */
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 0.5rem;
+    }
+    
+    .typing-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--text-dim, #64748b);
+      border-radius: 50%;
+      animation: typing 1.4s infinite;
+    }
+    
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-4px); opacity: 1; }
+    }
+    
+    /* Context badge */
+    .context-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.5rem;
+      background: var(--accent, #008080);
+      color: white;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <div class="chat-tabs" id="chat-tabs">
+        <!-- Tabs rendered dynamically -->
+      </div>
+      <button class="new-chat-btn" id="new-chat" title="New Chat">+</button>
+      <div class="header-actions">
+        <button class="header-btn" id="clear-btn" title="Clear History">🗑️</button>
+        <button class="header-btn" id="print-btn" title="Print">🖨️</button>
+      </div>
+    </div>
+    
+    <div class="profile-selector">
+      <span class="profile-label">Profile:</span>
+      <select class="profile-select" id="profile-select">
+        <option value="default">Default (gpt-4o-mini)</option>
+      </select>
+      <span class="context-badge" id="context-badge" title="Runtime context injected">
+        <span>📋</span>
+        <span id="context-count">0</span> modules
+      </span>
+    </div>
+    
+    <div class="chat-messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">💬</div>
+        <div class="empty-title">Start a Conversation</div>
+        <div class="empty-description">Ask about modules, runtime status, or get help with configuration. Context is automatically injected.</div>
+      </div>
+    </div>
+    
+    <div class="chat-composer">
+      <div class="composer-row">
+        <textarea id="input" class="chat-input" placeholder="Ask about runtime, modules, or configuration..." rows="1"></textarea>
+        <button id="send" class="send-btn" disabled>➤</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== State Management ==========
+    const STATE_KEY = 'cryftee_llm_state';
+    const PROFILES_KEY = 'cryftee_llm_profiles';
+    const MAX_HISTORY_TOKENS = 8000;
+    
+    let state = {
+      conversations: {},
+      activeConversationId: null,
+      tabOrder: [],
+      context: null
+    };
+    
+    let profiles = [
+      { id: 'default', name: 'Default', model: 'gpt-4o-mini', endpoint: '/api/llm/chat', apiKey: '' }
+    ];
+    
+    // ========== DOM Elements ==========
+    const messagesEl = document.getElementById('messages');
+    const emptyState = document.getElementById('empty-state');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const tabsEl = document.getElementById('chat-tabs');
+    const profileSelect = document.getElementById('profile-select');
+    const contextBadge = document.getElementById('context-badge');
+    const contextCount = document.getElementById('context-count');
+    const newChatBtn = document.getElementById('new-chat');
+    const clearBtn = document.getElementById('clear-btn');
+    const printBtn = document.getElementById('print-btn');
+    
+    // ========== Utilities ==========
+    function generateId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2);
+    }
+    
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+    
+    function parseMarkdown(text) {
+      // Simple markdown parsing
+      let html = escapeHtml(text);
+      
+      // Code blocks
+      html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+      // Inline code
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+      // Bold
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // Italic
+      html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      // Line breaks
+      html = html.replace(/\n/g, '<br>');
+      
+      return html;
+    }
+    
+    // ========== State Persistence ==========
+    function loadState() {
+      try {
+        const saved = localStorage.getItem(STATE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          state = { ...state, ...parsed };
+        }
+        
+        const savedProfiles = localStorage.getItem(PROFILES_KEY);
+        if (savedProfiles) {
+          profiles = JSON.parse(savedProfiles);
+        }
+      } catch (e) {
+        console.error('Failed to load state:', e);
+      }
+    }
+    
+    function saveState() {
+      try {
+        const toSave = {
+          conversations: state.conversations,
+          activeConversationId: state.activeConversationId,
+          tabOrder: state.tabOrder
+        };
+        localStorage.setItem(STATE_KEY, JSON.stringify(toSave));
+      } catch (e) {
+        console.error('Failed to save state:', e);
+      }
+    }
+    
+    function saveProfiles() {
+      try {
+        localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+      } catch (e) {
+        console.error('Failed to save profiles:', e);
+      }
+    }
+    
+    // ========== Context Management ==========
+    async function fetchContext() {
+      try {
+        const resp = await fetch('/api/context');
+        if (!resp.ok) throw new Error('Failed to fetch context');
+        state.context = await resp.json();
+        updateContextBadge();
+        return state.context;
+      } catch (e) {
+        console.error('Failed to fetch context:', e);
+        return null;
+      }
+    }
+    
+    function updateContextBadge() {
+      if (state.context) {
+        contextCount.textContent = state.context.modules?.total || 0;
+        contextBadge.title = `Runtime: ${state.context.runtime?.version || 'unknown'}\n` +
+          `Modules: ${state.context.modules?.enabled || 0}/${state.context.modules?.total || 0} enabled`;
+      }
+    }
+    
+    function buildSystemPrompt() {
+      let prompt = `You are Cryftee Assistant, an AI helper for the Cryftee TEE-style sidecar runtime. You help users understand and manage WASM modules, runtime configuration, and system status.\n\n`;
+      
+      if (state.context) {
+        prompt += `## Current Runtime Context\n\n`;
+        prompt += `**Runtime Version:** ${state.context.runtime?.version || 'unknown'}\n`;
+        prompt += `**Instance:** ${state.context.runtime?.instance || 'unknown'}\n`;
+        prompt += `**Timestamp:** ${state.context.runtime?.timestamp || 'unknown'}\n\n`;
+        
+        prompt += `### Modules (${state.context.modules?.enabled || 0}/${state.context.modules?.total || 0} enabled)\n`;
+        if (state.context.modules?.items) {
+          for (const mod of state.context.modules.items) {
+            prompt += `- **${mod.id}** v${mod.version}: ${mod.enabled ? '✅ enabled' : '❌ disabled'}`;
+            if (mod.loaded) prompt += ', loaded';
+            if (mod.has_gui) prompt += `, GUI (${mod.gui_type || 'tab'})`;
+            prompt += `\n  Capabilities: ${mod.capabilities?.join(', ') || 'none'}\n`;
+          }
+        }
+        
+        prompt += `\n### Health\n`;
+        prompt += `- WASM Runtime: ${state.context.health?.wasm_runtime ? '✅ healthy' : '❌ unhealthy'}\n`;
+        prompt += `- Web3Signer: ${state.context.health?.web3signer ? '✅ reachable' : '❌ unreachable'}\n`;
+        
+        if (state.context.defaults) {
+          prompt += `\n### Defaults\n`;
+          prompt += `- BLS Module: ${state.context.defaults.bls || 'none'}\n`;
+          prompt += `- TLS Module: ${state.context.defaults.tls || 'none'}\n`;
+        }
+      }
+      
+      prompt += `\nProvide helpful, concise answers about the runtime status, module management, and configuration. If asked to perform actions, explain how to do them through the UI or API.`;
+      
+      return prompt;
+    }
+    
+    // ========== Conversation Management ==========
+    function createConversation() {
+      const id = generateId();
+      const conversation = {
+        id,
+        title: 'New Chat',
+        messages: [],
+        profileId: profileSelect.value,
+        createdAt: Date.now()
+      };
+      state.conversations[id] = conversation;
+      state.tabOrder.push(id);
+      state.activeConversationId = id;
+      saveState();
+      return conversation;
+    }
+    
+    function getActiveConversation() {
+      if (!state.activeConversationId || !state.conversations[state.activeConversationId]) {
+        return createConversation();
+      }
+      return state.conversations[state.activeConversationId];
+    }
+    
+    function switchConversation(id) {
+      if (state.conversations[id]) {
+        state.activeConversationId = id;
+        saveState();
+        renderMessages();
+        renderTabs();
+      }
+    }
+    
+    function closeConversation(id) {
+      if (state.conversations[id]) {
+        delete state.conversations[id];
+        state.tabOrder = state.tabOrder.filter(tid => tid !== id);
+        
+        if (state.activeConversationId === id) {
+          state.activeConversationId = state.tabOrder[0] || null;
+          if (!state.activeConversationId) {
+            createConversation();
+          }
+        }
+        saveState();
+        renderTabs();
+        renderMessages();
+      }
+    }
+    
+    // ========== Rendering ==========
+    function renderTabs() {
+      tabsEl.innerHTML = '';
+      
+      for (const id of state.tabOrder) {
+        const conv = state.conversations[id];
+        if (!conv) continue;
+        
+        const tab = document.createElement('button');
+        tab.className = `chat-tab${id === state.activeConversationId ? ' active' : ''}`;
+        tab.dataset.id = id;
+        
+        const title = conv.title.length > 15 ? conv.title.slice(0, 15) + '…' : conv.title;
+        tab.innerHTML = `
+          <span class="tab-title">${escapeHtml(title)}</span>
+          <span class="tab-close" data-close="${id}">×</span>
+        `;
+        
+        tab.addEventListener('click', (e) => {
+          if (e.target.dataset.close) {
+            e.stopPropagation();
+            closeConversation(e.target.dataset.close);
+          } else {
+            switchConversation(id);
+          }
+        });
+        
+        tabsEl.appendChild(tab);
+      }
+      
+      // Enable tab drag reordering
+      enableTabDrag();
+    }
+    
+    function enableTabDrag() {
+      const tabs = tabsEl.querySelectorAll('.chat-tab');
+      tabs.forEach(tab => {
+        tab.draggable = true;
+        tab.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', tab.dataset.id);
+          tab.classList.add('dragging');
+        });
+        tab.addEventListener('dragend', () => tab.classList.remove('dragging'));
+        tab.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          tab.classList.add('drag-over');
+        });
+        tab.addEventListener('dragleave', () => tab.classList.remove('drag-over'));
+        tab.addEventListener('drop', (e) => {
+          e.preventDefault();
+          tab.classList.remove('drag-over');
+          const draggedId = e.dataTransfer.getData('text/plain');
+          const targetId = tab.dataset.id;
+          if (draggedId !== targetId) {
+            const draggedIdx = state.tabOrder.indexOf(draggedId);
+            const targetIdx = state.tabOrder.indexOf(targetId);
+            state.tabOrder.splice(draggedIdx, 1);
+            state.tabOrder.splice(targetIdx, 0, draggedId);
+            saveState();
+            renderTabs();
+          }
+        });
+      });
+    }
+    
+    function renderMessages() {
+      const conv = getActiveConversation();
+      messagesEl.innerHTML = '';
+      
+      if (conv.messages.length === 0) {
+        messagesEl.innerHTML = `
+          <div class="empty-state" id="empty-state">
+            <div class="empty-icon">💬</div>
+            <div class="empty-title">Start a Conversation</div>
+            <div class="empty-description">Ask about modules, runtime status, or get help with configuration. Context is automatically injected.</div>
+          </div>
+        `;
+        return;
+      }
+      
+      for (const msg of conv.messages) {
+        appendMessage(msg.role, msg.content, msg.reasoning, false);
+      }
+      
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    
+    function appendMessage(role, content, reasoning = null, scroll = true) {
+      const emptyEl = messagesEl.querySelector('.empty-state');
+      if (emptyEl) emptyEl.remove();
+      
+      const msgEl = document.createElement('div');
+      msgEl.className = `message ${role}`;
+      
+      let html = `<div class="message-avatar">${role === 'user' ? 'You' : 'AI'}</div>`;
+      html += '<div class="message-content">';
+      
+      if (reasoning && role === 'assistant') {
+        html += `
+          <div class="reasoning-panel">
+            <div class="reasoning-header" onclick="this.nextElementSibling.classList.toggle('open')">
+              <span>🧠</span>
+              <span>Reasoning</span>
+              <span style="margin-left:auto">▼</span>
+            </div>
+            <div class="reasoning-body">${parseMarkdown(reasoning)}</div>
+          </div>
+        `;
+      }
+      
+      html += `<div class="message-bubble">${role === 'assistant' ? parseMarkdown(content) : escapeHtml(content)}</div>`;
+      html += '</div>';
+      
+      msgEl.innerHTML = html;
+      messagesEl.appendChild(msgEl);
+      
+      if (scroll) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      
+      return msgEl;
+    }
+    
+    function showTyping() {
+      const typingEl = document.createElement('div');
+      typingEl.className = 'message assistant';
+      typingEl.id = 'typing';
+      typingEl.innerHTML = `
+        <div class="message-avatar">AI</div>
+        <div class="message-content">
+          <div class="message-bubble">
+            <div class="typing-indicator">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+          </div>
+        </div>
+      `;
+      messagesEl.appendChild(typingEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    
+    function hideTyping() {
+      const typingEl = document.getElementById('typing');
+      if (typingEl) typingEl.remove();
+    }
+    
+    // ========== Profile Management ==========
+    function renderProfiles() {
+      profileSelect.innerHTML = '';
+      for (const p of profiles) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.name} (${p.model})`;
+        profileSelect.appendChild(opt);
+      }
+    }
+    
+    // ========== Chat Logic ==========
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      
+      const conv = getActiveConversation();
+      
+      // Add user message
+      conv.messages.push({ role: 'user', content: text });
+      appendMessage('user', text);
+      
+      // Update title if first message
+      if (conv.messages.length === 1) {
+        conv.title = text.slice(0, 30);
+        renderTabs();
+      }
+      
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      sendBtn.disabled = true;
+      saveState();
+      
+      // Refresh context before each message
+      await fetchContext();
+      
+      showTyping();
+      
+      try {
+        // Build messages for API
+        const systemPrompt = buildSystemPrompt();
+        const apiMessages = [
+          { role: 'system', content: systemPrompt },
+          ...conv.messages.map(m => ({ role: m.role, content: m.content }))
+        ];
+        
+        // Get active profile
+        const profile = profiles.find(p => p.id === conv.profileId) || profiles[0];
+        
+        // Call LLM API (placeholder - integrate with actual endpoint)
+        const response = await callLLM(apiMessages, profile);
+        
+        hideTyping();
+        
+        // Add assistant response
+        conv.messages.push({ 
+          role: 'assistant', 
+          content: response.content,
+          reasoning: response.reasoning 
+        });
+        appendMessage('assistant', response.content, response.reasoning);
+        saveState();
+        
+      } catch (e) {
+        hideTyping();
+        console.error('LLM error:', e);
+        appendMessage('assistant', `Error: ${e.message || 'Failed to get response'}`);
+      }
+      
+      sendBtn.disabled = !inputEl.value.trim();
+    }
+    
+    async function callLLM(messages, profile) {
+      // Placeholder implementation - replace with actual LLM API call
+      // For now, simulate a response
+      await new Promise(r => setTimeout(r, 1000));
+      
+      const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
+      
+      // Check for common queries and provide helpful responses
+      if (lastUserMsg.toLowerCase().includes('status')) {
+        return {
+          content: `**Runtime Status**\n\n` +
+            `- Version: ${state.context?.runtime?.version || 'unknown'}\n` +
+            `- Instance: ${state.context?.runtime?.instance || 'unknown'}\n` +
+            `- WASM Runtime: ${state.context?.health?.wasm_runtime ? '✅ Healthy' : '❌ Unhealthy'}\n` +
+            `- Web3Signer: ${state.context?.health?.web3signer ? '✅ Connected' : '❌ Not connected'}\n\n` +
+            `**Modules:** ${state.context?.modules?.enabled || 0} of ${state.context?.modules?.total || 0} enabled`,
+          reasoning: 'Retrieved current status from runtime context API.'
+        };
+      }
+      
+      if (lastUserMsg.toLowerCase().includes('module')) {
+        const moduleList = state.context?.modules?.items?.map(m => 
+          `- **${m.id}** v${m.version} - ${m.enabled ? '✅' : '❌'}`
+        ).join('\n') || 'No modules found';
+        
+        return {
+          content: `**Registered Modules**\n\n${moduleList}\n\nTo enable/disable modules, go to the **Modules** tab and toggle the switches.`,
+          reasoning: 'Listed modules from runtime context with their current states.'
+        };
+      }
+      
+      return {
+        content: `I'm the Cryftee Assistant. I can help you with:\n\n` +
+          `- **Runtime status** - Ask "What's the status?"\n` +
+          `- **Module management** - Ask "Show me the modules"\n` +
+          `- **Configuration help** - Ask about specific settings\n\n` +
+          `_Note: Full LLM integration requires configuring an API endpoint in the profiles._`,
+        reasoning: 'Provided help overview since no specific query matched.'
+      };
+    }
+    
+    // ========== Event Handlers ==========
+    inputEl.addEventListener('input', () => {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    });
+    
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (inputEl.value.trim()) sendMessage();
+      }
+    });
+    
+    sendBtn.addEventListener('click', sendMessage);
+    
+    newChatBtn.addEventListener('click', () => {
+      createConversation();
+      renderTabs();
+      renderMessages();
+    });
+    
+    clearBtn.addEventListener('click', () => {
+      if (confirm('Clear all chat history?')) {
+        state.conversations = {};
+        state.tabOrder = [];
+        state.activeConversationId = null;
+        createConversation();
+        saveState();
+        renderTabs();
+        renderMessages();
+      }
+    });
+    
+    printBtn.addEventListener('click', () => {
+      const conv = getActiveConversation();
+      const printContent = conv.messages.map(m => 
+        `[${m.role.toUpperCase()}]\n${m.content}`
+      ).join('\n\n---\n\n');
+      
+      const win = window.open('', '_blank');
+      win.document.write(`<pre style="font-family: system-ui; white-space: pre-wrap; padding: 2rem;">${escapeHtml(printContent)}</pre>`);
+      win.print();
+    });
+    
+    profileSelect.addEventListener('change', () => {
+      const conv = getActiveConversation();
+      conv.profileId = profileSelect.value;
+      saveState();
+    });
+    
+    // ========== Initialization ==========
+    async function init() {
+      loadState();
+      renderProfiles();
+      
+      // Ensure at least one conversation exists
+      if (state.tabOrder.length === 0 || !state.activeConversationId) {
+        createConversation();
+      }
+      
+      renderTabs();
+      renderMessages();
+      
+      // Fetch initial context
+      await fetchContext();
+      
+      // Refresh context periodically
+      setInterval(fetchContext, 30000);
+    }
+    
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cryftee — Module Kiosk</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-shell">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="container hdr-row">
+      <div class="hdr-left">
+        <div class="brand-row">
+          <div class="brand-dot"></div>
+          <span class="hdr-title">Cryftee</span>
+        </div>
+        <span class="hdr-sub">TEE Module Runtime</span>
+      </div>
+      <div class="hdr-right">
+        <div class="hdr-info">
+          <span class="hdr-id" id="version">v0.4.0</span>
+          <span class="hdr-status" id="module-count">0 modules</span>
+        </div>
+        <button class="hdr-icon-btn" id="status-trigger" title="Status">
+          <span class="status-dot ok" id="status-indicator"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Status Dropdown -->
+  <div class="status-dropdown" id="status-dropdown">
+    <div class="status-dropdown-inner">
+      <div class="status-title-row">
+        <span class="status-title">Runtime Status</span>
+        <span class="status-sub" id="status-text">Healthy</span>
+      </div>
+      <div class="chips">
+        <span class="chip"><span class="dot ok"></span>Runtime <span id="runtime-status">OK</span></span>
+        <span class="chip"><span class="dot pending"></span>Modules <span id="modules-loaded">0/0</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <nav class="tab-bar">
+    <div class="container">
+      <div class="tabs-container">
+        <button class="tab-scroll-btn tab-scroll-left" id="tab-scroll-left" aria-label="Scroll tabs left">‹</button>
+        <div class="tabs-scroll" id="tabs-scroll">
+          <div id="tab-bar" class="tabs-wrap">
+            <!-- Tabs rendered dynamically by JS with reorder support -->
+          </div>
+        </div>
+        <button class="tab-scroll-btn tab-scroll-right" id="tab-scroll-right" aria-label="Scroll tabs right">›</button>
+      </div>
+      <div id="tab-reorder-hint" class="tab-reorder-hint" hidden>
+        <div class="hint-text">Reorder mode: drag tabs left/right. Triple-click any tab or press ESC to exit.</div>
+        <button id="tab-reorder-done" class="btn btn-soft btn-small">Done</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Content Area -->
+  <div class="content-area">
+    <div class="container" id="content">
+      
+      <!-- Dashboard Tab -->
+      <div class="tab-content active" id="tab-dashboard">
+        <div class="section-header">
+          <span class="section-title">Active Modules</span>
+          <div class="section-actions">
+            <button id="reload-btn" class="btn btn-soft">↻ Reload</button>
+          </div>
+        </div>
+        
+        <div class="modules-grid" id="dashboard-modules">
+          <!-- Active module cards rendered here -->
+        </div>
+        
+        <div class="empty-state hidden" id="dashboard-empty">
+          <div class="empty-icon">⬡</div>
+          <div class="empty-title">No Modules Loaded</div>
+          <div class="empty-description">Load WASM modules via the manifest to enable signing capabilities.</div>
+        </div>
+      </div>
+
+      <!-- Modules Tab -->
+      <div class="tab-content" id="tab-modules">
+        <div class="section-header">
+          <span class="section-title">Module Registry</span>
+        </div>
+        
+        <div class="modules-grid" id="modules-grid">
+          <!-- All module cards rendered here -->
+        </div>
+        
+        <details class="panel" style="margin-top: var(--pad-xl);">
+          <summary class="panel-title" style="cursor: pointer;">Raw Manifest</summary>
+          <div class="code-block">
+            <pre id="manifest-content">Loading...</pre>
+          </div>
+        </details>
+      </div>
+
+      <!-- Attestation Tab -->
+      <div class="tab-content" id="tab-attestation">
+        <div class="section-header">
+          <span class="section-title">Runtime Attestation</span>
+        </div>
+        
+        <div class="panel">
+          <div class="attestation-grid">
+            <div class="attestation-row">
+              <span class="attestation-label">Core Binary Hash</span>
+              <span class="attestation-value" id="core-hash">Loading...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Manifest Hash</span>
+              <span class="attestation-value" id="manifest-hash">Loading...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Attestation Time</span>
+              <span class="attestation-value" id="attestation-time">Loading...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Runtime Version</span>
+              <span class="attestation-value" id="runtime-version">Loading...</span>
+            </div>
+          </div>
+        </div>
+        
+        <details class="panel" style="margin-top: var(--pad-xl);">
+          <summary class="panel-title" style="cursor: pointer;">Module Schema</summary>
+          <div class="code-block">
+            <pre id="schema-content">Loading...</pre>
+          </div>
+        </details>
+      </div>
+
+      <!-- Dynamic Module GUI Tabs (created by JS) -->
+
+    </div>
+  </div>
+
+  <!-- Popup Module Backdrop -->
+  <div id="popup-backdrop" class="popup-backdrop"></div>
+
+  <!-- Popup Module Overlay -->
+  <div id="popup-overlay" class="popup-overlay">
+    <div class="popup-header">
+      <span class="popup-title" id="popup-title">Module</span>
+      <button id="popup-close" class="btn btn-soft popup-close">✕</button>
+    </div>
+    <div id="popup-content" class="popup-content"></div>
+  </div>
+
+  <!-- Popup Pill (dynamic based on available popup modules) -->
+  <button id="popup-pill" class="popup-pill">No Modules</button>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

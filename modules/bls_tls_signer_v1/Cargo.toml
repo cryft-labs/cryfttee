@@ -1,0 +1,15 @@
+[package]
+name = "bls_tls_signer"
+version = "1.0.0"
+edition = "2021"
+authors = ["Cryft Labs"]
+description = "BLS/TLS signing WASM module for Cryftee"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -1,0 +1,11 @@
+[package]
+name = "llm_chat_v1"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "s"
+lto = true

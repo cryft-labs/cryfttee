@@ -1,0 +1,26 @@
+{
+  "id": "bls_tls_signer_v1",
+  "version": "1.0.0",
+  "description": "Baseline BLS + TLS staking module for Cryftee, implementing the signing ABI.",
+  "capabilities": [
+    "bls_register",
+    "bls_sign",
+    "tls_register",
+    "tls_sign"
+  ],
+  "abi": {
+    "type": "signing",
+    "schemaVersion": "1.0.0",
+    "exports": [
+      "bls_register",
+      "bls_sign",
+      "tls_register",
+      "tls_sign"
+    ]
+  },
+  "build": {
+    "toolchain": "rust-1.80.0+wasm32-unknown-unknown",
+    "wasmOptimization": "z",
+    "timestamp": "2025-11-27T00:00:00Z"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "bls_tls_signer_v1",
+      "dir": "bls_tls_signer_v1",
+      "file": "module.wasm",
+      "version": "1.0.0",
+      "minCryfteeVersion": "0.4.0",
+      "description": "Baseline BLS + TLS staking module with module signing capabilities via Web3Signer.",
+      "capabilities": [
+        "bls_register",
+        "bls_sign",
+        "tls_register",
+        "tls_sign",
+        "module_signing"
+      ],
+      "defaultFor": {
+        "bls": true,
+        "tls": true
+      },
+      "publisherId": "cryft-labs",
+      "hash": "sha256:REPLACE_WITH_REAL_WASM_SHA256",
+      "signature": "REPLACE_WITH_BASE64_SIGNATURE_OVER_CANONICAL_METADATA",
+      "hasGui": true,
+      "guiPath": "gui"
+    },
+    {
+      "id": "debug_v1",
+      "dir": "debug_v1",
+      "file": "module.wasm",
+      "version": "1.0.0",
+      "minCryfteeVersion": "0.4.0",
+      "description": "Debugging and diagnostics module for runtime inspection and testing.",
+      "capabilities": [
+        "debug_echo",
+        "debug_info",
+        "debug_panic"
+      ],
+      "defaultFor": {},
+      "publisherId": "cryft-labs",
+      "hash": "sha256:PLACEHOLDER_DEBUG_HASH",
+      "signature": "PLACEHOLDER_DEBUG_SIGNATURE",
+      "hasGui": true,
+      "guiPath": "gui"
+    },
+    {
+      "id": "llm_chat_v1",
+      "dir": "llm_chat_v1",
+      "file": "module.wasm",
+      "version": "1.0.0",
+      "minCryfteeVersion": "0.4.0",
+      "description": "Interactive LLM chat interface for runtime assistance and module interaction.",
+      "capabilities": [
+        "llm_chat",
+        "llm_stream"
+      ],
+      "defaultFor": {},
+      "publisherId": "cryft-labs",
+      "hash": "sha256:PLACEHOLDER_LLM_HASH",
+      "signature": "PLACEHOLDER_LLM_SIGNATURE",
+      "hasGui": true,
+      "guiPath": "gui",
+      "moduleType": "llm"
+    }
+  ]
+}

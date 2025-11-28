@@ -1,0 +1,9 @@
+{
+  "id": "llm_chat_v1",
+  "name": "LLM Chat",
+  "version": "1.0.0",
+  "description": "Interactive LLM chat interface for runtime assistance and module interaction.",
+  "capabilities": ["llm_chat", "llm_stream"],
+  "moduleType": "llm",
+  "minCryfteeVersion": "0.4.0"
+}

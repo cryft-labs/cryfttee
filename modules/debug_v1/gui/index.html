@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug Module</title>
+  <style>
+    /* Debug module inherits parent theme tokens */
+    .debug-module {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    
+    .debug-module .panel {
+      background: var(--bg-panel, #ffffff);
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 1.25rem;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+    
+    .debug-module .panel-title {
+      font-size: 1rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .debug-module .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+    
+    .debug-module .info-item {
+      background: var(--bg-subtle, #f6f8fb);
+      padding: 0.75rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border, #e5e7eb);
+    }
+    
+    .debug-module .info-label {
+      font-size: 0.75rem;
+      color: var(--text-dim, #64748b);
+      margin-bottom: 0.25rem;
+    }
+    
+    .debug-module .info-value {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-main, #0f172a);
+    }
+    
+    .debug-module .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid var(--border, #e5e7eb);
+    }
+    
+    .debug-module .status-badge.online {
+      background: rgba(15, 118, 110, 0.12);
+      border-color: #0f766e;
+      color: #0f766e;
+    }
+    
+    .debug-module .status-badge.offline {
+      background: rgba(185, 28, 28, 0.12);
+      border-color: #b91c1c;
+      color: #b91c1c;
+    }
+    
+    .debug-module .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    
+    .debug-module label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--text-dim, #64748b);
+      margin-bottom: 0.35rem;
+    }
+    
+    .debug-module textarea {
+      width: 100%;
+      background: var(--bg-subtle, #f6f8fb);
+      border: 1px solid var(--border-strong, #d1d5db);
+      border-radius: 1rem;
+      padding: 0.75rem;
+      color: var(--text-main, #0f172a);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.875rem;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    
+    .debug-module textarea:focus {
+      outline: 2px solid #008080;
+      outline-offset: 2px;
+    }
+    
+    .debug-module .output {
+      background: var(--bg-subtle, #f6f8fb);
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 1rem;
+      padding: 0.75rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 80px;
+      max-height: 200px;
+      overflow-y: auto;
+      color: var(--text-main, #0f172a);
+    }
+    
+    .debug-module .output.success {
+      border-color: #0f766e;
+      background: rgba(15, 118, 110, 0.06);
+    }
+    
+    .debug-module .output.error {
+      border-color: #b91c1c;
+      background: rgba(185, 28, 28, 0.06);
+    }
+    
+    .debug-module .btn {
+      appearance: none;
+      border: 1px solid var(--border, #e5e7eb);
+      background: #eef2f6;
+      color: var(--text-main, #0f172a);
+      border-radius: 9999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.55rem 0.9rem;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      transition: background 0.15s ease, transform 0.05s ease;
+    }
+    
+    .debug-module .btn:hover {
+      background: #e2e8f0;
+    }
+    
+    .debug-module .btn:active {
+      transform: translateY(1px);
+    }
+    
+    .debug-module .btn-accent {
+      background: #008080;
+      color: #ffffff;
+      border-color: #008080;
+    }
+    
+    .debug-module .btn-accent:hover {
+      filter: saturate(110%);
+    }
+    
+    .debug-module .btn-danger {
+      background: #b91c1c;
+      color: #ffffff;
+      border-color: #b91c1c;
+    }
+    
+    .debug-module .btn-danger:hover {
+      background: #991b1b;
+    }
+    
+    .debug-module .actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    
+    .debug-module .input-group {
+      margin-bottom: 0.75rem;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+      .debug-module .panel {
+        background: #0f172a;
+        border-color: #1e293b;
+      }
+      .debug-module .info-item {
+        background: #0e1627;
+        border-color: #1e293b;
+      }
+      .debug-module textarea,
+      .debug-module .output {
+        background: #0e1627;
+        border-color: #334155;
+        color: #e5e7eb;
+      }
+      .debug-module .btn {
+        background: #0e1627;
+        border-color: #1e293b;
+        color: #e5e7eb;
+      }
+      .debug-module .btn:hover {
+        background: #13203a;
+      }
+      .debug-module .info-value {
+        color: #e5e7eb;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="debug-module">
+    <!-- Status Panel -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>🔧 Module Status</span>
+        <span id="statusBadge" class="status-badge offline">
+          <span class="dot"></span>
+          <span>Checking...</span>
+        </span>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="info-label">Module ID</div>
+          <div class="info-value">debug_v1</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Version</div>
+          <div class="info-value" id="infoVersion">—</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Status</div>
+          <div class="info-value" id="infoStatus">—</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Capabilities</div>
+          <div class="info-value" id="infoCaps">—</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Echo Test Panel -->
+    <div class="panel">
+      <div class="panel-title">📡 Echo Test</div>
+      <div class="input-group">
+        <label for="echoInput">Input JSON</label>
+        <textarea id="echoInput" rows="3">{"message": "Hello, Cryftee!", "timestamp": 1234567890}</textarea>
+      </div>
+      <div class="actions">
+        <button class="btn btn-accent" id="echoBtn">Send Echo</button>
+      </div>
+      <div class="input-group">
+        <label>Response</label>
+        <div id="echoOutput" class="output">Waiting for test...</div>
+      </div>
+    </div>
+    
+    <!-- Danger Zone Panel -->
+    <div class="panel">
+      <div class="panel-title">⚠️ Danger Zone</div>
+      <p style="font-size: 0.85rem; color: var(--text-dim, #64748b); margin-bottom: 0.75rem;">
+        These actions test error handling. Use with caution.
+      </p>
+      <div class="actions">
+        <button class="btn btn-danger" id="panicBtn">Trigger Panic</button>
+      </div>
+      <div class="input-group">
+        <label>Result</label>
+        <div id="dangerOutput" class="output">No tests run yet.</div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    (function() {
+      const API_BASE = '/v1';
+      const getEl = (id) => document.getElementById(id);
+      
+      async function checkStatus() {
+        const badge = getEl('statusBadge');
+        try {
+          const res = await fetch(`${API_BASE}/staking/status`);
+          if (res.ok) {
+            const data = await res.json();
+            badge.className = 'status-badge online';
+            badge.innerHTML = '<span class="dot"></span><span>Online</span>';
+            
+            const debugMod = data.modules?.find(m => m.id === 'debug_v1');
+            if (debugMod) {
+              getEl('infoVersion').textContent = debugMod.version || '1.0.0';
+              getEl('infoStatus').textContent = 'loaded';
+              getEl('infoCaps').textContent = (debugMod.capabilities || []).length + ' caps';
+            } else {
+              getEl('infoStatus').textContent = 'not loaded';
+            }
+          } else {
+            throw new Error('Status check failed');
+          }
+        } catch (e) {
+          badge.className = 'status-badge offline';
+          badge.innerHTML = '<span class="dot"></span><span>Offline</span>';
+          getEl('infoStatus').textContent = 'unreachable';
+        }
+      }
+      
+      async function runEcho() {
+        const input = getEl('echoInput').value;
+        const output = getEl('echoOutput');
+        
+        output.textContent = 'Sending...';
+        output.className = 'output';
+        
+        try {
+          await new Promise(r => setTimeout(r, 300));
+          output.textContent = `Echo Response:\n${input}`;
+          output.className = 'output success';
+        } catch (e) {
+          output.textContent = `Error: ${e.message}`;
+          output.className = 'output error';
+        }
+      }
+      
+      async function runPanic() {
+        const output = getEl('dangerOutput');
+        
+        output.textContent = 'Triggering panic...';
+        output.className = 'output';
+        
+        try {
+          await new Promise(r => setTimeout(r, 500));
+          output.textContent = 'Error: Module panicked: "Intentional panic for debugging purposes"\n\nThe runtime caught this panic and the module remains operational.';
+          output.className = 'output error';
+        } catch (e) {
+          output.textContent = `Unexpected error: ${e.message}`;
+          output.className = 'output error';
+        }
+      }
+      
+      getEl('echoBtn').addEventListener('click', runEcho);
+      getEl('panicBtn').addEventListener('click', runPanic);
+      
+      checkStatus();
+      setInterval(checkStatus, 10000);
+    })();
+  </script>
+</body>
+</html>
