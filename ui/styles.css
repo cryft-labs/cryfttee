@@ -329,6 +329,36 @@ body.reorder-mode .tab-reorder-hint { display: flex; }
 .status-title { font-weight: 900; letter-spacing: .2px; }
 .status-sub { font-size: .85rem; color: var(--text-dim); }
 
+/* Status dropdown sections */
+.status-section {
+  margin-top: var(--pad-lg);
+  padding-top: var(--pad-md);
+  border-top: 1px solid var(--border);
+}
+.status-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: var(--pad-sm);
+}
+
+/* Attestation panel in status popup */
+.status-attestation-panel {
+  padding: 0;
+}
+.status-attestation-panel .attestation-grid {
+  margin: 0;
+}
+.status-attestation-panel .attestation-row {
+  padding: var(--pad-sm) var(--pad-md);
+}
+.status-attestation-panel .attestation-value {
+  font-size: 0.75rem;
+  max-width: 300px;
+}
+
 /* =========================
    Chips
    ========================= */

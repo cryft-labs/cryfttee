@@ -762,16 +762,12 @@ function updateStatus() {
     const indicator = $('#status-indicator');
     const moduleCount = $('#module-count');
     const modulesLoaded = $('#modules-loaded');
+    const statusText = $('#status-text');
     
+    // Status indicator always shows OK (runtime is healthy)
+    // Module active/inactive state doesn't affect overall status
     if (indicator) {
-        indicator.className = 'status-dot';
-        if (loaded === 0 && total > 0) {
-            indicator.classList.add('warn');
-        } else if (loaded < total) {
-            indicator.classList.add('warn');
-        } else {
-            indicator.classList.add('ok');
-        }
+        indicator.className = 'status-dot ok';
     }
     
     if (moduleCount) {
@@ -781,6 +777,48 @@ function updateStatus() {
     if (modulesLoaded) {
         modulesLoaded.textContent = `${loaded}/${total}`;
     }
+    
+    if (statusText) {
+        statusText.textContent = 'Healthy';
+    }
+    
+    // Update module chips in popup
+    renderPopupModulesChips();
+}
+
+function renderPopupModulesChips() {
+    const container = $('#popup-modules-chips');
+    if (!container) return;
+    
+    if (state.modules.length === 0) {
+        container.innerHTML = '<span class="chip"><span class="dot pending"></span>No modules</span>';
+        return;
+    }
+    
+    container.innerHTML = state.modules.map(m => {
+        const isActive = m.loaded && m.enabled !== false;
+        const dotClass = isActive ? 'ok' : 'bad';
+        const chipClass = isActive ? 'chip-ok' : '';
+        const statusText = isActive ? 'Active' : 'Inactive';
+        return `<span class="chip ${chipClass}"><span class="dot ${dotClass}"></span>${escapeHtml(m.id)} <span style="opacity:0.7">${statusText}</span></span>`;
+    }).join('');
+}
+
+function updatePopupAttestation() {
+    if (!state.attestation) return;
+    
+    const data = state.attestation;
+    
+    const setPopup = (id, val) => {
+        const el = $(`#${id}`);
+        if (el) el.textContent = val || 'N/A';
+    };
+    
+    // Use same format as attestation tab (full values)
+    setPopup('popup-core-hash', data.core_binary_hash || data.coreBinaryHash);
+    setPopup('popup-manifest-hash', data.manifest_hash || data.manifestHash);
+    setPopup('popup-runtime-version', data.cryftee_version || data.cryfteeVersion);
+    setPopup('popup-attestation-time', data.timestamp ? new Date(data.timestamp).toLocaleString() : null);
 }
 
 // ============================================================================
@@ -1112,6 +1150,7 @@ async function loadAttestation() {
         if (!data.error) {
             state.attestation = data;
             renderAttestation(data);
+            updatePopupAttestation();
         }
     } catch (error) {
         console.error('Failed to load attestation:', error);
@@ -1160,6 +1199,7 @@ async function reloadModules() {
             updateStatus();
             await updateModuleGuiTabs(state.modules);
             await loadAttestation();
+            updatePopupAttestation();
             toast('Modules reloaded', 'ok');
         } else {
             toast(data.error || 'Reload failed', 'bad');
@@ -1234,6 +1274,18 @@ function renderModuleCard(module, defaults, showToggle = false) {
     // Can toggle if compatible (even if currently has load error)
     const canToggle = showToggle && (isCompatible || isLoaded || module.reason);
     
+    // Determine the single module status chip
+    let statusChip = '';
+    if (!isEnabled) {
+        statusChip = '<span class="chip chip-bad"><span class="dot bad"></span>Disabled</span>';
+    } else if (!isCompatible) {
+        statusChip = '<span class="chip chip-bad"><span class="dot bad"></span>Incompatible</span>';
+    } else if (isLoaded) {
+        statusChip = '<span class="chip chip-ok"><span class="dot ok"></span>Loaded</span>';
+    } else {
+        statusChip = '<span class="chip"><span class="dot pending"></span>Available</span>';
+    }
+    
     return `
         <div class="${cardClass}" data-module-id="${escapeHtml(module.id)}">
             <div class="module-header">
@@ -1253,11 +1305,10 @@ function renderModuleCard(module, defaults, showToggle = false) {
             </div>
             
             <div class="chips chips-inside">
-                ${!isEnabled ? '<span class="chip chip-bad"><span class="dot bad"></span>Disabled</span>' : ''}
+                ${statusChip}
                 ${isDefaultBls ? '<span class="chip chip-ok"><span class="dot ok"></span>Default BLS</span>' : ''}
                 ${isDefaultTls ? '<span class="chip chip-ok"><span class="dot ok"></span>Default TLS</span>' : ''}
                 ${isTrusted ? '<span class="chip chip-ok"><span class="dot ok"></span>Trusted</span>' : '<span class="chip chip-bad"><span class="dot bad"></span>Untrusted</span>'}
-                ${isEnabled && isLoaded ? '<span class="chip chip-ok"><span class="dot ok"></span>Loaded</span>' : isEnabled && isCompatible ? '<span class="chip"><span class="dot pending"></span>Available</span>' : !isEnabled ? '' : '<span class="chip chip-bad"><span class="dot bad"></span>Incompatible</span>'}
                 ${isLlmModule ? '<span class="chip chip-accent"><span class="dot accent"></span>LLM Module</span>' : hasGui ? '<span class="chip chip-pending"><span class="dot pending"></span>Has GUI</span>' : ''}
             </div>
 

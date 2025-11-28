@@ -40,6 +40,37 @@
         <span class="chip"><span class="dot ok"></span>Runtime <span id="runtime-status">OK</span></span>
         <span class="chip"><span class="dot pending"></span>Modules <span id="modules-loaded">0/0</span></span>
       </div>
+      
+      <div class="status-section">
+        <div class="status-section-title">Modules</div>
+        <div class="chips" id="popup-modules-chips">
+          <span class="chip"><span class="dot pending"></span>Loading...</span>
+        </div>
+      </div>
+      
+      <div class="status-section">
+        <div class="status-section-title">Attestation</div>
+        <div class="panel status-attestation-panel">
+          <div class="attestation-grid">
+            <div class="attestation-row">
+              <span class="attestation-label">Core Binary Hash</span>
+              <span class="attestation-value" id="popup-core-hash">Loading...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Manifest Hash</span>
+              <span class="attestation-value" id="popup-manifest-hash">Loading...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Attestation Time</span>
+              <span class="attestation-value" id="popup-attestation-time">Loading...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Runtime Version</span>
+              <span class="attestation-value" id="popup-runtime-version">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
