@@ -28,7 +28,9 @@ const state = {
         lastLatency: null,
         lastCheck: null,
         consecutiveFailures: 0
-    }
+    },
+    // Dynamic module status panels (keyed by module ID)
+    moduleStatusPanels: new Map()
 };
 
 // ============================================================================
@@ -806,6 +808,9 @@ function updateStatus() {
     
     // Update module chips in popup
     renderPopupModulesChips();
+    
+    // Fetch and display dynamic module status panels
+    fetchModuleStatusPanels().catch(e => console.warn('Failed to fetch module status panels:', e));
 }
 
 function updateConnectionDisplay() {
@@ -894,6 +899,227 @@ function renderPopupModulesChips() {
         const statusText = isActive ? 'Active' : 'Inactive';
         return `<span class="chip ${chipClass}"><span class="dot ${dotClass}"></span>${escapeHtml(m.id)} <span style="opacity:0.7">${statusText}</span></span>`;
     }).join('');
+}
+
+/**
+ * Fetch status panels from all active modules and render them dynamically
+ */
+async function fetchModuleStatusPanels() {
+    const container = $('#dynamic-module-panels');
+    if (!container) return;
+    
+    // Find all active modules that might have status panels
+    const activeModules = state.modules.filter(m => 
+        m.loaded && m.enabled !== false
+    );
+    
+    if (activeModules.length === 0) {
+        container.innerHTML = '';
+        state.moduleStatusPanels.clear();
+        return;
+    }
+    
+    // Fetch status panels for each active module
+    const panelPromises = activeModules.map(async (module) => {
+        try {
+            const response = await fetch(`${API_BASE}/api/modules/${encodeURIComponent(module.id)}/status-panel`);
+            
+            if (!response.ok) {
+                // Module doesn't have status panel - check if it has capabilities worth showing
+                if (module.capabilities && 
+                    (module.capabilities.includes('bls_sign') || 
+                     module.capabilities.includes('tls_sign') ||
+                     module.capabilities.includes('key_gen'))) {
+                    // Return a basic panel for signer modules
+                    return {
+                        moduleId: module.id,
+                        module: module,
+                        panel: createBasicSignerPanel(module),
+                        isBasic: true
+                    };
+                }
+                return null;
+            }
+            
+            const panel = await response.json();
+            return {
+                moduleId: module.id,
+                module: module,
+                panel: panel,
+                isBasic: false
+            };
+        } catch (error) {
+            console.warn(`Failed to fetch status panel for ${module.id}:`, error);
+            // For signer modules, show basic info on error
+            if (module.capabilities && 
+                (module.capabilities.includes('bls_sign') || module.capabilities.includes('tls_sign'))) {
+                return {
+                    moduleId: module.id,
+                    module: module,
+                    panel: createBasicSignerPanel(module),
+                    isBasic: true
+                };
+            }
+            return null;
+        }
+    });
+    
+    const results = await Promise.all(panelPromises);
+    const validPanels = results.filter(r => r !== null);
+    
+    // Update state
+    state.moduleStatusPanels.clear();
+    for (const result of validPanels) {
+        state.moduleStatusPanels.set(result.moduleId, result);
+    }
+    
+    // Render all panels
+    renderModuleStatusPanels(validPanels);
+}
+
+/**
+ * Create a basic status panel for signer modules that don't implement the full API
+ */
+function createBasicSignerPanel(module) {
+    const hasBls = module.capabilities?.includes('bls_sign');
+    const hasTls = module.capabilities?.includes('tls_sign');
+    const hasKeyGen = module.capabilities?.includes('key_gen');
+    
+    return {
+        module_id: module.id,
+        module_version: module.version,
+        title: module.id.replace(/_/g, ' ').replace(/v\d+$/, '').trim(),
+        sections: [
+            {
+                heading: 'Capabilities',
+                items: [
+                    { type: 'status_indicator', status: hasBls ? 'ok' : 'pending', message: `BLS Signing: ${hasBls ? 'Available' : 'Not available'}` },
+                    { type: 'status_indicator', status: hasTls ? 'ok' : 'pending', message: `TLS Signing: ${hasTls ? 'Available' : 'Not available'}` },
+                    { type: 'status_indicator', status: hasKeyGen ? 'ok' : 'pending', message: `Key Generation: ${hasKeyGen ? 'Available' : 'Not available'}` }
+                ].filter(item => item.status === 'ok' || module.capabilities?.length <= 3)
+            },
+            {
+                heading: 'Status',
+                items: [
+                    { type: 'key_value', key: 'Module Version', value: module.version },
+                    { type: 'status_indicator', status: 'pending', message: 'Status panel not implemented' }
+                ]
+            }
+        ]
+    };
+}
+
+/**
+ * Render all module status panels into the dynamic container
+ */
+function renderModuleStatusPanels(panels) {
+    const container = $('#dynamic-module-panels');
+    if (!container) return;
+    
+    if (panels.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    container.innerHTML = panels.map(({ moduleId, module, panel, isBasic }) => {
+        const title = panel.title || moduleId;
+        const sections = panel.sections || [];
+        
+        return `
+            <div class="status-section module-status-panel" data-module-id="${escapeHtml(moduleId)}">
+                <div class="status-section-title">
+                    ${escapeHtml(title)}
+                    <span class="pill" style="margin-left: 8px; font-size: 0.65rem;">${escapeHtml(module.version)}</span>
+                    ${isBasic ? '<span class="pill" style="margin-left: 4px; font-size: 0.65rem; opacity: 0.7;">Basic</span>' : ''}
+                </div>
+                <div class="panel status-module-panel">
+                    ${sections.map(section => renderStatusSection(section)).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Render a single section of a module status panel
+ */
+function renderStatusSection(section) {
+    if (!section || !section.items || section.items.length === 0) return '';
+    
+    return `
+        <div class="module-panel-section">
+            <div class="module-panel-heading">${escapeHtml(section.heading || '')}</div>
+            <div class="attestation-grid">
+                ${section.items.map(item => renderStatusItem(item)).join('')}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Render a single status item based on its type
+ */
+function renderStatusItem(item) {
+    if (!item) return '';
+    
+    switch (item.type) {
+        case 'key_value':
+            return `
+                <div class="attestation-row">
+                    <span class="attestation-label">${escapeHtml(item.key || '')}</span>
+                    <span class="attestation-value">${escapeHtml(item.value || '—')}</span>
+                </div>
+            `;
+        
+        case 'public_key':
+            const truncatedKey = truncatePublicKey(item.public_key);
+            const keyTypeClass = item.key_type === 'BLS' ? 'key-bls' : 'key-tls';
+            return `
+                <div class="attestation-row">
+                    <span class="attestation-label">
+                        <span class="key-type-badge ${keyTypeClass}">${escapeHtml(item.key_type || 'KEY')}</span>
+                        ${item.label ? escapeHtml(item.label) : 'Public Key'}
+                    </span>
+                    <span class="attestation-value key-value" title="${escapeHtml(item.public_key || '')}">
+                        <span class="dot ok" style="margin-right:6px"></span>
+                        <code>${escapeHtml(truncatedKey)}</code>
+                    </span>
+                </div>
+            `;
+        
+        case 'status_indicator':
+            const statusDot = item.status === 'ok' ? 'ok' : item.status === 'warning' ? 'pending' : item.status === 'error' ? 'bad' : 'pending';
+            return `
+                <div class="attestation-row">
+                    <span class="attestation-label">${escapeHtml(item.message || 'Status')}</span>
+                    <span class="attestation-value">
+                        <span class="dot ${statusDot}" style="margin-right:6px"></span>
+                        ${item.status === 'ok' ? 'OK' : item.status === 'warning' ? 'Warning' : item.status === 'error' ? 'Error' : 'Pending'}
+                    </span>
+                </div>
+            `;
+        
+        default:
+            // Unknown type - try to render as key/value
+            if (item.key && item.value) {
+                return `
+                    <div class="attestation-row">
+                        <span class="attestation-label">${escapeHtml(item.key)}</span>
+                        <span class="attestation-value">${escapeHtml(item.value)}</span>
+                    </div>
+                `;
+            }
+            return '';
+    }
+}
+
+/**
+ * Truncate a public key for display
+ */
+function truncatePublicKey(key) {
+    if (!key) return 'Not registered';
+    if (key.length <= 20) return key;
+    return key.slice(0, 10) + '...' + key.slice(-6);
 }
 
 function updatePopupAttestation() {

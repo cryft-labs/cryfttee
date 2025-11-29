@@ -261,7 +261,9 @@ pub async fn get_schema(
                 "defaultFor": { "type": "object", "additionalProperties": { "type": "boolean" } },
                 "publisherId": { "type": "string" },
                 "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-                "signature": { "type": "string", "description": "Base64-encoded signature" }
+                "signature": { "type": "string", "description": "Base64-encoded signature" },
+                "hasGui": { "type": "boolean", "description": "Whether module provides a GUI" },
+                "guiPath": { "type": "string", "description": "GUI serve path relative to module directory" }
             }
         },
         "capabilitySchemas": {
@@ -287,6 +289,86 @@ pub async fn get_schema(
                         "params": ["handle_ptr: u32", "handle_len: u32", "digest_ptr: u32", "digest_len: u32", "algo_ptr: u32", "algo_len: u32", "out_sig_ptr: u32", "out_sig_len_ptr: u32"],
                         "returns": "i32 (0 = success, negative = error)"
                     }
+                }
+            }
+        },
+        "moduleInterfaces": {
+            "statusPanel": {
+                "description": "Optional interface for modules to provide dynamic status content for the runtime UI. Modules implementing this interface will have their status displayed in the kiosk status dropdown.",
+                "endpoint": "GET /api/modules/{module_id}/status-panel",
+                "implementedBy": "Modules with GUI or signing capabilities",
+                "responseSchema": {
+                    "type": "object",
+                    "required": ["module_id", "title", "sections"],
+                    "properties": {
+                        "module_id": { "type": "string", "description": "Module identifier" },
+                        "module_version": { "type": "string", "description": "Module version" },
+                        "title": { "type": "string", "description": "Display title for the status panel" },
+                        "sections": {
+                            "type": "array",
+                            "description": "Array of sections to display",
+                            "items": {
+                                "type": "object",
+                                "required": ["heading", "items"],
+                                "properties": {
+                                    "heading": { "type": "string", "description": "Section heading" },
+                                    "items": {
+                                        "type": "array",
+                                        "items": { "$ref": "#/moduleInterfaces/statusPanel/itemTypes" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "itemTypes": {
+                    "key_value": {
+                        "description": "Simple key-value display",
+                        "properties": {
+                            "type": { "const": "key_value" },
+                            "key": { "type": "string" },
+                            "value": { "type": "string" }
+                        }
+                    },
+                    "public_key": {
+                        "description": "Display a managed public key with metadata",
+                        "properties": {
+                            "type": { "const": "public_key" },
+                            "key_type": { "type": "string", "enum": ["BLS", "TLS", "ECDSA", "ED25519"] },
+                            "public_key": { "type": "string", "description": "Hex-encoded public key" },
+                            "label": { "type": "string", "description": "Optional friendly name" },
+                            "created": { "type": "string", "format": "date-time" }
+                        }
+                    },
+                    "status_indicator": {
+                        "description": "Status indicator with color-coded state",
+                        "properties": {
+                            "type": { "const": "status_indicator" },
+                            "status": { "type": "string", "enum": ["ok", "warning", "error", "pending"] },
+                            "message": { "type": "string" }
+                        }
+                    }
+                },
+                "example": {
+                    "module_id": "bls_tls_signer_v1",
+                    "module_version": "1.0.0",
+                    "title": "BLS/TLS Signer",
+                    "sections": [
+                        {
+                            "heading": "Managed Keys",
+                            "items": [
+                                { "type": "public_key", "key_type": "BLS", "public_key": "0x8a4f3b...", "label": "Primary Staking Key" },
+                                { "type": "public_key", "key_type": "TLS", "public_key": "0x04a1b2...", "label": "Node Identity" }
+                            ]
+                        },
+                        {
+                            "heading": "Web3Signer Connection",
+                            "items": [
+                                { "type": "key_value", "key": "Endpoint", "value": "http://localhost:9000" },
+                                { "type": "status_indicator", "status": "ok", "message": "Connected" }
+                            ]
+                        }
+                    ]
                 }
             }
         }

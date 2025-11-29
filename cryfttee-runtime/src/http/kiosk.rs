@@ -113,42 +113,6 @@ pub async fn get_attestation(
     }
 }
 
-/// Get module schema for kiosk display
-pub async fn get_schema(
-    State(_state): State<AppState>,
-) -> Json<Value> {
-    // Reuse the same schema endpoint logic
-    Json(json!({
-        "cryftteeVersion": CRYFTTEE_VERSION,
-        "schemaVersion": "1.0.0",
-        "manifestSchema": {
-            "type": "object",
-            "required": ["id", "dir", "file", "version", "minCryftteeVersion", "description", "capabilities", "defaultFor", "publisherId", "hash", "signature"],
-            "properties": {
-                "id": { "type": "string" },
-                "dir": { "type": "string" },
-                "file": { "type": "string" },
-                "version": { "type": "string" },
-                "minCryftteeVersion": { "type": "string" },
-                "description": { "type": "string" },
-                "capabilities": { "type": "array", "items": { "type": "string" } },
-                "defaultFor": { "type": "object" },
-                "publisherId": { "type": "string" },
-                "hash": { "type": "string" },
-                "signature": { "type": "string" },
-                "hasGui": { "type": "boolean", "description": "Whether module provides a GUI" },
-                "guiPath": { "type": "string", "description": "GUI serve path relative to module directory" }
-            }
-        },
-        "capabilitySchemas": {
-            "signing": {
-                "description": "BLS/TLS signing module ABI",
-                "requiredExports": ["bls_register", "bls_sign", "tls_register", "tls_sign"]
-            }
-        }
-    }))
-}
-
 /// Get raw manifest.json
 pub async fn get_manifest(
     State(state): State<AppState>,

@@ -57,7 +57,7 @@ pub fn build_router(state: AppState) -> Router {
     let kiosk_routes = Router::new()
         .route("/api/modules", get(kiosk::get_modules))
         .route("/api/attestation", get(kiosk::get_attestation))
-        .route("/api/schema", get(kiosk::get_schema))
+        .route("/api/schema", get(api::get_schema))  // Reuse API schema endpoint
         .route("/api/manifest", get(kiosk::get_manifest))
         .route("/api/reload", post(kiosk::reload_modules))
         .route("/api/context", get(kiosk::get_context))
