@@ -2,33 +2,33 @@
 
 ## Context
 
-The cryftee sidecar is a WASM module host that provides staking/signing services. For security accountability, cryftee exposes attestation data at `/v1/runtime/attestation` that includes a `core_binary_hash` field. However, if cryftee computes its own hash, a malicious binary could simply report a fake hash.
+The cryfttee sidecar is a WASM module host that provides staking/signing services. For security accountability, cryfttee exposes attestation data at `/v1/runtime/attestation` that includes a `core_binary_hash` field. However, if cryfttee computes its own hash, a malicious binary could simply report a fake hash.
 
 **Solution**: cryftgo (the parent process) must:
-1. Compute the SHA256 hash of the cryftee binary BEFORE launching it
+1. Compute the SHA256 hash of the cryfttee binary BEFORE launching it
 2. Optionally verify this hash against a known-good value (from release artifacts or Cryft Labs)
-3. Pass the verified hash to cryftee via the `CRYFTEE_VERIFIED_BINARY_HASH` environment variable
+3. Pass the verified hash to cryfttee via the `CRYFTTEE_VERIFIED_BINARY_HASH` environment variable
 4. Optionally re-verify the running binary periodically via `/proc/<pid>/exe` (Linux) or equivalent
 
 ---
 
-## ⚠️ CRITICAL: Cryftgo ↔ Cryftee Connection Defaults
+## ⚠️ CRITICAL: Cryftgo ↔ CryftTEE Connection Defaults
 
-**Both cryftgo and cryftee MUST use the same defaults to ensure connectivity.**
+**Both cryftgo and cryfttee MUST use the same defaults to ensure connectivity.**
 
 ### Default Connection Settings
 
 | Setting | Default Value | Environment Variable | CLI Flag |
 |---------|---------------|---------------------|----------|
-| **Transport** | `uds` (Unix Domain Socket) | `CRYFTEE_API_TRANSPORT` | `--cryftee-transport` |
-| **Socket Path** | `/var/run/cryftee.sock` | `CRYFTEE_UDS_PATH` | `--cryftee-socket` |
-| **HTTP Address** | `127.0.0.1:8787` (only if transport=http) | `CRYFTEE_HTTP_ADDR` | `--cryftee-http-addr` |
+| **Transport** | `uds` (Unix Domain Socket) | `CRYFTTEE_API_TRANSPORT` | `--cryfttee-transport` |
+| **Socket Path** | `/var/run/cryfttee.sock` | `CRYFTTEE_UDS_PATH` | `--cryfttee-socket` |
+| **HTTP Address** | `127.0.0.1:8787` (only if transport=http) | `CRYFTTEE_HTTP_ADDR` | `--cryfttee-http-addr` |
 
 ### Connection Contract
 
 ```go
 // ═══════════════════════════════════════════════════════════════════════════
-// SHARED DEFAULTS - These MUST match between cryftgo and cryftee
+// SHARED DEFAULTS - These MUST match between cryftgo and cryfttee
 // ═══════════════════════════════════════════════════════════════════════════
 
 const (
@@ -36,12 +36,12 @@ const (
     DefaultTransport = "uds"
     
     // UDS socket path - used when transport=uds (default)
-    DefaultSocketPath = "/var/run/cryftee.sock"
+    DefaultSocketPath = "/var/run/cryfttee.sock"
     
     // HTTP address - only used when transport=http (explicit)
     DefaultHTTPAddr = "127.0.0.1:8787"
     
-    // Web3Signer URL - where cryftee connects for key operations
+    // Web3Signer URL - where cryfttee connects for key operations
     DefaultWeb3SignerURL = "http://localhost:9000"
 )
 ```
@@ -49,26 +49,26 @@ const (
 ### Cryftgo Configuration (Go)
 
 ```go
-// Cryftgo must configure these to match cryftee
-type CryfteeConnectionConfig struct {
+// Cryftgo must configure these to match cryfttee
+type CryftteeConnectionConfig struct {
     // Transport: "uds" (default) or "http" (explicit)
     Transport string `json:"transport" default:"uds"`
     
-    // UDS socket path - must match cryftee's CRYFTEE_UDS_PATH
-    SocketPath string `json:"socket_path" default:"/var/run/cryftee.sock"`
+    // UDS socket path - must match cryfttee's CRYFTTEE_UDS_PATH
+    SocketPath string `json:"socket_path" default:"/var/run/cryfttee.sock"`
     
-    // HTTP address - must match cryftee's CRYFTEE_HTTP_ADDR (if using HTTP)
+    // HTTP address - must match cryfttee's CRYFTTEE_HTTP_ADDR (if using HTTP)
     HTTPAddr string `json:"http_addr" default:"127.0.0.1:8787"`
 }
 
-// NewCryfteeConnection creates a connection with proper defaults
-func NewCryfteeConnection(cfg CryfteeConnectionConfig) (*http.Client, error) {
+// NewCryftteeConnection creates a connection with proper defaults
+func NewCryftteeConnection(cfg CryftteeConnectionConfig) (*http.Client, error) {
     // Apply defaults
     if cfg.Transport == "" {
         cfg.Transport = "uds" // DEFAULT: Unix Domain Socket
     }
     if cfg.SocketPath == "" {
-        cfg.SocketPath = "/var/run/cryftee.sock" // DEFAULT socket path
+        cfg.SocketPath = "/var/run/cryfttee.sock" // DEFAULT socket path
     }
     if cfg.HTTPAddr == "" {
         cfg.HTTPAddr = "127.0.0.1:8787" // DEFAULT HTTP address
@@ -87,7 +87,7 @@ func NewCryfteeConnection(cfg CryfteeConnectionConfig) (*http.Client, error) {
         }, nil
         
     case "http":
-        // EXPLICIT: Connect via HTTP (requires --cryftee-transport=http)
+        // EXPLICIT: Connect via HTTP (requires --cryfttee-transport=http)
         return &http.Client{
             Timeout: 30 * time.Second,
         }, nil
@@ -98,27 +98,27 @@ func NewCryfteeConnection(cfg CryfteeConnectionConfig) (*http.Client, error) {
 }
 ```
 
-### Cryftee Configuration (Rust)
+### CryftTEE Configuration (Rust)
 
 ```rust
-// Cryftee reads these from environment or uses defaults
+// CryftTEE reads these from environment or uses defaults
 // These MUST match cryftgo's defaults
 
 const DEFAULT_TRANSPORT: &str = "uds";
-const DEFAULT_SOCKET_PATH: &str = "/var/run/cryftee.sock";
+const DEFAULT_SOCKET_PATH: &str = "/var/run/cryfttee.sock";
 const DEFAULT_HTTP_ADDR: &str = "127.0.0.1:8787";
 
 fn load_transport_config() -> TransportConfig {
-    let transport = std::env::var("CRYFTEE_API_TRANSPORT")
+    let transport = std::env::var("CRYFTTEE_API_TRANSPORT")
         .unwrap_or_else(|_| DEFAULT_TRANSPORT.to_string());
     
     match transport.as_str() {
         "uds" => TransportConfig::UDS {
-            path: std::env::var("CRYFTEE_UDS_PATH")
+            path: std::env::var("CRYFTTEE_UDS_PATH")
                 .unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string()),
         },
         "http" => TransportConfig::HTTP {
-            addr: std::env::var("CRYFTEE_HTTP_ADDR")
+            addr: std::env::var("CRYFTTEE_HTTP_ADDR")
                 .unwrap_or_else(|_| DEFAULT_HTTP_ADDR.to_string()),
         },
         _ => panic!("Unknown transport: {}", transport),
@@ -129,55 +129,55 @@ fn load_transport_config() -> TransportConfig {
 ### Launch Sequence with Correct Defaults
 
 ```go
-// Cryftgo launches cryftee with matching transport config
-func (m *CryfteeManager) Start(config *CryftgoConfig) error {
+// Cryftgo launches cryfttee with matching transport config
+func (m *CryftteeManager) Start(config *CryftgoConfig) error {
     // ─────────────────────────────────────────────────────────────────────
-    // STEP 1: Apply defaults (MUST match cryftee's defaults)
+    // STEP 1: Apply defaults (MUST match cryfttee's defaults)
     // ─────────────────────────────────────────────────────────────────────
     transport := config.Transport
     if transport == "" {
         transport = "uds" // DEFAULT
     }
     
-    socketPath := config.CryfteeSocketPath
+    socketPath := config.CryftteeSocketPath
     if socketPath == "" {
-        socketPath = "/var/run/cryftee.sock" // DEFAULT
+        socketPath = "/var/run/cryfttee.sock" // DEFAULT
     }
     
-    httpAddr := config.CryfteeHTTPAddr
+    httpAddr := config.CryftteeHTTPAddr
     if httpAddr == "" {
         httpAddr = "127.0.0.1:8787" // DEFAULT
     }
     
     // ─────────────────────────────────────────────────────────────────────
-    // STEP 2: Build environment for cryftee (pass same values)
+    // STEP 2: Build environment for cryfttee (pass same values)
     // ─────────────────────────────────────────────────────────────────────
     env := append(os.Environ(),
-        fmt.Sprintf("CRYFTEE_VERIFIED_BINARY_HASH=%s", m.verifiedHash),
-        fmt.Sprintf("CRYFTEE_API_TRANSPORT=%s", transport),
+        fmt.Sprintf("CRYFTTEE_VERIFIED_BINARY_HASH=%s", m.verifiedHash),
+        fmt.Sprintf("CRYFTTEE_API_TRANSPORT=%s", transport),
     )
     
     if transport == "uds" {
-        env = append(env, fmt.Sprintf("CRYFTEE_UDS_PATH=%s", socketPath))
+        env = append(env, fmt.Sprintf("CRYFTTEE_UDS_PATH=%s", socketPath))
     } else {
-        env = append(env, fmt.Sprintf("CRYFTEE_HTTP_ADDR=%s", httpAddr))
+        env = append(env, fmt.Sprintf("CRYFTTEE_HTTP_ADDR=%s", httpAddr))
     }
     
     if config.Web3SignerURL != "" {
-        env = append(env, fmt.Sprintf("CRYFTEE_WEB3SIGNER_URL=%s", config.Web3SignerURL))
+        env = append(env, fmt.Sprintf("CRYFTTEE_WEB3SIGNER_URL=%s", config.Web3SignerURL))
     }
     
     // ─────────────────────────────────────────────────────────────────────
-    // STEP 3: Launch cryftee
+    // STEP 3: Launch cryfttee
     // ─────────────────────────────────────────────────────────────────────
     m.process = exec.Command(m.config.BinaryPath)
     m.process.Env = env
     
     if err := m.process.Start(); err != nil {
-        return fmt.Errorf("failed to start cryftee: %w", err)
+        return fmt.Errorf("failed to start cryfttee: %w", err)
     }
     
-    log.Printf("Started cryftee (PID %d) with transport=%s", 
+    log.Printf("Started cryfttee (PID %d) with transport=%s", 
         m.process.Process.Pid, transport)
     
     // ─────────────────────────────────────────────────────────────────────
@@ -195,8 +195,8 @@ func (m *CryfteeManager) Start(config *CryftgoConfig) error {
 ### Verification: Ensure Connection Works
 
 ```go
-// After starting cryftee, verify connectivity before proceeding
-func (m *CryfteeManager) verifyConnection() error {
+// After starting cryfttee, verify connectivity before proceeding
+func (m *CryftteeManager) verifyConnection() error {
     // Wait for socket/port to be available
     deadline := time.Now().Add(30 * time.Second)
     
@@ -225,47 +225,47 @@ func (m *CryfteeManager) verifyConnection() error {
         time.Sleep(500 * time.Millisecond)
     }
     
-    return fmt.Errorf("failed to connect to cryftee via %s after 30s", m.transport)
+    return fmt.Errorf("failed to connect to cryfttee via %s after 30s", m.transport)
 }
 ```
 
 ### CLI Flags Summary
 
 ```go
-// Cryftgo CLI flags - defaults MUST match cryftee
+// Cryftgo CLI flags - defaults MUST match cryfttee
 var (
-    CryfteeTransportFlag = cli.StringFlag{
-        Name:   "cryftee-transport",
-        Usage:  "Transport for cryftee connection: 'uds' (default) or 'http'",
+    CryftteeTransportFlag = cli.StringFlag{
+        Name:   "cryfttee-transport",
+        Usage:  "Transport for cryfttee connection: 'uds' (default) or 'http'",
         Value:  "uds",  // ← DEFAULT: UDS
-        EnvVar: "CRYFTGO_CRYFTEE_TRANSPORT",
+        EnvVar: "CRYFTGO_CRYFTTEE_TRANSPORT",
     }
     
-    CryfteeSocketFlag = cli.StringFlag{
-        Name:   "cryftee-socket",
-        Usage:  "Path to cryftee UDS socket (when transport=uds)",
-        Value:  "/var/run/cryftee.sock",  // ← DEFAULT socket path
-        EnvVar: "CRYFTGO_CRYFTEE_SOCKET",
+    CryftteeSocketFlag = cli.StringFlag{
+        Name:   "cryfttee-socket",
+        Usage:  "Path to cryfttee UDS socket (when transport=uds)",
+        Value:  "/var/run/cryfttee.sock",  // ← DEFAULT socket path
+        EnvVar: "CRYFTGO_CRYFTTEE_SOCKET",
     }
     
-    CryfteeHTTPAddrFlag = cli.StringFlag{
-        Name:   "cryftee-http-addr",
-        Usage:  "HTTP address for cryftee (when transport=http)",
+    CryftteeHTTPAddrFlag = cli.StringFlag{
+        Name:   "cryfttee-http-addr",
+        Usage:  "HTTP address for cryfttee (when transport=http)",
         Value:  "127.0.0.1:8787",  // ← DEFAULT HTTP address
-        EnvVar: "CRYFTGO_CRYFTEE_HTTP_ADDR",
+        EnvVar: "CRYFTGO_CRYFTTEE_HTTP_ADDR",
     }
     
-    CryfteeSignerFlag = cli.BoolFlag{
-        Name:   "cryftee-signer",
-        Usage:  "Enable cryftee TEE signer for BLS/TLS key management",
-        EnvVar: "CRYFTGO_CRYFTEE_SIGNER",
+    CryftteeSignerFlag = cli.BoolFlag{
+        Name:   "cryfttee-signer",
+        Usage:  "Enable cryfttee TEE signer for BLS/TLS key management",
+        EnvVar: "CRYFTGO_CRYFTTEE_SIGNER",
     }
     
-    CryfteeBinaryFlag = cli.StringFlag{
-        Name:   "cryftee-binary",
-        Usage:  "Path to cryftee binary",
-        Value:  "/usr/local/bin/cryftee",
-        EnvVar: "CRYFTGO_CRYFTEE_BINARY",
+    CryftteeBinaryFlag = cli.StringFlag{
+        Name:   "cryfttee-binary",
+        Usage:  "Path to cryfttee binary",
+        Value:  "/usr/local/bin/cryfttee",
+        EnvVar: "CRYFTGO_CRYFTTEE_BINARY",
     }
     
     Web3SignerURLFlag = cli.StringFlag{
@@ -281,16 +281,16 @@ var (
 
 ## Communication: UDS (Default) vs HTTP (Optional)
 
-**IMPORTANT**: cryftgo and cryftee communicate via **Unix Domain Socket (UDS) by default**. HTTP/HTTPS is only used when explicitly configured.
+**IMPORTANT**: cryftgo and cryfttee communicate via **Unix Domain Socket (UDS) by default**. HTTP/HTTPS is only used when explicitly configured.
 
 ### Default: Unix Domain Socket
 
 ```go
 // Default UDS path
-const DefaultCryfteeSocketPath = "/var/run/cryftee.sock"
+const DefaultCryftteeSocketPath = "/var/run/cryfttee.sock"
 
-// Connect to cryftee via UDS
-func dialCryfteeUDS(socketPath string) (*http.Client, error) {
+// Connect to cryfttee via UDS
+func dialCryftteeUDS(socketPath string) (*http.Client, error) {
     return &http.Client{
         Transport: &http.Transport{
             DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -301,7 +301,7 @@ func dialCryfteeUDS(socketPath string) (*http.Client, error) {
 }
 
 // Make request via UDS (use "http://localhost" as placeholder, actual routing is via socket)
-func (m *CryfteeManager) callAPI(endpoint string) (*http.Response, error) {
+func (m *CryftteeManager) callAPI(endpoint string) (*http.Response, error) {
     return m.udsClient.Get("http://localhost" + endpoint)
 }
 ```
@@ -311,17 +311,17 @@ func (m *CryfteeManager) callAPI(endpoint string) (*http.Response, error) {
 HTTP transport should only be enabled via explicit configuration:
 
 ```go
-type CryfteeTransport string
+type CryftteeTransport string
 
 const (
-    TransportUDS   CryfteeTransport = "uds"    // Default
-    TransportHTTP  CryfteeTransport = "http"   // Requires explicit config
-    TransportHTTPS CryfteeTransport = "https"  // Requires explicit config + TLS
+    TransportUDS   CryftteeTransport = "uds"    // Default
+    TransportHTTP  CryftteeTransport = "http"   // Requires explicit config
+    TransportHTTPS CryftteeTransport = "https"  // Requires explicit config + TLS
 )
 
-type CryfteeConfig struct {
-    Transport  CryfteeTransport `json:"transport"`   // Default: "uds"
-    SocketPath string           `json:"socket_path"` // Default: /var/run/cryftee.sock
+type CryftteeConfig struct {
+    Transport  CryftteeTransport `json:"transport"`   // Default: "uds"
+    SocketPath string           `json:"socket_path"` // Default: /var/run/cryfttee.sock
     HTTPAddr   string           `json:"http_addr"`   // Only if transport=http/https
     TLSCert    string           `json:"tls_cert"`    // Only if transport=https
     TLSKey     string           `json:"tls_key"`     // Only if transport=https
@@ -332,7 +332,7 @@ type CryfteeConfig struct {
 
 ## Signing Services: BLS and TLS Keys
 
-Cryftee integrates with **Web3Signer** (backed by HashiCorp Vault) for key management:
+CryftTEE integrates with **Web3Signer** (backed by HashiCorp Vault) for key management:
 
 ### Key Types
 
@@ -341,7 +341,7 @@ Cryftee integrates with **Web3Signer** (backed by HashiCorp Vault) for key manag
 | **BLS** | BLS12-381 | ETH2 consensus signing (attestations, proposals, sync committees) | `/api/v1/eth2/sign/{pubkey}` |
 | **SECP256k1** | ECDSA | ETH1 execution signing, TLS certificates | `/api/v1/eth1/sign/{pubkey}` |
 
-### Cryftee Staking API Endpoints (via UDS or HTTP)
+### CryftTEE Staking API Endpoints (via UDS or HTTP)
 
 ```
 POST /v1/staking/bls/register   - Register a BLS public key
@@ -354,8 +354,8 @@ GET  /v1/staking/status         - Get signing module status and loaded keys
 ### Example: BLS Signing Flow
 
 ```go
-// Sign an attestation via cryftee (which proxies to Web3Signer)
-func (m *CryfteeManager) SignAttestation(pubkey string, attestation []byte) ([]byte, error) {
+// Sign an attestation via cryfttee (which proxies to Web3Signer)
+func (m *CryftteeManager) SignAttestation(pubkey string, attestation []byte) ([]byte, error) {
     req := SignRequest{
         PublicKey: pubkey,
         Data:      attestation,
@@ -378,8 +378,8 @@ func (m *CryfteeManager) SignAttestation(pubkey string, attestation []byte) ([]b
 ### Example: TLS Certificate Signing
 
 ```go
-// Sign a TLS CSR via cryftee
-func (m *CryfteeManager) SignTLSCertificate(pubkey string, csr []byte) ([]byte, error) {
+// Sign a TLS CSR via cryfttee
+func (m *CryftteeManager) SignTLSCertificate(pubkey string, csr []byte) ([]byte, error) {
     req := SignRequest{
         PublicKey: pubkey,
         Data:      csr,
@@ -405,7 +405,7 @@ func (m *CryfteeManager) SignTLSCertificate(pubkey string, csr []byte) ([]byte, 
 
 ### 1. Binary Hash Computation (Pre-Launch)
 
-Before spawning cryftee, compute the SHA256 hash of the binary:
+Before spawning cryfttee, compute the SHA256 hash of the binary:
 
 ```go
 import (
@@ -417,7 +417,7 @@ import (
 func computeBinaryHash(binaryPath string) (string, error) {
     data, err := os.ReadFile(binaryPath)
     if err != nil {
-        return "", fmt.Errorf("failed to read cryftee binary: %w", err)
+        return "", fmt.Errorf("failed to read cryfttee binary: %w", err)
     }
     
     hash := sha256.Sum256(data)
@@ -433,14 +433,14 @@ Compare the computed hash against expected values. This could come from:
 - A configuration file with pinned hashes
 
 ```go
-type CryfteeRelease struct {
+type CryftteeRelease struct {
     Version string `json:"version"`
     Hash    string `json:"hash"`
     // Optional: signature from Cryft Labs
     Signature string `json:"signature,omitempty"`
 }
 
-func verifyBinaryIntegrity(computedHash string, expectedReleases []CryfteeRelease, version string) error {
+func verifyBinaryIntegrity(computedHash string, expectedReleases []CryftteeRelease, version string) error {
     for _, release := range expectedReleases {
         if release.Version == version && release.Hash == computedHash {
             return nil // Hash matches expected
@@ -450,12 +450,12 @@ func verifyBinaryIntegrity(computedHash string, expectedReleases []CryfteeReleas
 }
 ```
 
-### 3. Launch Cryftee with Verified Hash
+### 3. Launch CryftTEE with Verified Hash
 
 Pass the externally-verified hash via environment variable:
 
 ```go
-func launchCryftee(binaryPath string, args []string) (*exec.Cmd, error) {
+func launchCryfttee(binaryPath string, args []string) (*exec.Cmd, error) {
     // Compute hash BEFORE launching
     hash, err := computeBinaryHash(binaryPath)
     if err != nil {
@@ -469,7 +469,7 @@ func launchCryftee(binaryPath string, args []string) (*exec.Cmd, error) {
     
     cmd := exec.Command(binaryPath, args...)
     cmd.Env = append(os.Environ(), 
-        fmt.Sprintf("CRYFTEE_VERIFIED_BINARY_HASH=%s", hash),
+        fmt.Sprintf("CRYFTTEE_VERIFIED_BINARY_HASH=%s", hash),
     )
     
     // Capture stdout/stderr, set up process group, etc.
@@ -477,10 +477,10 @@ func launchCryftee(binaryPath string, args []string) (*exec.Cmd, error) {
     cmd.Stderr = os.Stderr
     
     if err := cmd.Start(); err != nil {
-        return nil, fmt.Errorf("failed to start cryftee: %w", err)
+        return nil, fmt.Errorf("failed to start cryfttee: %w", err)
     }
     
-    log.Printf("Launched cryftee (PID %d) with verified hash: %s", cmd.Process.Pid, hash)
+    log.Printf("Launched cryfttee (PID %d) with verified hash: %s", cmd.Process.Pid, hash)
     return cmd, nil
 }
 ```
@@ -512,11 +512,11 @@ func verifyRunningBinary(pid int, expectedHash string) error {
 
 ### 5. Verify Attestation Response
 
-After cryftee starts, verify the attestation endpoint returns the correct hash:
+After cryfttee starts, verify the attestation endpoint returns the correct hash:
 
 ```go
-func verifyAttestation(cryfteeAddr string, expectedHash string) error {
-    resp, err := http.Get(fmt.Sprintf("http://%s/v1/runtime/attestation", cryfteeAddr))
+func verifyAttestation(cryftteeAddr string, expectedHash string) error {
+    resp, err := http.Get(fmt.Sprintf("http://%s/v1/runtime/attestation", cryftteeAddr))
     if err != nil {
         return err
     }
@@ -525,7 +525,7 @@ func verifyAttestation(cryfteeAddr string, expectedHash string) error {
     var attestation struct {
         CoreBinaryHash string `json:"core_binary_hash"`
         ManifestHash   string `json:"manifest_hash"`
-        CryfteeVersion string `json:"cryftee_version"`
+        CryftteeVersion string `json:"cryfttee_version"`
     }
     
     if err := json.NewDecoder(resp.Body).Decode(&attestation); err != nil {
@@ -537,8 +537,8 @@ func verifyAttestation(cryfteeAddr string, expectedHash string) error {
             expectedHash, attestation.CoreBinaryHash)
     }
     
-    log.Printf("Attestation verified: cryftee %s, binary %s", 
-        attestation.CryfteeVersion, attestation.CoreBinaryHash)
+    log.Printf("Attestation verified: cryfttee %s, binary %s", 
+        attestation.CryftteeVersion, attestation.CoreBinaryHash)
     return nil
 }
 ```
@@ -547,24 +547,24 @@ func verifyAttestation(cryfteeAddr string, expectedHash string) error {
 
 ## Integration Points
 
-### Cryftee Behavior (Already Implemented)
+### CryftTEE Behavior (Already Implemented)
 
-Cryftee handles the environment variable as follows:
+CryftTEE handles the environment variable as follows:
 
-1. **On startup**, checks for `CRYFTEE_VERIFIED_BINARY_HASH` env var
+1. **On startup**, checks for `CRYFTTEE_VERIFIED_BINARY_HASH` env var
 2. **If set**: Uses this hash directly in attestation responses (trusted)
 3. **If not set**: Falls back to self-hashing via `std::env::current_exe()` and logs a warning
 
 ```rust
-// From cryftee config/mod.rs
-if let Ok(hash) = std::env::var("CRYFTEE_VERIFIED_BINARY_HASH") {
+// From cryfttee config/mod.rs
+if let Ok(hash) = std::env::var("CRYFTTEE_VERIFIED_BINARY_HASH") {
     if !hash.is_empty() {
         info!("Using externally-verified binary hash from cryftgo");
         config.verified_binary_hash = Some(hash);
     }
 }
 if config.verified_binary_hash.is_none() {
-    warn!("No CRYFTEE_VERIFIED_BINARY_HASH set - attestation will use self-reported hash (less secure)");
+    warn!("No CRYFTTEE_VERIFIED_BINARY_HASH set - attestation will use self-reported hash (less secure)");
 }
 ```
 
@@ -579,7 +579,7 @@ Example: `sha256:a1b2c3d4e5f6...`
 ## Complete Integration Example
 
 ```go
-package cryftee
+package cryfttee
 
 import (
     "bytes"
@@ -603,63 +603,63 @@ const (
     TransportHTTPS TransportType = "https" // Optional - requires explicit config + TLS
 )
 
-type CryfteeConfig struct {
+type CryftteeConfig struct {
     BinaryPath string        `json:"binary_path"`
     Transport  TransportType `json:"transport"`    // Default: "uds"
-    SocketPath string        `json:"socket_path"`  // Default: /var/run/cryftee.sock
+    SocketPath string        `json:"socket_path"`  // Default: /var/run/cryfttee.sock
     HTTPAddr   string        `json:"http_addr"`    // Only used if transport=http/https
 }
 
-type CryfteeManager struct {
-    config       CryfteeConfig
+type CryftteeManager struct {
+    config       CryftteeConfig
     verifiedHash string
     process      *exec.Cmd
     httpClient   *http.Client
 }
 
-func NewCryfteeManager(config CryfteeConfig) *CryfteeManager {
+func NewCryftteeManager(config CryftteeConfig) *CryftteeManager {
     // Set defaults
     if config.Transport == "" {
         config.Transport = TransportUDS
     }
     if config.SocketPath == "" {
-        config.SocketPath = "/var/run/cryftee.sock"
+        config.SocketPath = "/var/run/cryfttee.sock"
     }
     
-    return &CryfteeManager{config: config}
+    return &CryftteeManager{config: config}
 }
 
-func (m *CryfteeManager) Start(args []string) error {
+func (m *CryftteeManager) Start(args []string) error {
     // Step 1: Compute binary hash BEFORE launching
     data, err := os.ReadFile(m.config.BinaryPath)
     if err != nil {
-        return fmt.Errorf("failed to read cryftee binary: %w", err)
+        return fmt.Errorf("failed to read cryfttee binary: %w", err)
     }
     m.verifiedHash = fmt.Sprintf("sha256:%x", sha256.Sum256(data))
     
     // Step 2: Build environment with verified hash and transport config
     env := append(os.Environ(),
-        fmt.Sprintf("CRYFTEE_VERIFIED_BINARY_HASH=%s", m.verifiedHash),
-        fmt.Sprintf("CRYFTEE_API_TRANSPORT=%s", m.config.Transport),
+        fmt.Sprintf("CRYFTTEE_VERIFIED_BINARY_HASH=%s", m.verifiedHash),
+        fmt.Sprintf("CRYFTTEE_API_TRANSPORT=%s", m.config.Transport),
     )
     
     if m.config.Transport == TransportUDS {
-        env = append(env, fmt.Sprintf("CRYFTEE_UDS_PATH=%s", m.config.SocketPath))
+        env = append(env, fmt.Sprintf("CRYFTTEE_UDS_PATH=%s", m.config.SocketPath))
     } else {
-        env = append(env, fmt.Sprintf("CRYFTEE_HTTP_ADDR=%s", m.config.HTTPAddr))
+        env = append(env, fmt.Sprintf("CRYFTTEE_HTTP_ADDR=%s", m.config.HTTPAddr))
     }
     
-    // Step 3: Launch cryftee
+    // Step 3: Launch cryfttee
     m.process = exec.Command(m.config.BinaryPath, args...)
     m.process.Env = env
     m.process.Stdout = os.Stdout
     m.process.Stderr = os.Stderr
     
     if err := m.process.Start(); err != nil {
-        return fmt.Errorf("failed to start cryftee: %w", err)
+        return fmt.Errorf("failed to start cryfttee: %w", err)
     }
     
-    log.Printf("Started cryftee (PID %d) with hash: %s, transport: %s", 
+    log.Printf("Started cryfttee (PID %d) with hash: %s, transport: %s", 
         m.process.Process.Pid, m.verifiedHash, m.config.Transport)
     
     // Step 4: Initialize HTTP client based on transport
@@ -668,7 +668,7 @@ func (m *CryfteeManager) Start(args []string) error {
     // Step 5: Wait for startup and verify attestation
     if err := m.waitForReady(30 * time.Second); err != nil {
         m.process.Process.Kill()
-        return fmt.Errorf("cryftee failed to start: %w", err)
+        return fmt.Errorf("cryfttee failed to start: %w", err)
     }
     
     if err := m.VerifyAttestation(); err != nil {
@@ -679,7 +679,7 @@ func (m *CryfteeManager) Start(args []string) error {
     return nil
 }
 
-func (m *CryfteeManager) initHTTPClient() {
+func (m *CryftteeManager) initHTTPClient() {
     switch m.config.Transport {
     case TransportUDS:
         // Unix Domain Socket transport (default)
@@ -699,8 +699,8 @@ func (m *CryfteeManager) initHTTPClient() {
     }
 }
 
-// callAPI makes a request to cryftee via configured transport
-func (m *CryfteeManager) callAPI(method, endpoint string, body []byte) (*http.Response, error) {
+// callAPI makes a request to cryfttee via configured transport
+func (m *CryftteeManager) callAPI(method, endpoint string, body []byte) (*http.Response, error) {
     var url string
     
     switch m.config.Transport {
@@ -729,7 +729,7 @@ func (m *CryfteeManager) callAPI(method, endpoint string, body []byte) (*http.Re
     return m.httpClient.Do(req)
 }
 
-func (m *CryfteeManager) waitForReady(timeout time.Duration) error {
+func (m *CryftteeManager) waitForReady(timeout time.Duration) error {
     deadline := time.Now().Add(timeout)
     
     for time.Now().Before(deadline) {
@@ -743,10 +743,10 @@ func (m *CryfteeManager) waitForReady(timeout time.Duration) error {
         time.Sleep(500 * time.Millisecond)
     }
     
-    return fmt.Errorf("timeout waiting for cryftee to be ready")
+    return fmt.Errorf("timeout waiting for cryfttee to be ready")
 }
 
-func (m *CryfteeManager) VerifyAttestation() error {
+func (m *CryftteeManager) VerifyAttestation() error {
     resp, err := m.callAPI("GET", "/v1/runtime/attestation", nil)
     if err != nil {
         return err
@@ -755,7 +755,7 @@ func (m *CryfteeManager) VerifyAttestation() error {
     
     var attestation struct {
         CoreBinaryHash string `json:"core_binary_hash"`
-        CryfteeVersion string `json:"cryftee_version"`
+        CryftteeVersion string `json:"cryfttee_version"`
         ManifestHash   string `json:"manifest_hash"`
     }
     
@@ -768,12 +768,12 @@ func (m *CryfteeManager) VerifyAttestation() error {
             m.verifiedHash, attestation.CoreBinaryHash)
     }
     
-    log.Printf("✓ Attestation verified: cryftee %s", attestation.CryfteeVersion)
+    log.Printf("✓ Attestation verified: cryfttee %s", attestation.CryftteeVersion)
     return nil
 }
 
 // BLS Signing (ETH2 consensus)
-func (m *CryfteeManager) SignBLS(pubkey string, data []byte, sigType string) ([]byte, error) {
+func (m *CryftteeManager) SignBLS(pubkey string, data []byte, sigType string) ([]byte, error) {
     req := map[string]interface{}{
         "pubkey": pubkey,
         "data":   data,
@@ -795,7 +795,7 @@ func (m *CryfteeManager) SignBLS(pubkey string, data []byte, sigType string) ([]
 }
 
 // TLS/SECP256k1 Signing
-func (m *CryfteeManager) SignTLS(pubkey string, data []byte) ([]byte, error) {
+func (m *CryftteeManager) SignTLS(pubkey string, data []byte) ([]byte, error) {
     req := map[string]interface{}{
         "pubkey": pubkey,
         "data":   data,
@@ -815,11 +815,11 @@ func (m *CryfteeManager) SignTLS(pubkey string, data []byte) ([]byte, error) {
     return result.Signature, nil
 }
 
-func (m *CryfteeManager) Wait() error {
+func (m *CryftteeManager) Wait() error {
     return m.process.Wait()
 }
 
-func (m *CryfteeManager) Stop() error {
+func (m *CryftteeManager) Stop() error {
     if m.process != nil && m.process.Process != nil {
         return m.process.Process.Signal(os.Interrupt)
     }
@@ -829,14 +829,14 @@ func (m *CryfteeManager) Stop() error {
 
 ---
 
-## Cryftgo ↔ Cryftee Coordination
+## Cryftgo ↔ CryftTEE Coordination
 
 ### Responsibility Split
 
 | Component | Responsibility |
 |-----------|----------------|
 | **cryftgo** | Decides WHEN to generate keys, WHICH pubkey to use, stores pubkey reference |
-| **cryftee** | Provides Web3Signer proxy, exposes available pubkeys, handles signing requests |
+| **cryfttee** | Provides Web3Signer proxy, exposes available pubkeys, handles signing requests |
 | **Web3Signer** | Generates keys, stores private keys (via Vault), performs actual signing |
 
 ```
@@ -845,10 +845,10 @@ func (m *CryfteeManager) Stop() error {
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌─────────────┐      ┌─────────────┐      ┌─────────────────────────────┐  │
-│  │   CRYFTGO   │      │   CRYFTEE   │      │   WEB3SIGNER + VAULT        │  │
+│  │   CRYFTGO   │      │   CRYFTTEE   │      │   WEB3SIGNER + VAULT        │  │
 │  │             │      │             │      │                             │  │
 │  │ • Start/stop│      │ • UDS API   │      │ • Key generation            │  │
-│  │   cryftee   │      │ • Proxy to  │      │ • Private key storage       │  │
+│  │   cryfttee   │      │ • Proxy to  │      │ • Private key storage       │  │
 │  │ • Check     │      │   Web3Signer│      │ • BLS/SECP256k1 signing     │  │
 │  │   pubkeys   │      │ • Expose    │      │ • Keystore management       │  │
 │  │ • Decide to │      │   pubkeys   │      │                             │  │
@@ -871,7 +871,7 @@ func (m *CryfteeManager) Stop() error {
 │                         KEY GENERATION FLOW                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  CRYFTGO                      CRYFTEE                      WEB3SIGNER        │
+│  CRYFTGO                      CRYFTTEE                      WEB3SIGNER        │
 │  ───────                      ───────                      ──────────        │
 │     │                            │                             │             │
 │     │ 1. GET /v1/staking/status  │                             │             │
@@ -915,7 +915,7 @@ func (m *CryfteeManager) Stop() error {
 │                           KEY USAGE FLOW (SIGNING)                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  CRYFTGO                      CRYFTEE                      WEB3SIGNER        │
+│  CRYFTGO                      CRYFTTEE                      WEB3SIGNER        │
 │  ───────                      ───────                      ──────────        │
 │     │                            │                             │             │
 │     │ [Validator needs to sign attestation]                    │             │
@@ -954,7 +954,7 @@ func (m *CryfteeManager) Stop() error {
 
 ### API Contract
 
-#### Cryftee Exposes (via UDS `/var/run/cryftee.sock`)
+#### CryftTEE Exposes (via UDS `/var/run/cryfttee.sock`)
 
 ```yaml
 # Status & Key Discovery
@@ -1001,19 +1001,19 @@ Response: {signature: "0x..."}
    - `bls_pubkeys`/`tls_pubkeys` being empty in status response
    - Mismatch between saved pubkey and available pubkeys
 
-2. **Cryftee is stateless** - It just proxies to Web3Signer:
+2. **CryftTEE is stateless** - It just proxies to Web3Signer:
    - Doesn't decide when to generate keys
    - Doesn't store pubkey preferences
    - Exposes what Web3Signer has
 
 3. **Web3Signer owns the keys** - Private keys never leave Web3Signer/Vault:
-   - Cryftgo and cryftee only see public keys
+   - Cryftgo and cryfttee only see public keys
    - Signing happens inside Web3Signer
 
 4. **Pubkey is the coordination handle** - All signing requests include the pubkey:
    - Cryftgo remembers which pubkey is "ours"
    - Passes pubkey in every sign request
-   - Cryftee/Web3Signer uses pubkey to find the right key
+   - CryftTEE/Web3Signer uses pubkey to find the right key
 
 ---
 
@@ -1025,10 +1025,10 @@ All attestation, key generation, and identity setup happens during **node initia
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         NODE INITIALIZATION SEQUENCE                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  1. Check --cryftee-signer flag (skip TEE if disabled)                      │
-│  2. Compute cryftee binary hash                                              │
-│  3. Launch cryftee with CRYFTEE_VERIFIED_BINARY_HASH                        │
-│  4. Wait for cryftee ready (UDS socket available)                           │
+│  1. Check --cryfttee-signer flag (skip TEE if disabled)                      │
+│  2. Compute cryfttee binary hash                                              │
+│  3. Launch cryfttee with CRYFTTEE_VERIFIED_BINARY_HASH                        │
+│  4. Wait for cryfttee ready (UDS socket available)                           │
 │  5. Verify attestation response matches computed hash                        │
 │  6. Verify Web3Signer module is connected and ready                         │
 │  7. Check Web3Signer for existing BLS key → generate if not found           │
@@ -1040,14 +1040,14 @@ All attestation, key generation, and identity setup happens during **node initia
 
 ### Key Persistence Model
 
-**Keys are persisted in Web3Signer/Vault. Cryftee exposes available public keys via `/v1/staking/status`.**
+**Keys are persisted in Web3Signer/Vault. CryftTEE exposes available public keys via `/v1/staking/status`.**
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           KEY DISCOVERY FLOW                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   cryftgo                  cryftee                   Web3Signer/Vault        │
+│   cryftgo                  cryfttee                   Web3Signer/Vault        │
 │   ───────                  ───────                   ─────────────────       │
 │      │                        │                            │                 │
 │      │  GET /v1/staking/status│                            │                 │
@@ -1086,12 +1086,12 @@ All attestation, key generation, and identity setup happens during **node initia
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Cryftee `/v1/staking/status` Response
+### CryftTEE `/v1/staking/status` Response
 
-Cryftee queries Web3Signer and exposes the available public keys:
+CryftTEE queries Web3Signer and exposes the available public keys:
 
 ```go
-// Cryftee response from GET /v1/staking/status
+// CryftTEE response from GET /v1/staking/status
 type StakingStatus struct {
     Ready         bool     `json:"ready"`
     
@@ -1113,7 +1113,7 @@ type StakingStatus struct {
 
 ```go
 // InitKeys checks Web3Signer for existing keys, generates if not found
-func (m *CryfteeManager) InitKeys(status *StakingStatus) (*BLSKeyInfo, *TLSKeyInfo, error) {
+func (m *CryftteeManager) InitKeys(status *StakingStatus) (*BLSKeyInfo, *TLSKeyInfo, error) {
     var blsKey *BLSKeyInfo
     var tlsKey *TLSKeyInfo
     var err error
@@ -1210,12 +1210,12 @@ func (m *CryfteeManager) InitKeys(status *StakingStatus) (*BLSKeyInfo, *TLSKeyIn
 // Local pubkey storage (just the public key, not secrets)
 const KeyDataDir = "/var/lib/cryftgo/staking"
 
-func (m *CryfteeManager) saveBLSPubkey(pubkey string) error {
+func (m *CryftteeManager) saveBLSPubkey(pubkey string) error {
     os.MkdirAll(KeyDataDir, 0700)
     return os.WriteFile(filepath.Join(KeyDataDir, "bls_pubkey"), []byte(pubkey), 0600)
 }
 
-func (m *CryfteeManager) loadSavedBLSPubkey() string {
+func (m *CryftteeManager) loadSavedBLSPubkey() string {
     data, err := os.ReadFile(filepath.Join(KeyDataDir, "bls_pubkey"))
     if err != nil {
         return ""
@@ -1223,12 +1223,12 @@ func (m *CryfteeManager) loadSavedBLSPubkey() string {
     return strings.TrimSpace(string(data))
 }
 
-func (m *CryfteeManager) saveTLSPubkey(pubkey string) error {
+func (m *CryftteeManager) saveTLSPubkey(pubkey string) error {
     os.MkdirAll(KeyDataDir, 0700)
     return os.WriteFile(filepath.Join(KeyDataDir, "tls_pubkey"), []byte(pubkey), 0600)
 }
 
-func (m *CryfteeManager) loadSavedTLSPubkey() string {
+func (m *CryftteeManager) loadSavedTLSPubkey() string {
     data, err := os.ReadFile(filepath.Join(KeyDataDir, "tls_pubkey"))
     if err != nil {
         return ""
@@ -1251,19 +1251,19 @@ func (m *CryfteeManager) loadSavedTLSPubkey() string {
 
 #### Pre-flight: Verify Web3Signer Module is Enabled
 
-Before generating keys, cryftgo must verify that cryftee has the Web3Signer module loaded and configured:
+Before generating keys, cryftgo must verify that cryfttee has the Web3Signer module loaded and configured:
 
 ```go
 // CryftgoConfig holds cryftgo node configuration
 type CryftgoConfig struct {
     // ... other config
-    EnableCryfteeSigner bool   `json:"enable_cryftee_signer"` // --cryftee-signer flag
-    CryfteeSocketPath   string `json:"cryftee_socket_path"`
+    EnableCryftteeSigner bool   `json:"enable_cryfttee_signer"` // --cryfttee-signer flag
+    CryftteeSocketPath   string `json:"cryfttee_socket_path"`
     Web3SignerURL       string `json:"web3signer_url"`        // e.g., http://localhost:9000
 }
 
-// VerifySignerReady checks that cryftee has Web3Signer module enabled and connected
-func (m *CryfteeManager) VerifySignerReady() (*StakingStatus, error) {
+// VerifySignerReady checks that cryfttee has Web3Signer module enabled and connected
+func (m *CryftteeManager) VerifySignerReady() (*StakingStatus, error) {
     resp, err := m.callAPI("GET", "/v1/staking/status", nil)
     if err != nil {
         return nil, fmt.Errorf("failed to get staking status: %w", err)
@@ -1313,29 +1313,29 @@ func (m *CryfteeManager) VerifySignerReady() (*StakingStatus, error) {
 
 ```go
 // InitializeNode performs the complete node initialization sequence
-// Cryftgo orchestrates everything - cryftee just proxies to Web3Signer
-func (m *CryfteeManager) InitializeNode(config *CryftgoConfig) (*NodeIdentity, error) {
+// Cryftgo orchestrates everything - cryfttee just proxies to Web3Signer
+func (m *CryftteeManager) InitializeNode(config *CryftgoConfig) (*NodeIdentity, error) {
     log.Println("=== Starting Node Initialization ===")
     
     // ─────────────────────────────────────────────────────────────────────
-    // Step 1: Check if cryftee signer is enabled (cryftgo decision)
+    // Step 1: Check if cryfttee signer is enabled (cryftgo decision)
     // ─────────────────────────────────────────────────────────────────────
-    if !config.EnableCryfteeSigner {
-        log.Println("Cryftee signer disabled (--cryftee-signer=false)")
+    if !config.EnableCryftteeSigner {
+        log.Println("CryftTEE signer disabled (--cryfttee-signer=false)")
         return nil, nil // Node will use local keystore instead
     }
     
     // ─────────────────────────────────────────────────────────────────────
-    // Step 2-3: Start cryftee with attestation verification
+    // Step 2-3: Start cryfttee with attestation verification
     // ─────────────────────────────────────────────────────────────────────
-    log.Println("[1/6] Starting cryftee with binary attestation...")
+    log.Println("[1/6] Starting cryfttee with binary attestation...")
     if err := m.Start(config); err != nil {
-        return nil, fmt.Errorf("failed to start cryftee: %w", err)
+        return nil, fmt.Errorf("failed to start cryfttee: %w", err)
     }
     
     if err := m.waitForReady(30 * time.Second); err != nil {
         m.Stop()
-        return nil, fmt.Errorf("cryftee failed to start: %w", err)
+        return nil, fmt.Errorf("cryfttee failed to start: %w", err)
     }
     
     if err := m.VerifyAttestation(); err != nil {
@@ -1345,7 +1345,7 @@ func (m *CryfteeManager) InitializeNode(config *CryftgoConfig) (*NodeIdentity, e
     log.Printf("[2/6] ✓ Attestation verified: %s", m.verifiedHash)
     
     // ─────────────────────────────────────────────────────────────────────
-    // Step 4: Query cryftee for available pubkeys from Web3Signer
+    // Step 4: Query cryfttee for available pubkeys from Web3Signer
     // ─────────────────────────────────────────────────────────────────────
     log.Println("[3/6] Querying available keys from Web3Signer...")
     status, err := m.VerifySignerReady()
@@ -1360,7 +1360,7 @@ func (m *CryfteeManager) InitializeNode(config *CryftgoConfig) (*NodeIdentity, e
     // ─────────────────────────────────────────────────────────────────────
     // Step 5: Cryftgo decides whether to generate or use existing keys
     // ─────────────────────────────────────────────────────────────────────
-    log.Println("[4/6] Initializing keys (cryftgo decides, cryftee executes)...")
+    log.Println("[4/6] Initializing keys (cryftgo decides, cryfttee executes)...")
     blsKey, tlsKey, err := m.InitKeys(status)
     if err != nil {
         m.Stop()
@@ -1393,14 +1393,14 @@ func (m *CryfteeManager) InitializeNode(config *CryftgoConfig) (*NodeIdentity, e
     log.Printf("  Node ID:  %s", identity.NodeID)
     log.Printf("  BLS Key:  %s", identity.BLSKey.PublicKey)
     log.Printf("  TLS Key:  %s", identity.TLSKey.PublicKey)
-    log.Printf("  Cryftee:  %s", attestation.CryfteeVersion)
+    log.Printf("  CryftTEE:  %s", attestation.CryftteeVersion)
     
     return identity, nil
 }
 
 // SignAttestation - cryftgo calls this during validation duties
-// Cryftgo provides the pubkey, cryftee proxies to Web3Signer
-func (m *CryfteeManager) SignAttestation(blsPubkey string, attestation []byte) ([]byte, error) {
+// Cryftgo provides the pubkey, cryfttee proxies to Web3Signer
+func (m *CryftteeManager) SignAttestation(blsPubkey string, attestation []byte) ([]byte, error) {
     req := map[string]interface{}{
         "pubkey": blsPubkey,  // Cryftgo specifies which key to use
         "data":   attestation,
@@ -1427,7 +1427,7 @@ func (m *CryfteeManager) SignAttestation(blsPubkey string, attestation []byte) (
 }
 
 // SignBlock - cryftgo calls this when proposing a block
-func (m *CryfteeManager) SignBlock(blsPubkey string, blockRoot []byte) ([]byte, error) {
+func (m *CryftteeManager) SignBlock(blsPubkey string, blockRoot []byte) ([]byte, error) {
     req := map[string]interface{}{
         "pubkey": blsPubkey,
         "data":   blockRoot,
@@ -1454,36 +1454,36 @@ func (m *CryfteeManager) SignBlock(blsPubkey string, blockRoot []byte) ([]byte, 
 ```go
 // In cryftgo cmd/flags.go or similar
 var (
-    CryfteeSignerFlag = cli.BoolFlag{
-        Name:   "cryftee-signer",
-        Usage:  "Enable cryftee TEE signer for BLS/TLS key management (requires Web3Signer)",
-        EnvVar: "CRYFTGO_CRYFTEE_SIGNER",
+    CryftteeSignerFlag = cli.BoolFlag{
+        Name:   "cryfttee-signer",
+        Usage:  "Enable cryfttee TEE signer for BLS/TLS key management (requires Web3Signer)",
+        EnvVar: "CRYFTGO_CRYFTTEE_SIGNER",
     }
     
-    CryfteeSocketFlag = cli.StringFlag{
-        Name:   "cryftee-socket",
-        Usage:  "Path to cryftee UDS socket",
-        Value:  "/var/run/cryftee.sock",
-        EnvVar: "CRYFTGO_CRYFTEE_SOCKET",
+    CryftteeSocketFlag = cli.StringFlag{
+        Name:   "cryfttee-socket",
+        Usage:  "Path to cryfttee UDS socket",
+        Value:  "/var/run/cryfttee.sock",
+        EnvVar: "CRYFTGO_CRYFTTEE_SOCKET",
     }
     
-    CryfteeBinaryFlag = cli.StringFlag{
-        Name:   "cryftee-binary",
-        Usage:  "Path to cryftee binary",
-        Value:  "/usr/local/bin/cryftee",
-        EnvVar: "CRYFTGO_CRYFTEE_BINARY",
+    CryftteeBinaryFlag = cli.StringFlag{
+        Name:   "cryfttee-binary",
+        Usage:  "Path to cryfttee binary",
+        Value:  "/usr/local/bin/cryfttee",
+        EnvVar: "CRYFTGO_CRYFTTEE_BINARY",
     }
     
     Web3SignerURLFlag = cli.StringFlag{
         Name:   "web3signer-url",
-        Usage:  "URL of Web3Signer instance (for cryftee)",
+        Usage:  "URL of Web3Signer instance (for cryfttee)",
         Value:  "http://localhost:9000",
         EnvVar: "CRYFTGO_WEB3SIGNER_URL",
     }
 )
 
 // Usage:
-// cryftgo node --cryftee-signer --web3signer-url=http://keyvault:9000
+// cryftgo node --cryfttee-signer --web3signer-url=http://keyvault:9000
 ```
 
 #### BLS Key Generation (ETH2 consensus identity)
@@ -1498,8 +1498,8 @@ type BLSKeyInfo struct {
     CreatedAt  int64  `json:"created_at"`
 }
 
-func (m *CryfteeManager) generateBLSKey() (*BLSKeyInfo, error) {
-    // Generate new BLS key via cryftee -> Web3Signer -> Vault
+func (m *CryftteeManager) generateBLSKey() (*BLSKeyInfo, error) {
+    // Generate new BLS key via cryfttee -> Web3Signer -> Vault
     req := map[string]interface{}{
         "key_type": "BLS",
         "purpose":  "validator",
@@ -1558,8 +1558,8 @@ type TLSKeyInfo struct {
     CreatedAt   int64  `json:"created_at"`
 }
 
-func (m *CryfteeManager) generateTLSKey() (*TLSKeyInfo, error) {
-    // Generate new TLS key via cryftee -> Web3Signer -> Vault
+func (m *CryftteeManager) generateTLSKey() (*TLSKeyInfo, error) {
+    // Generate new TLS key via cryfttee -> Web3Signer -> Vault
     req := map[string]interface{}{
         "key_type": "SECP256K1",
         "purpose":  "node_tls",
@@ -1632,15 +1632,15 @@ type NodeIdentity struct {
     InitializedAt int64        `json:"initialized_at"`
 }
 
-// Attestation response from cryftee
+// Attestation response from cryfttee
 type Attestation struct {
     CoreBinaryHash string   `json:"core_binary_hash"`
-    CryfteeVersion string   `json:"cryftee_version"`
+    CryftteeVersion string   `json:"cryfttee_version"`
     ManifestHash   string   `json:"manifest_hash"`
     LoadedModules  []string `json:"loaded_modules"`
 }
 
-func (m *CryfteeManager) GetAttestation() (*Attestation, error) {
+func (m *CryftteeManager) GetAttestation() (*Attestation, error) {
     resp, err := m.callAPI("GET", "/v1/runtime/attestation", nil)
     if err != nil {
         return nil, err
@@ -1664,12 +1664,12 @@ const (
     KeyDataDir = "/var/lib/cryftgo/keys"
 )
 
-func (m *CryfteeManager) saveBLSKeyInfo(key *BLSKeyInfo) error {
+func (m *CryftteeManager) saveBLSKeyInfo(key *BLSKeyInfo) error {
     data, _ := json.MarshalIndent(key, "", "  ")
     return os.WriteFile(filepath.Join(KeyDataDir, "bls_key.json"), data, 0600)
 }
 
-func (m *CryfteeManager) loadExistingBLSKey() (*BLSKeyInfo, error) {
+func (m *CryftteeManager) loadExistingBLSKey() (*BLSKeyInfo, error) {
     data, err := os.ReadFile(filepath.Join(KeyDataDir, "bls_key.json"))
     if err != nil {
         return nil, err
@@ -1700,12 +1700,12 @@ func (m *CryfteeManager) loadExistingBLSKey() (*BLSKeyInfo, error) {
     return nil, fmt.Errorf("BLS key %s no longer exists in Web3Signer", key.PublicKey)
 }
 
-func (m *CryfteeManager) saveTLSKeyInfo(key *TLSKeyInfo) error {
+func (m *CryftteeManager) saveTLSKeyInfo(key *TLSKeyInfo) error {
     data, _ := json.MarshalIndent(key, "", "  ")
     return os.WriteFile(filepath.Join(KeyDataDir, "tls_key.json"), data, 0600)
 }
 
-func (m *CryfteeManager) loadExistingTLSKey() (*TLSKeyInfo, error) {
+func (m *CryftteeManager) loadExistingTLSKey() (*TLSKeyInfo, error) {
     data, err := os.ReadFile(filepath.Join(KeyDataDir, "tls_key.json"))
     if err != nil {
         return nil, err
@@ -1726,22 +1726,22 @@ func main() {
     // CONFIGURATION (from CLI flags)
     // ═══════════════════════════════════════════════════════════════════════
     config := &CryftgoConfig{
-        EnableCryfteeSigner: true,                        // --cryftee-signer
-        CryfteeSocketPath:   "/var/run/cryftee.sock",     // --cryftee-socket
+        EnableCryftteeSigner: true,                        // --cryfttee-signer
+        CryftteeSocketPath:   "/var/run/cryfttee.sock",     // --cryfttee-socket
         Web3SignerURL:       "http://keyvault:9000",      // --web3signer-url
     }
     
-    cryfteeConfig := CryfteeConfig{
-        BinaryPath: "/usr/local/bin/cryftee",             // --cryftee-binary
+    cryftteeConfig := CryftteeConfig{
+        BinaryPath: "/usr/local/bin/cryfttee",             // --cryfttee-binary
         Transport:  TransportUDS,
-        SocketPath: config.CryfteeSocketPath,
+        SocketPath: config.CryftteeSocketPath,
     }
     
-    manager := NewCryfteeManager(cryfteeConfig)
+    manager := NewCryftteeManager(cryftteeConfig)
     
     // ═══════════════════════════════════════════════════════════════════════
     // INITIALIZATION (happens once at node startup)
-    // Cryftgo orchestrates: start cryftee → check keys → generate if needed
+    // Cryftgo orchestrates: start cryfttee → check keys → generate if needed
     // ═══════════════════════════════════════════════════════════════════════
     identity, err := manager.InitializeNode(config)
     if err != nil {
@@ -1749,7 +1749,7 @@ func main() {
     }
     
     if identity == nil {
-        log.Println("Running without cryftee signer (using local keystore)")
+        log.Println("Running without cryfttee signer (using local keystore)")
         return
     }
     
@@ -1757,7 +1757,7 @@ func main() {
     
     // ═══════════════════════════════════════════════════════════════════════
     // RUNTIME SIGNING (happens during validator duties)
-    // Cryftgo provides pubkey → cryftee proxies to Web3Signer → returns sig
+    // Cryftgo provides pubkey → cryfttee proxies to Web3Signer → returns sig
     // ═══════════════════════════════════════════════════════════════════════
     
     // Example: Sign an attestation
@@ -1784,7 +1784,7 @@ func main() {
     // KEY COORDINATION SUMMARY:
     // - identity.BLSKey.PublicKey is saved locally by cryftgo
     // - Every sign request includes this pubkey
-    // - Cryftee doesn't store preferences, just proxies with the given pubkey
+    // - CryftTEE doesn't store preferences, just proxies with the given pubkey
     // - Web3Signer looks up the private key by pubkey and signs
     // ═══════════════════════════════════════════════════════════════════════
     
@@ -1799,27 +1799,27 @@ func main() {
 
 ### ⚠️ Connection Defaults (MUST Match)
 
-| Setting | Cryftgo Default | Cryftee Default | Must Match |
+| Setting | Cryftgo Default | CryftTEE Default | Must Match |
 |---------|-----------------|-----------------|------------|
 | Transport | `uds` | `uds` | ✓ |
-| Socket Path | `/var/run/cryftee.sock` | `/var/run/cryftee.sock` | ✓ |
+| Socket Path | `/var/run/cryfttee.sock` | `/var/run/cryfttee.sock` | ✓ |
 | HTTP Address | `127.0.0.1:8787` | `127.0.0.1:8787` | ✓ |
 | Web3Signer URL | `http://localhost:9000` | `http://localhost:9000` | ✓ |
 
 ### Cryftgo CLI Flags
-- `--cryftee-signer` - Enable cryftee TEE signer (default: false)
-- `--cryftee-transport` - Transport type: `uds` (default) or `http`
-- `--cryftee-socket` - UDS socket path (default: `/var/run/cryftee.sock`)
-- `--cryftee-http-addr` - HTTP address (default: `127.0.0.1:8787`, only if transport=http)
-- `--cryftee-binary` - Path to cryftee binary (default: `/usr/local/bin/cryftee`)
+- `--cryfttee-signer` - Enable cryfttee TEE signer (default: false)
+- `--cryfttee-transport` - Transport type: `uds` (default) or `http`
+- `--cryfttee-socket` - UDS socket path (default: `/var/run/cryfttee.sock`)
+- `--cryfttee-http-addr` - HTTP address (default: `127.0.0.1:8787`, only if transport=http)
+- `--cryfttee-binary` - Path to cryfttee binary (default: `/usr/local/bin/cryfttee`)
 - `--web3signer-url` - Web3Signer URL (default: `http://localhost:9000`)
 
 ### Node Initialization (Single Atomic Sequence)
-- [ ] Check `--cryftee-signer` flag; skip if disabled (use local keystore)
-- [ ] Compute SHA256 of cryftee binary before launching
-- [ ] Set `CRYFTEE_VERIFIED_BINARY_HASH=sha256:<hex>` environment variable
-- [ ] Launch cryftee with `--web3signer-url` argument
-- [ ] Wait for cryftee UDS socket to become available
+- [ ] Check `--cryfttee-signer` flag; skip if disabled (use local keystore)
+- [ ] Compute SHA256 of cryfttee binary before launching
+- [ ] Set `CRYFTTEE_VERIFIED_BINARY_HASH=sha256:<hex>` environment variable
+- [ ] Launch cryfttee with `--web3signer-url` argument
+- [ ] Wait for cryfttee UDS socket to become available
 - [ ] Verify `/v1/runtime/attestation` returns matching `core_binary_hash`
 - [ ] Call `/v1/staking/status` to get available pubkeys from Web3Signer
 - [ ] **Key Decision Logic**:
@@ -1849,7 +1849,7 @@ func main() {
 
 ## Security Notes
 
-1. **Why this matters**: A malicious cryftee binary could fake its own hash. By having cryftgo compute the hash externally, we establish a chain of trust.
+1. **Why this matters**: A malicious cryfttee binary could fake its own hash. By having cryftgo compute the hash externally, we establish a chain of trust.
 
 2. **Why consensus makes this mostly moot for validators**: The blockchain consensus verifies all outputs. A malicious signer would be detected and slashed. This attestation is primarily for:
    - Compliance/audit requirements

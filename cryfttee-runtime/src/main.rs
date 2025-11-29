@@ -1,6 +1,6 @@
-//! Cryftee Runtime - TEE-style sidecar for WASM modules
+//! CryftTEE Runtime - TEE-style sidecar for WASM modules
 //!
-//! This is the main entry point for the cryftee binary. It:
+//! This is the main entry point for the cryfttee binary. It:
 //! - Parses configuration from environment and CLI
 //! - Initializes the module registry and loads WASM modules
 //! - Starts API listeners (UDS and/or HTTPS)
@@ -14,11 +14,11 @@ use clap::Parser;
 use tokio::sync::RwLock;
 use tracing::{info, error, warn};
 
-use cryftee_runtime::{Args, CryfteeConfig, ModuleRegistry, RuntimeState, CRYFTEE_VERSION};
-use cryftee_runtime::http;
+use cryfttee_runtime::{Args, CryftteeConfig, ModuleRegistry, RuntimeState, CRYFTTEE_VERSION};
+use cryfttee_runtime::http;
 
 #[cfg(unix)]
-use cryftee_runtime::uds;
+use cryfttee_runtime::uds;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,10 +28,10 @@ async fn main() -> Result<()> {
     // Initialize logging
     init_logging(args.verbose);
 
-    info!("Starting cryftee v{}", CRYFTEE_VERSION);
+    info!("Starting cryfttee v{}", CRYFTTEE_VERSION);
 
     // Load configuration
-    let config = CryfteeConfig::load(&args)?;
+    let config = CryftteeConfig::load(&args)?;
     info!("Configuration loaded successfully");
 
     // Initialize runtime state
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    info!("Cryftee is ready");
+    info!("CryftTEE is ready");
 
     // Wait for servers
     ui_server.await?;

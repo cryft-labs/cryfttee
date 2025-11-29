@@ -410,8 +410,8 @@
 
   <script>
     // ========== State Management ==========
-    const STATE_KEY = 'cryftee_llm_state';
-    const PROFILES_KEY = 'cryftee_llm_profiles';
+    const STATE_KEY = 'cryfttee_llm_state';
+    const PROFILES_KEY = 'cryfttee_llm_profiles';
     const MAX_HISTORY_TOKENS = 8000;
     
     let state = {
@@ -529,7 +529,7 @@
     }
     
     function buildSystemPrompt() {
-      let prompt = `You are Cryftee Assistant, an AI helper for the Cryftee TEE-style sidecar runtime. You help users understand and manage WASM modules, runtime configuration, and system status.\n\n`;
+      let prompt = `You are CryftTEE Assistant, an AI helper for the CryftTEE TEE-style sidecar runtime. You help users understand and manage WASM modules, runtime configuration, and system status.\n\n`;
       
       if (state.context) {
         prompt += `## Current Runtime Context\n\n`;
@@ -865,7 +865,7 @@
       }
       
       return {
-        content: `I'm the Cryftee Assistant. I can help you with:\n\n` +
+        content: `I'm the CryftTEE Assistant. I can help you with:\n\n` +
           `- **Runtime status** - Ask "What's the status?"\n` +
           `- **Module management** - Ask "Show me the modules"\n` +
           `- **Configuration help** - Ask about specific settings\n\n` +

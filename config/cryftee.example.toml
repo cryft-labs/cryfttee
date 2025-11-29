@@ -1,14 +1,14 @@
-# config/cryftee.example.toml
+# config/cryfttee.example.toml
 #
-# Example configuration file for Cryftee. Operators can copy this to
-# /etc/cryftee/cryftee.toml or similar and override via env vars.
+# Example configuration file for CryftTEE. Operators can copy this to
+# /etc/cryfttee/cryfttee.toml or similar and override via env vars.
 
 [core]
-# Human-readable name for this Cryftee instance (for logs & UI).
-instance_name = "cryftee-01"
+# Human-readable name for this CryftTEE instance (for logs & UI).
+instance_name = "cryfttee-01"
 
-# Semantic version enforced by this build (should match CRYFTEE_VERSION in code).
-cryftee_version = "0.4.0"
+# Semantic version enforced by this build (should match CRYFTTEE_VERSION in code).
+cryfttee_version = "0.4.0"
 
 # Where to look for modules and global manifest.json.
 module_dir      = "modules"
@@ -24,7 +24,7 @@ trust_config    = "config/trust.toml"
 transport   = "uds"
 
 # UDS path used when transport = "uds".
-uds_path    = "/var/run/cryftee.sock"
+uds_path    = "/var/run/cryfttee.sock"
 
 # Bind address for HTTPS and kiosk UI (if HTTPS is enabled for API).
 http_addr   = "0.0.0.0:8443"
@@ -34,8 +34,8 @@ base_path   = "/v1"
 
 [tls]
 # Paths to TLS cert and key for HTTPS mode. Ignored when transport = "uds".
-cert_path = "config/cryftee.cert.pem"
-key_path  = "config/cryftee.key.pem"
+cert_path = "config/cryfttee.cert.pem"
+key_path  = "config/cryfttee.key.pem"
 
 [ui]
 # Kiosk UI listen address (port 3232 by default).

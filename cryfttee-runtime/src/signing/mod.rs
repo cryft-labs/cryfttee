@@ -37,8 +37,8 @@ pub struct SignatureManifest {
     pub module_json_hash: String,
     /// Publisher identifier (must match trust.toml)
     pub publisher_id: String,
-    /// Minimum Cryftee version required
-    pub min_cryftee_version: String,
+    /// Minimum CryftTEE version required
+    pub min_cryfttee_version: String,
     /// Module capabilities
     pub capabilities: Vec<String>,
     /// Default role assignments
@@ -147,7 +147,7 @@ impl SignatureManifest {
         wasm_hash: String,
         module_json_hash: String,
         publisher_id: String,
-        min_cryftee_version: String,
+        min_cryfttee_version: String,
         capabilities: Vec<String>,
         default_for: HashMap<String, bool>,
     ) -> Self {
@@ -158,7 +158,7 @@ impl SignatureManifest {
             wasm_hash,
             module_json_hash,
             publisher_id,
-            min_cryftee_version,
+            min_cryfttee_version,
             capabilities,
             default_for,
             gui_hash: None,

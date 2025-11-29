@@ -4,19 +4,19 @@ use anyhow::{Result, anyhow};
 use tracing::{info, debug};
 use wasmtime::{Engine, Module, Store, Linker};
 
-use crate::config::CryfteeConfig;
+use crate::config::CryftteeConfig;
 use crate::storage::ManifestEntry;
 use crate::wasm_api::WasmModule;
 
 /// Module loader - handles WASM loading and instantiation
 pub struct ModuleLoader {
-    config: CryfteeConfig,
+    config: CryftteeConfig,
     engine: Engine,
 }
 
 impl ModuleLoader {
     /// Create a new module loader
-    pub fn new(config: CryfteeConfig) -> Self {
+    pub fn new(config: CryftteeConfig) -> Self {
         let engine = Engine::default();
         Self { config, engine }
     }

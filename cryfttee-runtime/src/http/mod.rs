@@ -23,13 +23,13 @@ use tokio_rustls::TlsAcceptor;
 use anyhow::{Result, Context};
 use tracing::info;
 
-use crate::config::CryfteeConfig;
+use crate::config::CryftteeConfig;
 use crate::runtime::{ModuleRegistry, RuntimeState};
 
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
-    pub config: CryfteeConfig,
+    pub config: CryftteeConfig,
     pub registry: Arc<RwLock<ModuleRegistry>>,
     pub runtime_state: Arc<RwLock<RuntimeState>>,
 }

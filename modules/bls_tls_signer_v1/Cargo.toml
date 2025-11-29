@@ -3,7 +3,7 @@ name = "bls_tls_signer"
 version = "1.0.0"
 edition = "2021"
 authors = ["Cryft Labs"]
-description = "BLS/TLS signing WASM module for Cryftee"
+description = "BLS/TLS signing WASM module for CryftTEE"
 
 [lib]
 crate-type = ["cdylib"]

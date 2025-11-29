@@ -1,10 +1,10 @@
-# Cryftee
+# CryftTEE
 
 A Rust-based TEE-style sidecar for WASM module management, designed to integrate with `cryftgo` and Web3Signer.
 
 ## Overview
 
-Cryftee is a stateless runtime that:
+CryftTEE is a stateless runtime that:
 - Loads and manages signed WASM modules from a manifest
 - Provides BLS/TLS staking key operations via modular plugins
 - Exposes a versioned API over UDS (Unix Domain Socket) or HTTPS
@@ -15,7 +15,7 @@ Cryftee is a stateless runtime that:
 ## Architecture
 
 ```
-cryftee-runtime/           # Rust TEE runtime (v0.4.0)
+cryfttee-runtime/           # Rust TEE runtime (v0.4.0)
 ├── src/
 │   ├── main.rs            # Entry point, server bootstrap
 │   ├── lib.rs             # Core exports
@@ -51,7 +51,7 @@ ui/                        # Kiosk web interface
 └── styles.css
 
 config/                    # Configuration examples
-├── cryftee.example.toml
+├── cryfttee.example.toml
 └── trust.toml
 
 scripts/                   # Deployment scripts
@@ -83,7 +83,7 @@ All modules include a web GUI accessible from the kiosk interface.
 ### Build
 
 ```bash
-cd cryftee-runtime
+cd cryfttee-runtime
 cargo build --release
 ```
 
@@ -105,13 +105,13 @@ cargo build --target wasm32-unknown-unknown --release
 
 ```bash
 # With default settings (UDS transport)
-./target/release/cryftee
+./target/release/cryfttee
 
 # With custom module directory
-./target/release/cryftee --module-dir ./modules
+./target/release/cryfttee --module-dir ./modules
 
 # With HTTPS transport
-./target/release/cryftee \
+./target/release/cryfttee \
   --api-transport https \
   --tls-cert /path/to/cert.pem \
   --tls-key /path/to/key.pem
@@ -121,15 +121,15 @@ cargo build --target wasm32-unknown-unknown --release
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CRYFTEE_MODULE_DIR` | `./modules` | Module directory path |
-| `CRYFTEE_MANIFEST_PATH` | `{module_dir}/manifest.json` | Manifest file path |
-| `CRYFTEE_UI_DIR` | `./ui` | UI static assets path |
-| `CRYFTEE_TRUST_CONFIG` | - | Trust configuration path |
-| `CRYFTEE_API_TRANSPORT` | `uds` | API transport: `uds` or `https` |
-| `CRYFTEE_UDS_PATH` | `/var/run/cryftee.sock` | UDS socket path |
-| `CRYFTEE_HTTP_ADDR` | `0.0.0.0:3232` | HTTP bind address |
-| `CRYFTEE_TLS_CERT` | - | TLS certificate path |
-| `CRYFTEE_TLS_KEY` | - | TLS private key path |
+| `CRYFTTEE_MODULE_DIR` | `./modules` | Module directory path |
+| `CRYFTTEE_MANIFEST_PATH` | `{module_dir}/manifest.json` | Manifest file path |
+| `CRYFTTEE_UI_DIR` | `./ui` | UI static assets path |
+| `CRYFTTEE_TRUST_CONFIG` | - | Trust configuration path |
+| `CRYFTTEE_API_TRANSPORT` | `uds` | API transport: `uds` or `https` |
+| `CRYFTTEE_UDS_PATH` | `/var/run/cryfttee.sock` | UDS socket path |
+| `CRYFTTEE_HTTP_ADDR` | `0.0.0.0:3232` | HTTP bind address |
+| `CRYFTTEE_TLS_CERT` | - | TLS certificate path |
+| `CRYFTTEE_TLS_KEY` | - | TLS private key path |
 
 ## API Endpoints
 
@@ -192,7 +192,7 @@ Response:
       "dir": "bls_tls_signer_v1",
       "file": "module.wasm",
       "version": "1.0.0",
-      "minCryfteeVersion": "0.4.0",
+      "minCryftteeVersion": "0.4.0",
       "description": "BLS + TLS signing module",
       "capabilities": ["bls_register", "bls_sign", "tls_register", "tls_sign"],
       "defaultFor": { "bls": true, "tls": true },
@@ -214,7 +214,7 @@ Response:
 | `dir` | Yes | Directory name under `modules/` |
 | `file` | Yes | WASM filename (typically `module.wasm`) |
 | `version` | Yes | Semantic version string |
-| `minCryfteeVersion` | Yes | Minimum compatible runtime version |
+| `minCryftteeVersion` | Yes | Minimum compatible runtime version |
 | `description` | Yes | Human-readable description |
 | `capabilities` | Yes | List of operations the module provides |
 | `defaultFor` | Yes | Which operations this module handles by default |
@@ -249,7 +249,7 @@ Modules can optionally provide a web GUI that renders as a tab in the kiosk inte
 
 - **Stateless**: No secrets stored on disk; relies on Web3Signer
 - **Signed Modules**: All modules must be signed by trusted publishers
-- **Version Enforcement**: `minCryfteeVersion` prevents incompatible loads
+- **Version Enforcement**: `minCryftteeVersion` prevents incompatible loads
 - **Hash Verification**: Module code is verified against manifest hash
 - **Graceful Failures**: Module errors never crash the runtime
 - **GUI Sandboxing**: Module GUIs run in sandboxed iframes
@@ -259,7 +259,7 @@ Modules can optionally provide a web GUI that renders as a tab in the kiosk inte
 ### Project Structure
 
 ```
-cryftee-runtime/src/
+cryfttee-runtime/src/
 ├── config/mod.rs          # Configuration types and parsing
 ├── http/api.rs            # JSON API handlers
 ├── http/kiosk.rs          # Kiosk UI endpoints
@@ -301,5 +301,5 @@ MIT
 ## Links
 
 - Repository: https://github.com/cryft-labs/cryfttee
-- IPFS Distribution: `gateway.cryft.network/ipns/cryftee`
+- IPFS Distribution: `gateway.cryft.network/ipns/cryfttee`
 - Documentation: Coming soon

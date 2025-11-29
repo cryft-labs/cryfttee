@@ -1,8 +1,8 @@
-//! Configuration module for cryftee runtime
+//! Configuration module for cryfttee runtime
 //!
 //! Loads configuration from:
-//! 1. config/cryftee.toml (or specified path)
-//! 2. config/trust.toml (referenced from cryftee.toml)
+//! 1. config/cryfttee.toml (or specified path)
+//! 2. config/trust.toml (referenced from cryfttee.toml)
 //! 3. Environment variable overrides
 //! 4. CLI argument overrides
 
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use anyhow::{Result, Context};
 use tracing::{info, warn, debug};
 
-impl CryfteeConfig {
+impl CryftteeConfig {
     /// Load configuration from CLI args, environment, and optional config file
     pub fn load(args: &crate::Args) -> Result<Self> {
         // Start with defaults
@@ -26,7 +26,7 @@ impl CryfteeConfig {
             let contents = std::fs::read_to_string(config_path)
                 .with_context(|| format!("Failed to read config file: {}", config_path))?;
             
-            let file_config: CryfteeConfigFile = toml::from_str(&contents)
+            let file_config: CryftteeConfigFile = toml::from_str(&contents)
                 .with_context(|| "Failed to parse config file")?;
             
             // Apply file config to runtime config
@@ -93,14 +93,14 @@ impl CryfteeConfig {
         config.trust = Self::load_trust_config(&config.trust_config_path)?;
 
         // Check for externally-verified binary hash from cryftgo
-        if let Ok(hash) = std::env::var("CRYFTEE_VERIFIED_BINARY_HASH") {
+        if let Ok(hash) = std::env::var("CRYFTTEE_VERIFIED_BINARY_HASH") {
             if !hash.is_empty() {
                 info!("Using externally-verified binary hash from cryftgo");
                 config.verified_binary_hash = Some(hash);
             }
         }
         if config.verified_binary_hash.is_none() {
-            warn!("No CRYFTEE_VERIFIED_BINARY_HASH set - attestation will use self-reported hash (less secure)");
+            warn!("No CRYFTTEE_VERIFIED_BINARY_HASH set - attestation will use self-reported hash (less secure)");
         }
 
         info!("Instance: {}", config.instance_name);

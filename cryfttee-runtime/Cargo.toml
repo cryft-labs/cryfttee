@@ -1,11 +1,11 @@
 [package]
-name = "cryftee-runtime"
+name = "cryfttee-runtime"
 version = "0.4.0"
 edition = "2021"
 authors = ["Cryft Labs"]
 description = "TEE-style sidecar runtime for WASM modules - BLS/TLS signing, fraud proofs, policy engines"
 license = "MIT"
-repository = "https://github.com/cryft-labs/cryftee"
+repository = "https://github.com/cryft-labs/cryfttee"
 keywords = ["tee", "wasm", "signing", "bls", "staking"]
 
 [dependencies]
@@ -61,7 +61,7 @@ tempfile = "3.8"
 tokio-test = "0.4"
 
 [[bin]]
-name = "cryftee"
+name = "cryfttee"
 path = "src/main.rs"
 
 [profile.release]

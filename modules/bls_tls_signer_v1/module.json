@@ -1,7 +1,7 @@
 {
   "id": "bls_tls_signer_v1",
   "version": "1.0.0",
-  "description": "Baseline BLS + TLS staking module for Cryftee, implementing the signing ABI.",
+  "description": "Baseline BLS + TLS staking module for CryftTEE, implementing the signing ABI.",
   "capabilities": [
     "bls_register",
     "bls_sign",

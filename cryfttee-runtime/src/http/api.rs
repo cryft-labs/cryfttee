@@ -17,7 +17,7 @@ use crate::wasm_api::staking::{
     parse_key_mode,
 };
 use crate::runtime::Dispatcher;
-use crate::CRYFTEE_VERSION;
+use crate::CRYFTTEE_VERSION;
 
 /// Shared application state - re-imported from mod.rs
 pub type AppState = super::AppState;
@@ -200,7 +200,7 @@ pub async fn get_status(
         .map(|m| ModuleStatusEntry {
             id: m.id.clone(),
             version: m.version.clone(),
-            min_cryftee_version: m.min_cryftee_version.clone(),
+            min_cryfttee_version: m.min_cryfttee_version.clone(),
             capabilities: m.capabilities.clone(),
             default_for: m.default_for.clone(),
             trusted: m.status.trusted,
@@ -211,7 +211,7 @@ pub async fn get_status(
         .collect();
 
     Json(StatusResponse {
-        cryftee_version: CRYFTEE_VERSION.to_string(),
+        cryfttee_version: CRYFTTEE_VERSION.to_string(),
         modules,
         web3_signer: Web3SignerStatus {
             reachable: runtime_state.web3signer_reachable,
@@ -245,17 +245,17 @@ pub async fn get_schema(
     State(_state): State<AppState>,
 ) -> Json<Value> {
     Json(json!({
-        "cryfteeVersion": CRYFTEE_VERSION,
+        "cryftteeVersion": CRYFTTEE_VERSION,
         "schemaVersion": "1.0.0",
         "manifestSchema": {
             "type": "object",
-            "required": ["id", "dir", "file", "version", "minCryfteeVersion", "description", "capabilities", "defaultFor", "publisherId", "hash", "signature"],
+            "required": ["id", "dir", "file", "version", "minCryftteeVersion", "description", "capabilities", "defaultFor", "publisherId", "hash", "signature"],
             "properties": {
                 "id": { "type": "string", "description": "Unique module identifier" },
                 "dir": { "type": "string", "description": "Subdirectory under modules/" },
                 "file": { "type": "string", "description": "WASM filename" },
                 "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$" },
-                "minCryfteeVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+                "minCryftteeVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
                 "description": { "type": "string" },
                 "capabilities": { "type": "array", "items": { "type": "string" } },
                 "defaultFor": { "type": "object", "additionalProperties": { "type": "boolean" } },

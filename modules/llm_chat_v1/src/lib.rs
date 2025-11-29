@@ -1,4 +1,4 @@
-//! LLM Chat Module for Cryftee Runtime
+//! LLM Chat Module for CryftTEE Runtime
 //!
 //! Provides LLM chat interface capabilities.
 

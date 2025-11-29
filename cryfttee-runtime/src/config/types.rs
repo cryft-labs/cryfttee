@@ -1,7 +1,7 @@
-//! Configuration types for cryftee runtime
+//! Configuration types for cryfttee runtime
 //!
 //! These types map to:
-//! - config/cryftee.example.toml (main config)
+//! - config/cryfttee.example.toml (main config)
 //! - config/trust.toml (publisher trust & attestation)
 
 use std::path::PathBuf;
@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 /// Trust policy settings from [trust] section
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustPolicy {
-    /// Minimum Cryftee version this trust config was written for
+    /// Minimum CryftTEE version this trust config was written for
     #[serde(default)]
-    pub min_cryftee_version: String,
+    pub min_cryfttee_version: String,
 
     /// If true, reject modules with unknown publisherId
     #[serde(default = "default_true")]
@@ -34,7 +34,7 @@ pub struct TrustPolicy {
 impl Default for TrustPolicy {
     fn default() -> Self {
         Self {
-            min_cryftee_version: "0.4.0".to_string(),
+            min_cryfttee_version: "0.4.0".to_string(),
             enforce_known_publishers: true,
             enforce_signatures: true,
             strict_manifest: false,
@@ -94,7 +94,7 @@ pub struct TrustConfigFile {
 }
 
 // =============================================================================
-// cryftee.toml structures
+// cryfttee.toml structures
 // =============================================================================
 
 /// [core] section
@@ -104,9 +104,9 @@ pub struct CoreConfig {
     #[serde(default = "default_instance_name")]
     pub instance_name: String,
 
-    /// Expected cryftee version
+    /// Expected cryfttee version
     #[serde(default = "default_version")]
-    pub cryftee_version: String,
+    pub cryfttee_version: String,
 
     /// Module directory path
     #[serde(default = "default_module_dir_str")]
@@ -125,7 +125,7 @@ impl Default for CoreConfig {
     fn default() -> Self {
         Self {
             instance_name: default_instance_name(),
-            cryftee_version: default_version(),
+            cryfttee_version: default_version(),
             module_dir: default_module_dir_str(),
             manifest_path: default_manifest_path(),
             trust_config: default_trust_config(),
@@ -232,9 +232,9 @@ impl Default for LoggingConfig {
     }
 }
 
-/// Full cryftee.toml file structure
+/// Full cryfttee.toml file structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CryfteeConfigFile {
+pub struct CryftteeConfigFile {
     #[serde(default)]
     pub core: CoreConfig,
 
@@ -258,15 +258,15 @@ pub struct CryfteeConfigFile {
 // Runtime configuration (flattened for use)
 // =============================================================================
 
-/// Main configuration for cryftee runtime (flattened from file + env)
+/// Main configuration for cryfttee runtime (flattened from file + env)
 #[derive(Debug, Clone)]
-pub struct CryfteeConfig {
+pub struct CryftteeConfig {
     /// Instance name
     pub instance_name: String,
 
-    /// Binary hash verified by cryftgo (set via CRYFTEE_VERIFIED_BINARY_HASH)
+    /// Binary hash verified by cryftgo (set via CRYFTTEE_VERIFIED_BINARY_HASH)
     /// If set, this is trusted as it came from an external verifier
-    /// If not set, cryftee will compute its own hash (less secure)
+    /// If not set, cryfttee will compute its own hash (less secure)
     pub verified_binary_hash: Option<String>,
 
     /// Root path for modules directory
@@ -317,21 +317,21 @@ pub struct CryfteeConfig {
 
 // Default value functions
 fn default_true() -> bool { true }
-fn default_instance_name() -> String { "cryftee-01".to_string() }
+fn default_instance_name() -> String { "cryfttee-01".to_string() }
 fn default_version() -> String { "0.4.0".to_string() }
 fn default_module_dir() -> PathBuf { PathBuf::from("modules") }
 fn default_module_dir_str() -> String { "modules".to_string() }
 fn default_manifest_path() -> String { "modules/manifest.json".to_string() }
 fn default_trust_config() -> String { "config/trust.toml".to_string() }
 fn default_transport() -> String { "uds".to_string() }
-fn default_uds_path() -> String { "/var/run/cryftee.sock".to_string() }
+fn default_uds_path() -> String { "/var/run/cryfttee.sock".to_string() }
 fn default_http_addr() -> String { "0.0.0.0:8443".to_string() }
 fn default_base_path() -> String { "/v1".to_string() }
 fn default_ui_addr() -> String { "0.0.0.0:3232".to_string() }
 fn default_static_dir() -> String { "ui".to_string() }
 fn default_log_level() -> String { "info".to_string() }
 
-impl Default for CryfteeConfig {
+impl Default for CryftteeConfig {
     fn default() -> Self {
         Self {
             instance_name: default_instance_name(),
@@ -355,7 +355,7 @@ impl Default for CryfteeConfig {
     }
 }
 
-impl CryfteeConfig {
+impl CryftteeConfig {
     /// Get the effective manifest path
     pub fn get_manifest_path(&self) -> PathBuf {
         self.manifest_path

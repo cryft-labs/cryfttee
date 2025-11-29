@@ -42,7 +42,7 @@ The module must export these functions:
 
 ## Optional GUI
 
-Modules can optionally provide a web GUI that will be rendered as a tab in the Cryftee kiosk UI. To enable this:
+Modules can optionally provide a web GUI that will be rendered as a tab in the CryftTEE kiosk UI. To enable this:
 
 1. Create a `gui/` directory in your module directory containing static web assets
 2. Add the following to your manifest entry:

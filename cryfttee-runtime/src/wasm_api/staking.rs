@@ -136,9 +136,9 @@ pub struct TlsSignResponse {
 /// Status response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusResponse {
-    /// Cryftee version
-    #[serde(rename = "cryfteeVersion")]
-    pub cryftee_version: String,
+    /// CryftTEE version
+    #[serde(rename = "cryftteeVersion")]
+    pub cryfttee_version: String,
     /// Module statuses
     pub modules: Vec<ModuleStatusEntry>,
     /// Web3Signer status
@@ -154,8 +154,8 @@ pub struct StatusResponse {
 pub struct ModuleStatusEntry {
     pub id: String,
     pub version: String,
-    #[serde(rename = "minCryfteeVersion")]
-    pub min_cryftee_version: String,
+    #[serde(rename = "minCryftteeVersion")]
+    pub min_cryfttee_version: String,
     pub capabilities: Vec<String>,
     #[serde(rename = "defaultFor")]
     pub default_for: std::collections::HashMap<String, bool>,

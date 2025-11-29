@@ -11,8 +11,8 @@ pub use dispatch::*;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use crate::storage::ManifestEntry;
-use crate::config::CryfteeConfig;
-use crate::CRYFTEE_VERSION;
+use crate::config::CryftteeConfig;
+use crate::CRYFTTEE_VERSION;
 use sha2::{Sha256, Digest};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -48,8 +48,8 @@ pub struct ModuleInfo {
     pub id: String,
     /// Module version
     pub version: String,
-    /// Minimum cryftee version required
-    pub min_cryftee_version: String,
+    /// Minimum cryfttee version required
+    pub min_cryfttee_version: String,
     /// Module capabilities
     pub capabilities: Vec<String>,
     /// Default role assignments
@@ -91,7 +91,7 @@ impl ModuleInfo {
         Self {
             id: entry.id.clone(),
             version: entry.version.clone(),
-            min_cryftee_version: entry.min_cryftee_version.clone(),
+            min_cryfttee_version: entry.min_cryfttee_version.clone(),
             capabilities: entry.capabilities.clone(),
             default_for: entry.default_for.clone(),
             publisher_id: entry.publisher_id.clone(),
@@ -121,8 +121,8 @@ pub struct AttestationReceipt {
 /// Runtime attestation data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeAttestation {
-    /// Cryftee version
-    pub cryftee_version: String,
+    /// CryftTEE version
+    pub cryfttee_version: String,
     /// Hash of the core binary
     pub core_binary_hash: String,
     /// Hash of the manifest file
@@ -164,7 +164,7 @@ impl RuntimeState {
     /// Compute runtime attestation from current state
     pub fn compute_attestation(
         &mut self,
-        config: &CryfteeConfig,
+        config: &CryftteeConfig,
         registry: &ModuleRegistry,
     ) -> Result<()> {
         // Use externally-verified hash from cryftgo if available
@@ -199,7 +199,7 @@ impl RuntimeState {
         let modules: Vec<ModuleInfo> = registry.get_all_modules();
 
         self.attestation = Some(RuntimeAttestation {
-            cryftee_version: CRYFTEE_VERSION.to_string(),
+            cryfttee_version: CRYFTTEE_VERSION.to_string(),
             core_binary_hash,
             manifest_hash,
             modules,

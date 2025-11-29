@@ -5,5 +5,5 @@
   "description": "Interactive LLM chat interface for runtime assistance and module interaction.",
   "capabilities": ["llm_chat", "llm_stream"],
   "moduleType": "llm",
-  "minCryfteeVersion": "0.4.0"
+  "minCryftteeVersion": "0.4.0"
 }

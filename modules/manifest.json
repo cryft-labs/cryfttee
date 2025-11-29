@@ -19,7 +19,7 @@
       "hasGui": true,
       "hash": "sha256:REPLACE_WITH_REAL_WASM_SHA256",
       "id": "bls_tls_signer_v1",
-      "minCryfteeVersion": "0.4.0",
+      "minCryftteeVersion": "0.4.0",
       "publisherId": "cryft-labs",
       "signature": "REPLACE_WITH_BASE64_SIGNATURE_OVER_CANONICAL_METADATA",
       "version": "1.0.0"
@@ -38,7 +38,7 @@
       "hasGui": true,
       "hash": "sha256:PLACEHOLDER_DEBUG_HASH",
       "id": "debug_v1",
-      "minCryfteeVersion": "0.4.0",
+      "minCryftteeVersion": "0.4.0",
       "publisherId": "cryft-labs",
       "signature": "PLACEHOLDER_DEBUG_SIGNATURE",
       "version": "1.0.0"
@@ -56,7 +56,7 @@
       "hasGui": true,
       "hash": "sha256:a979a1717f5f98e00aa07cc538be4fa1cc9490227f5c4869606bfc93a04f8c93",
       "id": "llm_chat_v1",
-      "minCryfteeVersion": "0.4.0",
+      "minCryftteeVersion": "0.4.0",
       "moduleType": "llm",
       "publisherId": "cryft-labs",
       "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",

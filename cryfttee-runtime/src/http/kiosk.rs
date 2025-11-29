@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 use super::AppState;
 use super::api::ErrorResponse;
-use crate::CRYFTEE_VERSION;
+use crate::CRYFTTEE_VERSION;
 use crate::signing::{
     SignatureManifest, SignedModule, compute_file_hash, compute_dir_hash,
     get_blockchain_state, PublisherStatus,
@@ -50,7 +50,7 @@ pub async fn get_context(
     
     let attestation_summary = runtime_state.attestation.as_ref().map(|a| {
         json!({
-            "cryftee_version": a.cryftee_version,
+            "cryfttee_version": a.cryfttee_version,
             "timestamp": a.timestamp.to_rfc3339(),
             "modules_count": a.modules.len(),
         })
@@ -58,7 +58,7 @@ pub async fn get_context(
     
     Json(json!({
         "runtime": {
-            "version": CRYFTEE_VERSION,
+            "version": CRYFTTEE_VERSION,
             "instance": state.config.instance_name,
             "timestamp": Utc::now().to_rfc3339(),
         },
@@ -88,7 +88,7 @@ pub async fn get_modules(
     let modules = registry.get_all_modules();
 
     Json(json!({
-        "cryfteeVersion": CRYFTEE_VERSION,
+        "cryftteeVersion": CRYFTTEE_VERSION,
         "modules": modules,
         "defaults": {
             "bls": registry.get_default_bls_module(),
@@ -119,17 +119,17 @@ pub async fn get_schema(
 ) -> Json<Value> {
     // Reuse the same schema endpoint logic
     Json(json!({
-        "cryfteeVersion": CRYFTEE_VERSION,
+        "cryftteeVersion": CRYFTTEE_VERSION,
         "schemaVersion": "1.0.0",
         "manifestSchema": {
             "type": "object",
-            "required": ["id", "dir", "file", "version", "minCryfteeVersion", "description", "capabilities", "defaultFor", "publisherId", "hash", "signature"],
+            "required": ["id", "dir", "file", "version", "minCryftteeVersion", "description", "capabilities", "defaultFor", "publisherId", "hash", "signature"],
             "properties": {
                 "id": { "type": "string" },
                 "dir": { "type": "string" },
                 "file": { "type": "string" },
                 "version": { "type": "string" },
-                "minCryfteeVersion": { "type": "string" },
+                "minCryftteeVersion": { "type": "string" },
                 "description": { "type": "string" },
                 "capabilities": { "type": "array", "items": { "type": "string" } },
                 "defaultFor": { "type": "object" },
@@ -493,7 +493,7 @@ pub async fn get_signable_modules(
     
     Json(json!({
         "modules": signable,
-        "cryfteeVersion": CRYFTEE_VERSION,
+        "cryftteeVersion": CRYFTTEE_VERSION,
     }))
 }
 
@@ -592,7 +592,7 @@ pub async fn prepare_module_signing(
         wasm_hash,
         module_json_hash,
         request.publisher_id,
-        module.min_cryftee_version.clone(),
+        module.min_cryfttee_version.clone(),
         module.capabilities.clone(),
         module.default_for.clone(),
     );
@@ -718,7 +718,7 @@ pub async fn get_trust_config(
         "verifiedCount": verified_publishers.len(),
         "totalCount": all_publishers.len(),
         "trust": {
-            "minCryfteeVersion": CRYFTEE_VERSION,
+            "minCryftteeVersion": CRYFTTEE_VERSION,
             "enforceKnownPublishers": true,
             "enforceSignatures": true,
         }

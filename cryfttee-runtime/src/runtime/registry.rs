@@ -6,17 +6,17 @@ use anyhow::{Result, anyhow};
 use tracing::{info, warn, error};
 use semver::Version;
 
-use crate::config::CryfteeConfig;
+use crate::config::CryftteeConfig;
 use crate::storage::{Manifest, ManifestEntry};
 use crate::wasm_api::WasmModule;
-use crate::CRYFTEE_VERSION;
+use crate::CRYFTTEE_VERSION;
 
 use super::{ModuleInfo, ModuleStatus, ModuleLoader};
 
 /// Module registry - manages all loaded modules and their state
 pub struct ModuleRegistry {
     /// Configuration
-    config: CryfteeConfig,
+    config: CryftteeConfig,
     /// Loaded modules indexed by ID
     modules: HashMap<String, ModuleInfo>,
     /// WASM instances for loaded modules
@@ -31,7 +31,7 @@ pub struct ModuleRegistry {
 
 impl ModuleRegistry {
     /// Create a new module registry
-    pub fn new(config: CryfteeConfig) -> Self {
+    pub fn new(config: CryftteeConfig) -> Self {
         Self {
             loader: ModuleLoader::new(config.clone()),
             config,
@@ -91,10 +91,10 @@ impl ModuleRegistry {
     /// Returns true if module was loaded, false if just registered
     pub async fn register_module(&mut self, entry: &ManifestEntry) -> Result<bool> {
         // Check version compatibility
-        if !self.check_version_compatibility(&entry.min_cryftee_version)? {
+        if !self.check_version_compatibility(&entry.min_cryfttee_version)? {
             let reason = format!(
-                "minCryfteeVersion {} > core version {}",
-                entry.min_cryftee_version, CRYFTEE_VERSION
+                "minCryftteeVersion {} > core version {}",
+                entry.min_cryfttee_version, CRYFTTEE_VERSION
             );
             // Still register the module but mark as incompatible
             let mut info = ModuleInfo::from_manifest_entry(entry);
@@ -130,10 +130,10 @@ impl ModuleRegistry {
     /// Load a single module from its manifest entry (for when module is enabled)
     pub async fn load_module(&mut self, entry: &ManifestEntry) -> Result<()> {
         // Check version compatibility
-        if !self.check_version_compatibility(&entry.min_cryftee_version)? {
+        if !self.check_version_compatibility(&entry.min_cryfttee_version)? {
             let reason = format!(
-                "minCryfteeVersion {} > core version {}",
-                entry.min_cryftee_version, CRYFTEE_VERSION
+                "minCryftteeVersion {} > core version {}",
+                entry.min_cryfttee_version, CRYFTTEE_VERSION
             );
             return Err(anyhow!(reason));
         }
@@ -179,7 +179,7 @@ impl ModuleRegistry {
     /// Check if a module version is compatible with current runtime
     fn check_version_compatibility(&self, min_version: &str) -> Result<bool> {
         let min_ver = Version::parse(min_version)?;
-        let current_ver = Version::parse(CRYFTEE_VERSION)?;
+        let current_ver = Version::parse(CRYFTTEE_VERSION)?;
         Ok(current_ver >= min_ver)
     }
 

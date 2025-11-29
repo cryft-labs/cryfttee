@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# Deploy Cryftee KeyVault Stack
+# Deploy CryftTEE KeyVault Stack
 # HashiCorp Vault + Web3Signer for Production Key Management
 #
 # Target: Ubuntu Server (keyvault @ 100.111.2.1)
 #
 # Architecture:
-#   Cryftee --> Web3Signer --> HashiCorp Vault --> Keys (encrypted at rest)
+#   CryftTEE --> Web3Signer --> HashiCorp Vault --> Keys (encrypted at rest)
 #
 # Usage:
 #   ./deploy-keyvault.sh                    # Deploy full stack to remote
@@ -14,7 +14,7 @@
 #   ./deploy-keyvault.sh --web3signer-only  # Deploy only Web3Signer (no Vault)
 #   ./deploy-keyvault.sh --install-docker   # Install Docker on remote first
 #   ./deploy-keyvault.sh --status           # Check service status
-#   ./deploy-keyvault.sh --env              # Generate Cryftee env vars
+#   ./deploy-keyvault.sh --env              # Generate CryftTEE env vars
 #
 # Tested on: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS
 #
@@ -38,7 +38,7 @@ WEB3SIGNER_PORT="${WEB3SIGNER_PORT:-9000}"
 WEB3SIGNER_METRICS_PORT="${WEB3SIGNER_METRICS_PORT:-9001}"
 
 # Directories
-DATA_DIR="/opt/cryftee-keyvault"
+DATA_DIR="/opt/cryfttee-keyvault"
 VAULT_DATA="${DATA_DIR}/vault"
 WEB3SIGNER_DATA="${DATA_DIR}/web3signer"
 CONFIG_DIR="${DATA_DIR}/config"
@@ -150,7 +150,7 @@ services:
   # HashiCorp Vault - Secrets Management
   vault:
     image: hashicorp/vault:${VAULT_VERSION}
-    container_name: cryftee-vault
+    container_name: cryfttee-vault
     restart: unless-stopped
     cap_add:
       - IPC_LOCK
@@ -165,7 +165,7 @@ services:
       - VAULT_API_ADDR=http://0.0.0.0:8200
     command: server
     networks:
-      - cryftee-keyvault
+      - cryfttee-keyvault
     healthcheck:
       test: ["CMD-SHELL", "vault status -address=http://127.0.0.1:8200 2>&1 | grep -E '(Sealed.*false|Sealed.*true)' || exit 1"]
       interval: 10s
@@ -176,7 +176,7 @@ services:
   # Web3Signer - Ethereum Signing
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
-    container_name: cryftee-web3signer
+    container_name: cryfttee-web3signer
     restart: unless-stopped
     depends_on:
       vault:
@@ -197,7 +197,7 @@ services:
       - JAVA_OPTS=-Xmx512m -Xms256m
       - VAULT_ADDR=http://vault:8200
     networks:
-      - cryftee-keyvault
+      - cryfttee-keyvault
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9000/upcheck"]
       interval: 30s
@@ -206,7 +206,7 @@ services:
       start_period: 30s
 
 networks:
-  cryftee-keyvault:
+  cryfttee-keyvault:
     driver: bridge
 EOF
 }
@@ -219,7 +219,7 @@ version: '3.8'
 services:
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
-    container_name: cryftee-web3signer
+    container_name: cryfttee-web3signer
     restart: unless-stopped
     ports:
       - "${WEB3SIGNER_PORT}:9000"
@@ -236,7 +236,7 @@ services:
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m
     networks:
-      - cryftee-keyvault
+      - cryfttee-keyvault
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9000/upcheck"]
       interval: 30s
@@ -245,7 +245,7 @@ services:
       start_period: 30s
 
 networks:
-  cryftee-keyvault:
+  cryfttee-keyvault:
     driver: bridge
 EOF
 }
@@ -253,7 +253,7 @@ EOF
 # Vault Configuration
 generate_vault_config() {
     cat << 'EOF'
-# HashiCorp Vault Configuration for Cryftee
+# HashiCorp Vault Configuration for CryftTEE
 # Production-ready settings
 
 storage "file" {
@@ -284,7 +284,7 @@ EOF
 # Web3Signer Configuration
 generate_web3signer_config() {
     cat << EOF
-# Web3Signer Configuration for Cryftee
+# Web3Signer Configuration for CryftTEE
 # Supports both BLS (consensus) and SECP256k1 (execution/TLS) signing
 
 http-listen-host: "0.0.0.0"
@@ -310,7 +310,7 @@ EOF
 generate_systemd_service() {
     cat << EOF
 [Unit]
-Description=Cryftee KeyVault Stack (Vault + Web3Signer)
+Description=CryftTEE KeyVault Stack (Vault + Web3Signer)
 Documentation=https://github.com/cryft-labs/cryfttee
 After=network-online.target docker.service
 Wants=network-online.target
@@ -346,7 +346,7 @@ generate_init_vault_script() {
     cat << 'EOF'
 #!/bin/bash
 #
-# Initialize HashiCorp Vault for Cryftee
+# Initialize HashiCorp Vault for CryftTEE
 # Run this ONCE after first deployment
 #
 
@@ -356,7 +356,7 @@ VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
 export VAULT_ADDR
 
 echo ""
-echo "=== Cryftee Vault Initialization ==="
+echo "=== CryftTEE Vault Initialization ==="
 echo ""
 
 # Wait for Vault to be ready
@@ -373,7 +373,7 @@ if vault status 2>/dev/null | grep -q "Initialized.*true"; then
     echo "[!] Vault is already initialized"
     
     if vault status 2>/dev/null | grep -q "Sealed.*true"; then
-        echo "[!] Vault is sealed. Run: sudo /opt/cryftee-keyvault/scripts/unseal-vault.sh"
+        echo "[!] Vault is sealed. Run: sudo /opt/cryfttee-keyvault/scripts/unseal-vault.sh"
     else
         echo "[+] Vault is unsealed and ready"
     fi
@@ -384,7 +384,7 @@ echo "[+] Initializing Vault with 5 key shares, 3 required to unseal..."
 INIT_OUTPUT=$(vault operator init -key-shares=5 -key-threshold=3 -format=json)
 
 # Save keys
-KEYS_FILE="/opt/cryftee-keyvault/vault-init-keys.json"
+KEYS_FILE="/opt/cryfttee-keyvault/vault-init-keys.json"
 echo "${INIT_OUTPUT}" > "${KEYS_FILE}"
 chmod 600 "${KEYS_FILE}"
 
@@ -409,33 +409,33 @@ echo "[+] Vault unsealed!"
 export VAULT_TOKEN="${ROOT_TOKEN}"
 
 echo "[+] Enabling KV secrets engine..."
-vault secrets enable -path=cryftee kv-v2 2>/dev/null || true
+vault secrets enable -path=cryfttee kv-v2 2>/dev/null || true
 
 echo "[+] Enabling Transit engine for signing..."
 vault secrets enable transit 2>/dev/null || true
 
-echo "[+] Creating Cryftee policy..."
-vault policy write cryftee - << 'POLICY'
-# Cryftee KeyVault Policy
+echo "[+] Creating CryftTEE policy..."
+vault policy write cryfttee - << 'POLICY'
+# CryftTEE KeyVault Policy
 # Supports BLS (consensus) and SECP256k1 (execution/TLS) keys
 
 # BLS keys for ETH2 consensus signing
-path "cryftee/data/keys/bls/*" {
+path "cryfttee/data/keys/bls/*" {
   capabilities = ["read", "list"]
 }
 
 # SECP256k1 keys for ETH1/TLS signing
-path "cryftee/data/keys/secp256k1/*" {
+path "cryfttee/data/keys/secp256k1/*" {
   capabilities = ["read", "list"]
 }
 
 # TLS certificates and keys
-path "cryftee/data/keys/tls/*" {
+path "cryfttee/data/keys/tls/*" {
   capabilities = ["read", "list"]
 }
 
 # List all keys
-path "cryftee/metadata/keys/*" {
+path "cryfttee/metadata/keys/*" {
   capabilities = ["list"]
 }
 
@@ -461,7 +461,7 @@ vault auth enable approle 2>/dev/null || true
 
 echo "[+] Creating Web3Signer AppRole..."
 vault write auth/approle/role/web3signer \
-    token_policies="cryftee" \
+    token_policies="cryfttee" \
     token_ttl=1h \
     token_max_ttl=24h \
     secret_id_ttl=0 \
@@ -470,14 +470,14 @@ vault write auth/approle/role/web3signer \
 ROLE_ID=$(vault read -format=json auth/approle/role/web3signer/role-id | jq -r '.data.role_id')
 SECRET_ID=$(vault write -format=json -f auth/approle/role/web3signer/secret-id | jq -r '.data.secret_id')
 
-cat > /opt/cryftee-keyvault/vault-approle.json << APPROLE
+cat > /opt/cryfttee-keyvault/vault-approle.json << APPROLE
 {
   "vault_addr": "${VAULT_ADDR}",
   "role_id": "${ROLE_ID}",
   "secret_id": "${SECRET_ID}"
 }
 APPROLE
-chmod 600 /opt/cryftee-keyvault/vault-approle.json
+chmod 600 /opt/cryfttee-keyvault/vault-approle.json
 
 echo ""
 echo "=== Vault Setup Complete ==="
@@ -485,11 +485,11 @@ echo ""
 echo "Vault UI:       ${VAULT_ADDR}/ui"
 echo "Root Token:     ${ROOT_TOKEN}"
 echo ""
-echo "AppRole credentials saved to: /opt/cryftee-keyvault/vault-approle.json"
+echo "AppRole credentials saved to: /opt/cryfttee-keyvault/vault-approle.json"
 echo ""
 echo "IMPORTANT:"
-echo "  1. Back up /opt/cryftee-keyvault/vault-init-keys.json to a secure location"
-echo "  2. After Vault restarts, run: sudo /opt/cryftee-keyvault/scripts/unseal-vault.sh"
+echo "  1. Back up /opt/cryfttee-keyvault/vault-init-keys.json to a secure location"
+echo "  2. After Vault restarts, run: sudo /opt/cryfttee-keyvault/scripts/unseal-vault.sh"
 echo ""
 EOF
 }
@@ -504,7 +504,7 @@ generate_unseal_vault_script() {
 set -e
 
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
-KEYS_FILE="/opt/cryftee-keyvault/vault-init-keys.json"
+KEYS_FILE="/opt/cryfttee-keyvault/vault-init-keys.json"
 export VAULT_ADDR
 
 if [ ! -f "${KEYS_FILE}" ]; then
@@ -550,7 +550,7 @@ set -e
 KEY_TYPE="${1:-}"
 KEYSTORE_FILE="${2:-}"
 PASSWORD="${3:-}"
-KEYS_DIR="/opt/cryftee-keyvault/keys"
+KEYS_DIR="/opt/cryfttee-keyvault/keys"
 
 usage() {
     echo "Usage:"
@@ -679,7 +679,7 @@ esac
 
 echo ""
 echo "[!] Restart Web3Signer to load the new key:"
-echo "    sudo docker restart cryftee-web3signer"
+echo "    sudo docker restart cryfttee-web3signer"
 echo ""
 echo "[i] Check loaded keys:"
 echo "    curl -s http://localhost:9000/api/v1/eth2/publicKeys | jq     # BLS keys"
@@ -691,20 +691,20 @@ generate_status_script() {
     cat << 'EOF'
 #!/bin/bash
 #
-# Check Cryftee KeyVault stack status
+# Check CryftTEE KeyVault stack status
 #
 
-echo "=== Cryftee KeyVault Status ==="
+echo "=== CryftTEE KeyVault Status ==="
 echo ""
 
 # Check systemd service
 echo "[Service Status]"
-systemctl status cryftee-keyvault --no-pager -l 2>/dev/null | head -10 || echo "Service not found"
+systemctl status cryfttee-keyvault --no-pager -l 2>/dev/null | head -10 || echo "Service not found"
 echo ""
 
 # Check containers
 echo "[Container Status]"
-docker ps --filter "name=cryftee" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Docker not available"
+docker ps --filter "name=cryfttee" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Docker not available"
 echo ""
 
 # Check Vault
@@ -751,8 +751,8 @@ echo ""
 
 # Show key files
 echo "[Key Files on Disk]"
-ls -la /opt/cryftee-keyvault/keys/*.json 2>/dev/null | awk '{print "  " $NF}' || echo "  (none)"
-ls -la /opt/cryftee-keyvault/keys/*.pem 2>/dev/null | awk '{print "  " $NF}' || true
+ls -la /opt/cryfttee-keyvault/keys/*.json 2>/dev/null | awk '{print "  " $NF}' || echo "  (none)"
+ls -la /opt/cryfttee-keyvault/keys/*.pem 2>/dev/null | awk '{print "  " $NF}' || true
 EOF
 }
 
@@ -763,7 +763,7 @@ EOF
 deploy_remote() {
     local mode="${1:-full}"
     
-    log "Deploying Cryftee KeyVault Stack to ${KEYVAULT_HOST}..."
+    log "Deploying CryftTEE KeyVault Stack to ${KEYVAULT_HOST}..."
     info "Mode: ${mode}"
     echo ""
     
@@ -806,7 +806,7 @@ deploy_remote() {
     fi
     
     generate_web3signer_config > "${LOCAL_TMP}/web3signer.yaml"
-    generate_systemd_service > "${LOCAL_TMP}/cryftee-keyvault.service"
+    generate_systemd_service > "${LOCAL_TMP}/cryfttee-keyvault.service"
     generate_import_key_script > "${LOCAL_TMP}/import-key.sh"
     generate_status_script > "${LOCAL_TMP}/status.sh"
     
@@ -822,18 +822,18 @@ sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,web3signer,keys,config,scripts}
 sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
 
 echo "[+] Installing configuration files..."
-sudo cp /tmp/cryftee-deploy/docker-compose.yml ${CONFIG_DIR}/
-sudo cp /tmp/cryftee-deploy/web3signer.yaml ${CONFIG_DIR}/
-sudo cp /tmp/cryftee-deploy/cryftee-keyvault.service /etc/systemd/system/
+sudo cp /tmp/cryfttee-deploy/docker-compose.yml ${CONFIG_DIR}/
+sudo cp /tmp/cryfttee-deploy/web3signer.yaml ${CONFIG_DIR}/
+sudo cp /tmp/cryfttee-deploy/cryfttee-keyvault.service /etc/systemd/system/
 
 if [ "\${MODE}" = "full" ]; then
-    sudo cp /tmp/cryftee-deploy/vault.hcl ${CONFIG_DIR}/
-    sudo cp /tmp/cryftee-deploy/init-vault.sh ${SCRIPTS_DIR}/
-    sudo cp /tmp/cryftee-deploy/unseal-vault.sh ${SCRIPTS_DIR}/
+    sudo cp /tmp/cryfttee-deploy/vault.hcl ${CONFIG_DIR}/
+    sudo cp /tmp/cryfttee-deploy/init-vault.sh ${SCRIPTS_DIR}/
+    sudo cp /tmp/cryfttee-deploy/unseal-vault.sh ${SCRIPTS_DIR}/
 fi
 
-sudo cp /tmp/cryftee-deploy/import-key.sh ${SCRIPTS_DIR}/
-sudo cp /tmp/cryftee-deploy/status.sh ${SCRIPTS_DIR}/
+sudo cp /tmp/cryfttee-deploy/import-key.sh ${SCRIPTS_DIR}/
+sudo cp /tmp/cryfttee-deploy/status.sh ${SCRIPTS_DIR}/
 sudo chmod +x ${SCRIPTS_DIR}/*.sh
 
 echo "[+] Checking firewall..."
@@ -851,23 +851,23 @@ sudo docker pull consensys/web3signer:${WEB3SIGNER_VERSION}
 
 echo "[+] Starting services..."
 sudo systemctl daemon-reload
-sudo systemctl enable cryftee-keyvault
-sudo systemctl restart cryftee-keyvault
+sudo systemctl enable cryfttee-keyvault
+sudo systemctl restart cryfttee-keyvault
 
 echo "[+] Cleaning up..."
-rm -rf /tmp/cryftee-deploy
+rm -rf /tmp/cryfttee-deploy
 
 echo "[+] Deployment complete!"
 DEPLOYEOF
 
     # Upload files
     step "Uploading files to ${KEYVAULT_HOST}..."
-    ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "mkdir -p /tmp/cryftee-deploy"
-    scp -q "${LOCAL_TMP}"/* "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/cryftee-deploy/"
+    ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "mkdir -p /tmp/cryfttee-deploy"
+    scp -q "${LOCAL_TMP}"/* "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/cryfttee-deploy/"
     
     # Execute
     step "Running deployment..."
-    ssh -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/cryftee-deploy/deploy.sh && /tmp/cryftee-deploy/deploy.sh"
+    ssh -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/cryfttee-deploy/deploy.sh && /tmp/cryfttee-deploy/deploy.sh"
     
     # Wait for services
     info "Waiting for services to start..."
@@ -905,8 +905,8 @@ DEPLOYEOF
     info "Useful commands:"
     echo "  Status:      sudo ${SCRIPTS_DIR}/status.sh"
     echo "  Import key:  sudo ${SCRIPTS_DIR}/import-key.sh <keystore.json> <password>"
-    echo "  Logs:        sudo journalctl -u cryftee-keyvault -f"
-    echo "  Restart:     sudo systemctl restart cryftee-keyvault"
+    echo "  Logs:        sudo journalctl -u cryfttee-keyvault -f"
+    echo "  Restart:     sudo systemctl restart cryfttee-keyvault"
     if [ "${mode}" = "full" ]; then
         echo "  Unseal:      sudo ${SCRIPTS_DIR}/unseal-vault.sh"
     fi
@@ -919,7 +919,7 @@ check_status() {
 
 generate_env() {
     cat << EOF
-# Cryftee KeyVault Environment Configuration
+# CryftTEE KeyVault Environment Configuration
 # Add to your environment or .env file
 
 # Web3Signer
@@ -929,9 +929,9 @@ WEB3SIGNER_TIMEOUT=30
 # Vault (if using full stack)
 VAULT_ADDR=http://${KEYVAULT_HOST}:${VAULT_PORT}
 
-# Cryftee settings
-CRYFTEE_ENFORCE_SIGNATURES=true
-CRYFTEE_ENFORCE_KNOWN_PUBLISHERS=true
+# CryftTEE settings
+CRYFTTEE_ENFORCE_SIGNATURES=true
+CRYFTTEE_ENFORCE_KNOWN_PUBLISHERS=true
 EOF
 }
 
@@ -960,7 +960,7 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [options]"
         echo ""
-        echo "Deploy HashiCorp Vault + Web3Signer for Cryftee key management."
+        echo "Deploy HashiCorp Vault + Web3Signer for CryftTEE key management."
         echo ""
         echo "Options:"
         echo "  (none)              Deploy full stack (Vault + Web3Signer)"

@@ -1,23 +1,23 @@
 # config/trust.toml
 #
-# Trusted publishers and (optionally) attestation keys for Cryftee.
-# Cryftee will only load modules whose manifest entry:
+# Trusted publishers and (optionally) attestation keys for CryftTEE.
+# CryftTEE will only load modules whose manifest entry:
 #   - Has publisherId present in [publishers]
 #   - Has a signature that verifies against the publisher's public key
 #
 # This is TOML so ops can manage it without touching code.
 
 [trust]
-# Required minimum Cryftee version this trust config was written for.
-min_cryftee_version = "0.4.0"
+# Required minimum CryftTEE version this trust config was written for.
+min_cryfttee_version = "0.4.0"
 
-# If true, Cryftee MUST reject modules whose publisherId is unknown.
+# If true, CryftTEE MUST reject modules whose publisherId is unknown.
 enforce_known_publishers = false
 
-# If true, Cryftee MUST verify signatures for all modules before loading.
+# If true, CryftTEE MUST verify signatures for all modules before loading.
 enforce_signatures = false
 
-# Optional: if true, Cryftee will refuse to start if *any* module in
+# Optional: if true, CryftTEE will refuse to start if *any* module in
 # modules/manifest.json fails signature or hash verification.
 strict_manifest = false
 
@@ -42,7 +42,7 @@ algo      = "ed25519"
 publicKey = "BASE64_PUBLIC_KEY_FOR_EXPERIMENTAL"
 
 # ---------------------------------------------------------------------
-# Optional: runtime attestation key used by Cryftee to sign receipts
+# Optional: runtime attestation key used by CryftTEE to sign receipts
 # exposed by /v1/runtime/attestation.
 # ---------------------------------------------------------------------
 
@@ -50,6 +50,6 @@ publicKey = "BASE64_PUBLIC_KEY_FOR_EXPERIMENTAL"
 enabled   = false
 algo      = "ed25519"
 publicKey = ""
-# Private key should NEVER be placed here in plaintext; Cryftee should
+# Private key should NEVER be placed here in plaintext; CryftTEE should
 # load it from a secure source (HSM, env var, KMS, etc.), or run in a
 # mode where only public receipts are provided without signatures.

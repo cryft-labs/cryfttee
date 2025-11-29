@@ -1,5 +1,5 @@
 /**
- * Cryftee Kiosk UI Application
+ * CryftTEE Kiosk UI Application
  * Robust module loading with error isolation
  */
 
@@ -80,8 +80,8 @@ function toast(message, type = 'ok', duration = 2500) {
 // Tab Management (with reorder support)
 // ============================================================================
 
-const TAB_ORDER_KEY = 'cryftee_tab_order';
-const ACTIVE_TAB_KEY = 'cryftee_active_tab';
+const TAB_ORDER_KEY = 'cryfttee_tab_order';
+const ACTIVE_TAB_KEY = 'cryfttee_active_tab';
 const TAB_SCROLL_AMOUNT = 150; // pixels to scroll per click
 
 // Base tabs that always exist
@@ -817,7 +817,7 @@ function updatePopupAttestation() {
     // Use same format as attestation tab (full values)
     setPopup('popup-core-hash', data.core_binary_hash || data.coreBinaryHash);
     setPopup('popup-manifest-hash', data.manifest_hash || data.manifestHash);
-    setPopup('popup-runtime-version', data.cryftee_version || data.cryfteeVersion);
+    setPopup('popup-runtime-version', data.cryfttee_version || data.cryftteeVersion);
     setPopup('popup-attestation-time', data.timestamp ? new Date(data.timestamp).toLocaleString() : null);
 }
 
@@ -1121,7 +1121,7 @@ async function loadModules() {
         state.modules = data.modules || [];
         
         const versionEl = $('#version');
-        if (versionEl) versionEl.textContent = `v${data.cryfteeVersion || data.cryftee_version || '0.4.0'}`;
+        if (versionEl) versionEl.textContent = `v${data.cryftteeVersion || data.cryfttee_version || '0.4.0'}`;
         
         const badgeEl = $('#modules-badge');
         if (badgeEl) badgeEl.textContent = state.modules.length;
@@ -1317,7 +1317,7 @@ function renderModuleCard(module, defaults, showToggle = false) {
             <div class="module-meta">
                 <div class="meta-item">
                     <span class="meta-label">Min Version</span>
-                    <span class="meta-value">${escapeHtml(module.min_cryftee_version || module.minCryfteeVersion || 'N/A')}</span>
+                    <span class="meta-value">${escapeHtml(module.min_cryfttee_version || module.minCryftteeVersion || 'N/A')}</span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Publisher</span>
@@ -1357,14 +1357,14 @@ function renderAttestation(data) {
     set('core-hash', data.core_binary_hash || data.coreBinaryHash);
     set('manifest-hash', data.manifest_hash || data.manifestHash);
     set('attestation-time', data.timestamp ? new Date(data.timestamp).toLocaleString() : null);
-    set('runtime-version', data.cryftee_version || data.cryfteeVersion);
+    set('runtime-version', data.cryfttee_version || data.cryftteeVersion);
 }
 
 // ============================================================================
 // Public API
 // ============================================================================
 
-class CryfteeKiosk {
+class CryftteeKiosk {
     constructor() {
         this.init();
     }
@@ -1488,5 +1488,5 @@ class CryfteeKiosk {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    window.kiosk = new CryfteeKiosk();
+    window.kiosk = new CryftteeKiosk();
 });

@@ -47,7 +47,7 @@ pub fn canonical_json_for_signing(entry: &ManifestEntry) -> Result<String> {
         "id": entry.id,
         "version": entry.version,
         "hash": entry.hash,
-        "minCryfteeVersion": entry.min_cryftee_version,
+        "minCryftteeVersion": entry.min_cryfttee_version,
         "capabilities": entry.capabilities,
     });
     

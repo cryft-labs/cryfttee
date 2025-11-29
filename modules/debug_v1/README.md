@@ -1,6 +1,6 @@
 # Debug Module v1
 
-A diagnostics and debugging module for the Cryftee runtime.
+A diagnostics and debugging module for the CryftTEE runtime.
 
 ## Capabilities
 

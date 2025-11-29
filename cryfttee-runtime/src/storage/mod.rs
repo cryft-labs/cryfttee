@@ -27,9 +27,9 @@ pub struct ManifestEntry {
     pub file: String,
     /// Module version (semver)
     pub version: String,
-    /// Minimum cryftee version required
-    #[serde(rename = "minCryfteeVersion")]
-    pub min_cryftee_version: String,
+    /// Minimum cryfttee version required
+    #[serde(rename = "minCryftteeVersion")]
+    pub min_cryfttee_version: String,
     /// Human-readable description
     pub description: String,
     /// List of capabilities the module provides

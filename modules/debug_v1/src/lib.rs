@@ -1,4 +1,4 @@
-//! Debug Module for Cryftee Runtime
+//! Debug Module for CryftTEE Runtime
 //!
 //! Provides debugging and diagnostics capabilities.
 
