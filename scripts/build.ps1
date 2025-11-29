@@ -123,7 +123,7 @@ function Invoke-CleanBuild {
     Write-Host ""
 }
 
-function Build-Runtime {
+function Invoke-RuntimeBuild {
     Write-Header "Building Cryftee Runtime"
     
     Push-Location $RootDir
@@ -198,7 +198,7 @@ function Copy-ModuleWasm {
     }
 }
 
-function Build-Modules {
+function Invoke-ModulesBuild {
     Write-Header "Building WASM Modules"
     
     Push-Location $RootDir
@@ -295,11 +295,11 @@ if ($Clean) {
 Test-Prerequisites
 
 if ($BuildRuntime) {
-    Build-Runtime
+    Invoke-RuntimeBuild
 }
 
 if ($BuildModules) {
-    Build-Modules
+    Invoke-ModulesBuild
 }
 
 Show-Summary

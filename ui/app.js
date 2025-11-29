@@ -21,6 +21,14 @@ const state = {
     popupOpen: false,
     tabOrder: [],                   // Ordered list of tab IDs
     inReorderMode: false,
+    // Connection status
+    connection: {
+        status: 'checking',        // 'connected', 'disconnected', 'checking'
+        endpoint: window.location.origin,
+        lastLatency: null,
+        lastCheck: null,
+        consecutiveFailures: 0
+    }
 };
 
 // ============================================================================
@@ -764,10 +772,15 @@ function updateStatus() {
     const modulesLoaded = $('#modules-loaded');
     const statusText = $('#status-text');
     
-    // Status indicator always shows OK (runtime is healthy)
-    // Module active/inactive state doesn't affect overall status
+    // Status indicator reflects connection status
     if (indicator) {
-        indicator.className = 'status-dot ok';
+        if (state.connection.status === 'connected') {
+            indicator.className = 'status-dot ok';
+        } else if (state.connection.status === 'disconnected') {
+            indicator.className = 'status-dot bad';
+        } else {
+            indicator.className = 'status-dot pending';
+        }
     }
     
     if (moduleCount) {
@@ -779,11 +792,90 @@ function updateStatus() {
     }
     
     if (statusText) {
-        statusText.textContent = 'Healthy';
+        if (state.connection.status === 'connected') {
+            statusText.textContent = 'Healthy';
+        } else if (state.connection.status === 'disconnected') {
+            statusText.textContent = 'Disconnected';
+        } else {
+            statusText.textContent = 'Checking...';
+        }
     }
+    
+    // Update connection info in popup
+    updateConnectionDisplay();
     
     // Update module chips in popup
     renderPopupModulesChips();
+}
+
+function updateConnectionDisplay() {
+    const statusEl = $('#connection-status');
+    const endpointEl = $('#connection-endpoint');
+    const latencyEl = $('#connection-latency');
+    const lastCheckEl = $('#connection-last-check');
+    
+    if (statusEl) {
+        if (state.connection.status === 'connected') {
+            statusEl.innerHTML = '<span class="dot ok" style="margin-right:6px"></span>Connected';
+        } else if (state.connection.status === 'disconnected') {
+            statusEl.innerHTML = '<span class="dot bad" style="margin-right:6px"></span>Disconnected';
+        } else {
+            statusEl.innerHTML = '<span class="dot pending" style="margin-right:6px"></span>Checking...';
+        }
+    }
+    
+    if (endpointEl) {
+        endpointEl.textContent = state.connection.endpoint || window.location.origin;
+    }
+    
+    if (latencyEl) {
+        if (state.connection.lastLatency !== null) {
+            latencyEl.textContent = `${state.connection.lastLatency}ms`;
+        } else {
+            latencyEl.textContent = '—';
+        }
+    }
+    
+    if (lastCheckEl) {
+        if (state.connection.lastCheck) {
+            lastCheckEl.textContent = new Date(state.connection.lastCheck).toLocaleTimeString();
+        } else {
+            lastCheckEl.textContent = '—';
+        }
+    }
+}
+
+async function checkConnection() {
+    const startTime = performance.now();
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/modules`, {
+            method: 'GET',
+            cache: 'no-store'
+        });
+        
+        const latency = Math.round(performance.now() - startTime);
+        
+        if (response.ok) {
+            state.connection.status = 'connected';
+            state.connection.lastLatency = latency;
+            state.connection.consecutiveFailures = 0;
+        } else {
+            state.connection.consecutiveFailures++;
+            if (state.connection.consecutiveFailures >= 2) {
+                state.connection.status = 'disconnected';
+            }
+        }
+    } catch (error) {
+        state.connection.consecutiveFailures++;
+        if (state.connection.consecutiveFailures >= 2) {
+            state.connection.status = 'disconnected';
+            state.connection.lastLatency = null;
+        }
+    }
+    
+    state.connection.lastCheck = Date.now();
+    updateStatus();
 }
 
 function renderPopupModulesChips() {
@@ -1380,6 +1472,9 @@ class CryftteeKiosk {
                 reloadBtn.addEventListener('click', () => reloadModules());
             }
             
+            // Initial connection check
+            await checkConnection();
+            
             // Load data - don't let failures break the app
             await Promise.allSettled([
                 loadModules(),
@@ -1388,10 +1483,16 @@ class CryftteeKiosk {
                 loadManifest()
             ]);
             
-            // Periodic refresh
+            // Periodic refresh (modules + connection check)
             setInterval(() => {
                 loadModules().catch(console.error);
+                checkConnection().catch(console.error);
             }, 30000);
+            
+            // More frequent connection check
+            setInterval(() => {
+                checkConnection().catch(console.error);
+            }, 10000);
             
         } catch (error) {
             console.error('App initialization error:', error);

@@ -344,6 +344,22 @@ body.reorder-mode .tab-reorder-hint { display: flex; }
   margin-bottom: var(--pad-sm);
 }
 
+/* Connection panel in status popup */
+.status-connection-panel {
+  padding: 0;
+}
+.status-connection-panel .attestation-grid {
+  margin: 0;
+}
+.status-connection-panel .attestation-row {
+  padding: var(--pad-sm) var(--pad-md);
+}
+.status-connection-panel .attestation-value {
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+}
+
 /* Attestation panel in status popup */
 .status-attestation-panel {
   padding: 0;

@@ -42,6 +42,30 @@
       </div>
       
       <div class="status-section">
+        <div class="status-section-title">Connection</div>
+        <div class="panel status-connection-panel">
+          <div class="attestation-grid">
+            <div class="attestation-row">
+              <span class="attestation-label">API Status</span>
+              <span class="attestation-value" id="connection-status">Checking...</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Endpoint</span>
+              <span class="attestation-value" id="connection-endpoint">—</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Last Response</span>
+              <span class="attestation-value" id="connection-latency">—</span>
+            </div>
+            <div class="attestation-row">
+              <span class="attestation-label">Last Check</span>
+              <span class="attestation-value" id="connection-last-check">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="status-section">
         <div class="status-section-title">Modules</div>
         <div class="chips" id="popup-modules-chips">
           <span class="chip"><span class="dot pending"></span>Loading...</span>
