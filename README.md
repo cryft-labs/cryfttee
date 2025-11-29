@@ -8,7 +8,7 @@ Cryftee is a stateless runtime that:
 - Loads and manages signed WASM modules from a manifest
 - Provides BLS/TLS staking key operations via modular plugins
 - Exposes a versioned API over UDS (Unix Domain Socket) or HTTPS
-- Includes a kiosk web UI for module management on port 323
+- Includes a kiosk web UI for module management on port 3232
 - Supports per-module GUIs rendered as tabs in the kiosk interface
 - Enforces version compatibility and publisher trust
 
@@ -127,7 +127,7 @@ cargo build --target wasm32-unknown-unknown --release
 | `CRYFTEE_TRUST_CONFIG` | - | Trust configuration path |
 | `CRYFTEE_API_TRANSPORT` | `uds` | API transport: `uds` or `https` |
 | `CRYFTEE_UDS_PATH` | `/var/run/cryftee.sock` | UDS socket path |
-| `CRYFTEE_HTTP_ADDR` | `0.0.0.0:323` | HTTP bind address |
+| `CRYFTEE_HTTP_ADDR` | `0.0.0.0:3232` | HTTP bind address |
 | `CRYFTEE_TLS_CERT` | - | TLS certificate path |
 | `CRYFTEE_TLS_KEY` | - | TLS private key path |
 
@@ -162,7 +162,7 @@ All endpoints are available over both UDS and HTTPS transports.
 ### Example: BLS Register
 
 ```bash
-curl -X POST http://localhost:323/v1/staking/bls/register \
+curl -X POST http://localhost:3232/v1/staking/bls/register \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "ephemeral",
@@ -227,7 +227,7 @@ Response:
 
 ## Kiosk UI
 
-Access the kiosk web interface at `http://localhost:323` to:
+Access the kiosk web interface at `http://localhost:3232` to:
 - View loaded and available modules
 - See module status (trusted, compatible, loaded)
 - Access module-specific GUIs as tabs

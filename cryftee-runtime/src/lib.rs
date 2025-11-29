@@ -50,7 +50,7 @@ pub struct Args {
     pub uds_path: String,
 
     /// HTTP bind address for API and kiosk UI
-    #[arg(long, env = "CRYFTEE_HTTP_ADDR", default_value = "0.0.0.0:323")]
+    #[arg(long, env = "CRYFTEE_HTTP_ADDR", default_value = "0.0.0.0:3232")]
     pub http_addr: String,
 
     /// TLS certificate path (for HTTPS mode)

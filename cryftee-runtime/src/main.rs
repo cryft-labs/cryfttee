@@ -4,7 +4,7 @@
 //! - Parses configuration from environment and CLI
 //! - Initializes the module registry and loads WASM modules
 //! - Starts API listeners (UDS and/or HTTPS)
-//! - Serves the kiosk UI on port 323
+//! - Serves the kiosk UI on port 3232
 
 use std::net::SocketAddr;
 use std::sync::Arc;

@@ -327,7 +327,7 @@ fn default_transport() -> String { "uds".to_string() }
 fn default_uds_path() -> String { "/var/run/cryftee.sock".to_string() }
 fn default_http_addr() -> String { "0.0.0.0:8443".to_string() }
 fn default_base_path() -> String { "/v1".to_string() }
-fn default_ui_addr() -> String { "0.0.0.0:323".to_string() }
+fn default_ui_addr() -> String { "0.0.0.0:3232".to_string() }
 fn default_static_dir() -> String { "ui".to_string() }
 fn default_log_level() -> String { "info".to_string() }
 

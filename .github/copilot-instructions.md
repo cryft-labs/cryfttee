@@ -7,7 +7,7 @@ This workspace contains **cryftee** - a Rust-based TEE-style sidecar application
 - Acts as a host/runtime for arbitrary WASM modules (signing, fraud proofs, policy engines)
 - Loads and manages WASM modules from a module directory driven by a signed global manifest
 - Exposes a versioned API (`/v1/...`) over UDS (default) or HTTPS
-- Provides a kiosk web UI on port 323 for module management
+- Provides a kiosk web UI on port 3232 for module management
 - Integrates with Web3Signer and cryftgo staking/TLS wiring
 
 ## Architecture
@@ -66,7 +66,7 @@ All endpoints available over both UDS and HTTPS:
 - `CRYFTEE_TRUST_CONFIG` - Path to trust roots (publisher keys)
 - `CRYFTEE_API_TRANSPORT` - "uds" (default) or "https"
 - `CRYFTEE_UDS_PATH` - UDS socket path (default: /var/run/cryftee.sock)
-- `CRYFTEE_HTTP_ADDR` - HTTP bind address (default: 0.0.0.0:323)
+- `CRYFTEE_HTTP_ADDR` - HTTP bind address (default: 0.0.0.0:3232)
 - `CRYFTEE_TLS_CERT` - TLS certificate path
 - `CRYFTEE_TLS_KEY` - TLS private key path
 - `CRYFTEE_VERIFIED_BINARY_HASH` - Externally-verified binary hash (set by cryftgo)

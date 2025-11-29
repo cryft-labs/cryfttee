@@ -38,8 +38,8 @@ cert_path = "config/cryftee.cert.pem"
 key_path  = "config/cryftee.key.pem"
 
 [ui]
-# Kiosk UI listen address (port 323 by default).
-addr = "0.0.0.0:323"
+# Kiosk UI listen address (port 3232 by default).
+addr = "0.0.0.0:3232"
 
 # Static asset root for the kiosk (index.html, app.js, styles.css).
 static_dir = "ui"
