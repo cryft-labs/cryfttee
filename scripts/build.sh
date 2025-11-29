@@ -192,6 +192,36 @@ print_summary() {
     print_success "Build complete!"
 }
 
+prompt_run() {
+    if [[ "$BUILD_RUNTIME" != "1" ]]; then
+        return
+    fi
+    
+    if [[ "$RELEASE_MODE" == "1" ]]; then
+        local mode="release"
+    else
+        local mode="debug"
+    fi
+    
+    local runtime_bin="$ROOT_DIR/cryfttee-runtime/target/$mode/cryfttee"
+    
+    if [[ ! -f "$runtime_bin" ]]; then
+        return
+    fi
+    
+    echo ""
+    read -p "Would you like to run CryftTEE now? [y/N] " -n 1 -r
+    echo ""
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        print_step "Starting CryftTEE..."
+        echo ""
+        cd "$ROOT_DIR"
+        exec "$runtime_bin"
+    fi
+}
+
 show_help() {
     echo "Cryftee Build Script"
     echo ""
@@ -296,3 +326,4 @@ if [[ "$BUILD_MODULES" == "1" ]]; then
 fi
 
 print_summary
+prompt_run
