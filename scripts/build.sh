@@ -23,25 +23,25 @@ BUILD_MODULES="${BUILD_MODULES:-1}"
 COPY_WASM="${COPY_WASM:-1}"
 
 print_header() {
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}============================================================${NC}"
     echo -e "${BLUE}  $1${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}============================================================${NC}"
 }
 
 print_step() {
-    echo -e "${GREEN}▶ $1${NC}"
+    echo -e "${GREEN}> $1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠ $1${NC}"
+    echo -e "${YELLOW}! $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}✗ $1${NC}"
+    echo -e "${RED}X $1${NC}"
 }
 
 print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
+    echo -e "${GREEN}+ $1${NC}"
 }
 
 check_prerequisites() {
@@ -184,7 +184,7 @@ print_summary() {
         if [[ -f "$wasm" ]]; then
             local size=$(du -h "$wasm" | cut -f1)
             local name=$(basename "$(dirname "$wasm")")/$(basename "$wasm")
-            echo -e "  ${GREEN}✓${NC} $name ($size)"
+            echo -e "  ${GREEN}+${NC} $name ($size)"
         fi
     done
     
@@ -280,9 +280,9 @@ done
 
 # Main build process
 echo ""
-echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║           Cryftee Build System v0.4.0                     ║${NC}"
-echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}============================================================${NC}"
+echo -e "${BLUE}           Cryftee Build System v0.4.0                      ${NC}"
+echo -e "${BLUE}============================================================${NC}"
 echo ""
 
 check_prerequisites
