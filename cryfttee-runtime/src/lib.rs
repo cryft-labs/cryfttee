@@ -46,7 +46,7 @@ pub struct Args {
     pub api_transport: String,
 
     /// UDS socket path
-    #[arg(long, env = "CRYFTTEE_UDS_PATH", default_value = "/var/run/cryfttee.sock")]
+    #[arg(long, env = "CRYFTTEE_UDS_PATH", default_value = "/tmp/cryfttee.sock")]
     pub uds_path: String,
 
     /// HTTP bind address for API and kiosk UI

@@ -24,7 +24,7 @@ trust_config    = "config/trust.toml"
 transport   = "uds"
 
 # UDS path used when transport = "uds".
-uds_path    = "/var/run/cryfttee.sock"
+uds_path    = "/tmp/cryfttee.sock"
 
 # Bind address for HTTPS and kiosk UI (if HTTPS is enabled for API).
 http_addr   = "0.0.0.0:8443"

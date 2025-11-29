@@ -126,7 +126,7 @@ cargo build --target wasm32-unknown-unknown --release
 | `CRYFTTEE_UI_DIR` | `./ui` | UI static assets path |
 | `CRYFTTEE_TRUST_CONFIG` | - | Trust configuration path |
 | `CRYFTTEE_API_TRANSPORT` | `uds` | API transport: `uds` or `https` |
-| `CRYFTTEE_UDS_PATH` | `/var/run/cryfttee.sock` | UDS socket path |
+| `CRYFTTEE_UDS_PATH` | `/tmp/cryfttee.sock` | UDS socket path |
 | `CRYFTTEE_HTTP_ADDR` | `0.0.0.0:3232` | HTTP bind address |
 | `CRYFTTEE_TLS_CERT` | - | TLS certificate path |
 | `CRYFTTEE_TLS_KEY` | - | TLS private key path |

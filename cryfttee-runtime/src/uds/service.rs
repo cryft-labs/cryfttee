@@ -19,7 +19,7 @@ pub struct UdsConfig {
 impl Default for UdsConfig {
     fn default() -> Self {
         Self {
-            socket_path: "/var/run/cryfttee.sock".to_string(),
+            socket_path: "/tmp/cryfttee.sock".to_string(),
             timeout: UDS_TIMEOUT,
             max_connections: 100,
         }
