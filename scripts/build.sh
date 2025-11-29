@@ -65,16 +65,16 @@ check_prerequisites() {
 }
 
 build_runtime() {
-    print_header "Building Cryftee Runtime"
+    print_header "Building CryftTEE Runtime"
     
     cd "$ROOT_DIR"
     
     if [[ "$RELEASE_MODE" == "1" ]]; then
         print_step "Building runtime (release mode)..."
-        cargo build --release --manifest-path cryftee-runtime/Cargo.toml
+        cargo build --release --manifest-path cryfttee-runtime/Cargo.toml
     else
         print_step "Building runtime (debug mode)..."
-        cargo build --manifest-path cryftee-runtime/Cargo.toml
+        cargo build --manifest-path cryfttee-runtime/Cargo.toml
     fi
     
     print_success "Runtime built successfully"
@@ -171,7 +171,7 @@ print_summary() {
     echo ""
     
     if [[ "$BUILD_RUNTIME" == "1" ]]; then
-        local runtime_bin="$ROOT_DIR/cryftee-runtime/target/$mode/cryftee"
+        local runtime_bin="$ROOT_DIR/cryfttee-runtime/target/$mode/cryfttee"
         if [[ -f "$runtime_bin" ]]; then
             local size=$(du -h "$runtime_bin" | cut -f1)
             echo -e "Runtime binary: ${GREEN}$runtime_bin${NC} ($size)"
@@ -225,7 +225,7 @@ clean_build() {
     cd "$ROOT_DIR"
     
     print_step "Cleaning runtime..."
-    cargo clean --manifest-path cryftee-runtime/Cargo.toml 2>/dev/null || true
+    cargo clean --manifest-path cryfttee-runtime/Cargo.toml 2>/dev/null || true
     
     for dir in modules/*/; do
         if [[ -f "${dir}Cargo.toml" ]]; then
@@ -281,7 +281,7 @@ done
 # Main build process
 echo ""
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}           Cryftee Build System v0.4.0                      ${NC}"
+echo -e "${BLUE}           CryftTEE Build System v0.4.0                     ${NC}"
 echo -e "${BLUE}============================================================${NC}"
 echo ""
 
