@@ -1,4 +1,4 @@
-# Cryftee
+# CryftTEE
 
 A Rust-based TEE-style sidecar for WASM module management, designed to integrate with `cryftgo` and Web3Signer.
 
