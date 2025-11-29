@@ -149,7 +149,7 @@ function Build-Runtime {
     Write-Host ""
 }
 
-function Build-Module {
+function Invoke-ModuleBuild {
     param([string]$ModuleName)
     
     $moduleDir = Join-Path $RootDir "modules" $ModuleName
@@ -175,7 +175,7 @@ function Build-Module {
     }
 }
 
-function Copy-WasmFile {
+function Copy-ModuleWasm {
     param([string]$ModuleName)
     
     $moduleDir = Join-Path $RootDir "modules" $ModuleName
@@ -222,7 +222,7 @@ function Build-Modules {
     Write-Host ""
     
     foreach ($module in $modules) {
-        Build-Module -ModuleName $module
+        Invoke-ModuleBuild -ModuleName $module
     }
     
     Pop-Location
@@ -233,7 +233,7 @@ function Build-Modules {
     if ($CopyWasm) {
         Write-Header "Copying WASM Files"
         foreach ($module in $modules) {
-            Copy-WasmFile -ModuleName $module
+            Copy-ModuleWasm -ModuleName $module
         }
         Write-Host ""
     }
