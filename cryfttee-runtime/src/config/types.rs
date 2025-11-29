@@ -324,7 +324,7 @@ fn default_module_dir_str() -> String { "modules".to_string() }
 fn default_manifest_path() -> String { "modules/manifest.json".to_string() }
 fn default_trust_config() -> String { "config/trust.toml".to_string() }
 fn default_transport() -> String { "uds".to_string() }
-fn default_uds_path() -> String { "/var/run/cryfttee.sock".to_string() }
+fn default_uds_path() -> String { "/tmp/cryfttee.sock".to_string() }
 fn default_http_addr() -> String { "0.0.0.0:8443".to_string() }
 fn default_base_path() -> String { "/v1".to_string() }
 fn default_ui_addr() -> String { "0.0.0.0:3232".to_string() }
