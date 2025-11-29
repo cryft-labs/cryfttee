@@ -16,6 +16,7 @@ use tokio::net::UnixListener;
 use hyper_util::rt::TokioIo;
 
 use crate::http::AppState;
+use crate::http::build_router;
 
 /// Serve API over Unix Domain Socket
 #[cfg(unix)]
@@ -46,7 +47,12 @@ pub async fn serve_uds(state: AppState, socket_path: &str) -> Result<()> {
         let router = router.clone();
         
         tokio::spawn(async move {
-            let service = tower::ServiceExt::into_make_service(router);
+            let service = hyper::service::service_fn(move |req| {
+                let router = router.clone();
+                async move {
+                    tower::ServiceExt::oneshot(router, req).await
+                }
+            });
             if let Err(err) = hyper_util::server::conn::auto::Builder::new(
                 hyper_util::rt::TokioExecutor::new()
             )
