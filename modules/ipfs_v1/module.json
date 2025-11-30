@@ -1,0 +1,89 @@
+{
+  "id": "ipfs_v1",
+  "name": "IPFS Local Node Module",
+  "version": "1.1.0",
+  "description": "Self-contained IPFS module with LOCAL pinning only - connects to local kubo daemon, includes daemon setup wizard",
+  "author": "Cryft Labs",
+  "capabilities": [
+    "ipfs_pin",
+    "ipfs_unpin",
+    "ipfs_search",
+    "ipfs_get",
+    "ipfs_add",
+    "ipfs_ls",
+    "ipfs_cat",
+    "ipfs_stat",
+    "ipns_publish",
+    "ipns_resolve",
+    "ipns_keys",
+    "node_status",
+    "node_id",
+    "kubo_install",
+    "kubo_init",
+    "kubo_start",
+    "kubo_stop",
+    "kubo_status",
+    "kubo_config"
+  ],
+  "defaultFor": {
+    "ipfs_pin": true,
+    "ipfs_unpin": true,
+    "ipfs_search": true,
+    "ipfs_get": true,
+    "ipfs_add": true,
+    "ipfs_ls": true,
+    "ipfs_cat": true,
+    "ipfs_stat": true,
+    "ipns_publish": true,
+    "ipns_resolve": true,
+    "ipns_keys": true,
+    "node_status": true,
+    "node_id": true,
+    "kubo_install": true,
+    "kubo_init": true,
+    "kubo_start": true,
+    "kubo_stop": true,
+    "kubo_status": true,
+    "kubo_config": true
+  },
+  "hasGui": true,
+  "guiPath": "gui",
+  "config": {
+    "ipfs_api": {
+      "url": "http://127.0.0.1:5001",
+      "description": "Local IPFS daemon API endpoint (kubo)"
+    },
+    "gateway": {
+      "local": "http://127.0.0.1:8080",
+      "public": "https://gateway.cryft.network",
+      "fallback": [
+        "https://ipfs.io",
+        "https://dweb.link",
+        "https://cloudflare-ipfs.com"
+      ]
+    },
+    "ipns": {
+      "namespace": "gateway.cryft.network/ipns",
+      "default_key": "self"
+    },
+    "pinning": {
+      "local_only": true,
+      "metadata_path": "~/.cryfttee/ipfs_pins.json"
+    },
+    "kubo": {
+      "default_version": "0.27.0",
+      "install_path": "~/.cryfttee/kubo",
+      "data_path": "~/.ipfs"
+    },
+    "limits": {
+      "max_add_size_mb": 100,
+      "timeout_secs": 60
+    }
+  },
+  "dependencies": {
+    "runtime": ">=0.4.0"
+  },
+  "requirements": {
+    "ipfs_daemon": "kubo >= 0.18.0 (optional - can be installed via GUI)"
+  }
+}

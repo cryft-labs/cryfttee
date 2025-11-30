@@ -4,25 +4,31 @@
       "capabilities": [
         "bls_register",
         "bls_sign",
+        "bls_verify",
         "tls_register",
         "tls_sign",
-        "module_signing"
+        "tls_verify",
+        "module_signing_key",
+        "sign_module",
+        "verify_module",
+        "hash_module"
       ],
       "defaultFor": {
         "bls": true,
-        "tls": true
+        "tls": true,
+        "module_signing": true
       },
-      "description": "Baseline BLS + TLS staking module with module signing capabilities via Web3Signer.",
+      "description": "BLS + TLS staking module with dedicated WASM module signing capability via Web3Signer.",
       "dir": "bls_tls_signer_v1",
       "file": "module.wasm",
       "guiPath": "gui",
       "hasGui": true,
-      "hash": "sha256:REPLACE_WITH_REAL_WASM_SHA256",
+      "hash": "sha256:927d033e54e3248802e2cccf51f876b9cc662cb16b90df6ace1cb1d70e2bc1b9",
       "id": "bls_tls_signer_v1",
       "minCryftteeVersion": "0.4.0",
       "publisherId": "cryft-labs",
       "signature": "REPLACE_WITH_BASE64_SIGNATURE_OVER_CANONICAL_METADATA",
-      "version": "1.0.0"
+      "version": "1.2.0"
     },
     {
       "capabilities": [
@@ -61,6 +67,44 @@
       "publisherId": "cryft-labs",
       "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "ipfs_pin",
+        "ipfs_unpin",
+        "ipfs_search",
+        "ipfs_get",
+        "ipfs_add",
+        "ipfs_ls",
+        "ipfs_cat",
+        "ipfs_stat",
+        "ipns_publish",
+        "ipns_resolve",
+        "ipns_keys",
+        "node_status",
+        "node_id",
+        "kubo_install",
+        "kubo_init",
+        "kubo_start",
+        "kubo_stop",
+        "kubo_status",
+        "kubo_config"
+      ],
+      "defaultFor": {
+        "ipfs": true
+      },
+      "description": "Self-contained IPFS module with LOCAL pinning only - includes kubo daemon setup wizard.",
+      "dir": "ipfs_v1",
+      "file": "module.wasm",
+      "guiPath": "gui",
+      "hasGui": true,
+      "hash": "sha256:68cadf21d42a2885e54238d8609ddf6dd7e18b19588e5840078ddb3d048eb71b",
+      "id": "ipfs_v1",
+      "minCryftteeVersion": "0.4.0",
+      "moduleType": "ipfs",
+      "publisherId": "cryft-labs",
+      "signature": "PLACEHOLDER_IPFS_SIGNATURE",
+      "version": "1.1.0"
     }
   ],
   "version": 1

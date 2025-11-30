@@ -6,12 +6,20 @@
 //! - Building signature manifests
 //! - Verifying signatures against trusted publishers
 //! - Checking publisher verification status via blockchain state
+//! - GitHub-based signature verification (GPG, SSH, Actions attestations)
 
 pub mod blockchain_state;
+pub mod github_verify;
 
 pub use blockchain_state::{
     BlockchainState, OnChainPublisher, PublisherStatus, ChainInfo,
     get_blockchain_state,
+};
+
+pub use github_verify::{
+    GitHubVerifier, GitHubPublisherConfig, GitHubVerificationResult,
+    GitHubVerificationMethod, GitHubCommitVerification, GitHubReleaseInfo,
+    GitHubActionsRun, VerificationCheck, parse_github_publishers,
 };
 
 use serde::{Deserialize, Serialize};

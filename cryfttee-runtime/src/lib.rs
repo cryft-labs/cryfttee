@@ -6,6 +6,7 @@ use clap::Parser;
 
 pub mod config;
 pub mod http;
+pub mod ipfs;
 pub mod runtime;
 pub mod signing;
 pub mod storage;
@@ -67,6 +68,7 @@ pub struct Args {
 }
 
 pub use config::{CryftteeConfig, TrustConfigFile, TrustPolicy, TrustedPublisher};
+pub use ipfs::{IpfsBackend, IpfsBackendConfig, PinInfo, PinStatus, GatewayStatus, GatewayHealth};
 pub use runtime::{ModuleRegistry, RuntimeState, ModuleInfo, ModuleStatus};
 pub use storage::{ManifestEntry, Manifest};
 pub use wasm_api::{WasmModule, SigningCapability};

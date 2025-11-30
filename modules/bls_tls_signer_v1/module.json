@@ -1,7 +1,7 @@
 {
   "id": "bls_tls_signer_v1",
-  "version": "1.1.0",
-  "description": "BLS + TLS staking module with Web3Signer integration. Supports file-based and HashiCorp Vault key storage backends.",
+  "version": "1.2.0",
+  "description": "BLS + TLS staking module with Web3Signer integration and dedicated WASM module signing capability.",
   "capabilities": [
     "bls_register",
     "bls_sign",
@@ -9,7 +9,11 @@
     "tls_register",
     "tls_sign",
     "tls_verify",
-    "key_management"
+    "key_management",
+    "module_signing_key",
+    "sign_module",
+    "verify_module",
+    "hash_module"
   ],
   "keyManagement": {
     "backends": ["web3signer-file", "web3signer-vault"],
@@ -20,24 +24,43 @@
     },
     "supportedKeyTypes": {
       "bls": "BLS12-381 (Ethereum 2.0 validator keys)",
-      "tls": "ECDSA P-256 / secp256k1 (TLS/ETH1 signing)"
+      "tls": "ECDSA P-256 / secp256k1 (TLS/ETH1 signing)",
+      "module_signing": "Ed25519 / secp256k1 (WASM module signatures)"
+    }
+  },
+  "moduleSigning": {
+    "description": "Sign WASM modules with dedicated signing keys for publisher verification",
+    "keyTypes": ["ed25519", "secp256k1"],
+    "defaultKeyType": "ed25519",
+    "signatureFormat": "hex-encoded Ed25519/secp256k1 signature over canonical JSON payload",
+    "canonicalPayload": {
+      "module_id": "string",
+      "version": "string",
+      "publisher_id": "string",
+      "wasm_hash": "lowercase hex SHA256",
+      "metadata": "optional JSON object"
     }
   },
   "hasGui": true,
   "guiPath": "gui",
   "abi": {
     "type": "signing",
-    "schemaVersion": "1.1.0",
+    "schemaVersion": "1.2.0",
     "exports": [
       "bls_register",
       "bls_sign",
       "tls_register",
-      "tls_sign"
+      "tls_sign",
+      "module_signing_key",
+      "sign_module",
+      "verify_module",
+      "hash_module",
+      "handle_request"
     ]
   },
   "build": {
     "toolchain": "rust-1.80.0+wasm32-unknown-unknown",
-    "wasmOptimization": "z",
+    "wasmOptimization": "s",
     "timestamp": "2025-11-30T00:00:00Z"
   }
 }

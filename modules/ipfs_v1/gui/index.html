@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPFS Local Node Module</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-green: #3fb950;
+            --accent-yellow: #d29922;
+            --accent-red: #f85149;
+            --accent-purple: #a371f7;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            font-size: 1.8rem;
+        }
+        
+        h1 .icon {
+            font-size: 2rem;
+        }
+        
+        .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+        
+        /* Node Status Bar */
+        .status-bar {
+            display: flex;
+            gap: 16px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .status-dot.online { background: var(--accent-green); }
+        .status-dot.healthy { background: var(--accent-green); }
+        .status-dot.degraded { background: var(--accent-yellow); }
+        .status-dot.offline { background: var(--accent-red); }
+        .status-dot.unhealthy { background: var(--accent-red); }
+        .status-dot.unknown { background: var(--text-secondary); }
+        
+        .local-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(163, 113, 247, 0.2);
+            color: var(--accent-purple);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .tab {
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.95rem;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover {
+            color: var(--text-primary);
+        }
+        
+        .tab.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        /* Info banner */
+        .info-banner {
+            background: rgba(88, 166, 255, 0.1);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .info-banner .icon {
+            font-size: 1.5rem;
+        }
+        
+        /* Forms */
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+        
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+        
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #4393e6;
+        }
+        
+        .btn-success {
+            background: var(--accent-green);
+            color: white;
+        }
+        
+        .btn-danger {
+            background: var(--accent-red);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+        
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+        
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .cid-cell {
+            font-family: monospace;
+            font-size: 0.85rem;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .cid-cell a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+        
+        .cid-cell a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Status badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .badge-recursive { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+        .badge-direct { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); }
+        .badge-indirect { background: rgba(210, 153, 34, 0.2); color: var(--accent-yellow); }
+        .badge-pinned { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+        .badge.success { background: rgba(63, 185, 80, 0.2); color: var(--accent-green); }
+        .badge.warning { background: rgba(210, 153, 34, 0.2); color: var(--accent-yellow); }
+        .badge.error { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        
+        /* Info banner variants */
+        .info-banner.success { background: rgba(63, 185, 80, 0.1); border-color: var(--accent-green); }
+        .info-banner.warning { background: rgba(210, 153, 34, 0.1); border-color: var(--accent-yellow); }
+        .info-banner.error { background: rgba(248, 81, 73, 0.1); border-color: var(--accent-red); }
+        
+        /* Button variants */
+        .btn.btn-success { background: var(--accent-green); }
+        .btn.btn-success:hover { background: #2ea043; }
+        .btn.btn-danger { background: var(--accent-red); }
+        .btn.btn-danger:hover { background: #da3633; }
+        .btn.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+        
+        /* Search */
+        .search-container {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 10px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+        
+        /* Node info */
+        .node-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        
+        .node-info-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .node-info-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+        
+        .node-info-value {
+            font-family: monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+        
+        /* Gateway grid */
+        .gateway-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        
+        .gateway-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .gateway-card.local {
+            border-color: var(--accent-purple);
+        }
+        
+        .gateway-card.primary {
+            border-color: var(--accent-blue);
+        }
+        
+        .gateway-url {
+            font-family: monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+            margin-bottom: 12px;
+        }
+        
+        .gateway-stats {
+            display: flex;
+            gap: 16px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+        
+        /* IPNS Card */
+        .ipns-record {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        
+        .ipns-name {
+            font-family: monospace;
+            color: var(--accent-purple);
+        }
+        
+        .ipns-value {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Key list */
+        .key-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        
+        .key-name {
+            font-weight: 500;
+        }
+        
+        .key-id {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        /* File drop zone */
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: var(--accent-blue);
+            background: rgba(88, 166, 255, 0.1);
+        }
+        
+        .drop-zone-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+        
+        /* Loading */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .toast {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease;
+        }
+        
+        .toast.success { border-left: 4px solid var(--accent-green); }
+        .toast.error { border-left: 4px solid var(--accent-red); }
+        .toast.info { border-left: 4px solid var(--accent-blue); }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>
+            <span class="icon">🌐</span>
+            IPFS Local Node Module
+            <span class="local-badge">LOCAL ONLY</span>
+        </h1>
+        <p class="subtitle">Self-contained IPFS pinning • Connects to local kubo daemon • No external services</p>
+        
+        <!-- Info Banner -->
+        <div class="info-banner">
+            <span class="icon">💡</span>
+            <div>
+                <strong>Local-Only Mode:</strong> All pins are stored on your local IPFS node. 
+                Requires a running kubo daemon at <code>127.0.0.1:5001</code>.
+                Public gateway URLs use <code>gateway.cryft.network</code> for sharing.
+            </div>
+        </div>
+        
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-dot" id="local-node-status"></span>
+                <span>Local Node</span>
+                <span style="color: var(--text-secondary); font-family: monospace; font-size: 0.85rem;" id="node-peer-id"></span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot" id="gateway-status"></span>
+                <span>Gateway</span>
+            </div>
+            <div class="status-item" style="margin-left: auto;">
+                <span id="pin-count">0</span> local pins
+            </div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab" data-tab="setup">🚀 Kubo Setup</button>
+            <button class="tab active" data-tab="pins">📌 Local Pins</button>
+            <button class="tab" data-tab="add">➕ Add Content</button>
+            <button class="tab" data-tab="ipns">🔗 IPNS</button>
+            <button class="tab" data-tab="node">🖥️ Node Info</button>
+            <button class="tab" data-tab="settings">⚙️ Settings</button>
+        </div>
+        
+        <!-- Kubo Setup Tab -->
+        <div class="tab-content" id="tab-setup">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🚀 Kubo Daemon Setup</span>
+                    <button class="btn btn-sm btn-secondary" onclick="checkKuboStatus()">↻ Check Status</button>
+                </div>
+                
+                <div id="kubo-status-banner" class="info-banner" style="margin-bottom: 16px;">
+                    <span class="icon" id="kubo-status-icon">⏳</span>
+                    <div>
+                        <strong id="kubo-status-text">Checking kubo status...</strong>
+                        <div id="kubo-status-detail" style="font-size: 0.85rem; color: var(--text-secondary);"></div>
+                    </div>
+                </div>
+                
+                <!-- Step 1: Install -->
+                <div class="card" style="background: var(--bg-tertiary); margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                        <span class="step-number" style="background: var(--accent-blue); color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">1</span>
+                        <span class="card-title">Install Kubo</span>
+                        <span class="badge" id="install-status" style="margin-left: auto;">Not checked</span>
+                    </div>
+                    <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 0.9rem;">
+                        Download and install kubo (go-ipfs) - the official IPFS implementation.
+                    </p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Version</label>
+                            <select id="kubo-version">
+                                <option value="0.27.0">v0.27.0 (latest stable)</option>
+                                <option value="0.26.0">v0.26.0</option>
+                                <option value="0.25.0">v0.25.0</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Platform</label>
+                            <select id="kubo-platform">
+                                <option value="windows-amd64">Windows (64-bit)</option>
+                                <option value="linux-amd64">Linux (64-bit)</option>
+                                <option value="darwin-amd64">macOS (Intel)</option>
+                                <option value="darwin-arm64">macOS (Apple Silicon)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="installKubo()">📥 Download & Install</button>
+                        <button class="btn btn-secondary" onclick="openKuboDownloads()">🔗 Manual Download</button>
+                    </div>
+                </div>
+                
+                <!-- Step 2: Initialize -->
+                <div class="card" style="background: var(--bg-tertiary); margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                        <span class="step-number" style="background: var(--accent-blue); color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">2</span>
+                        <span class="card-title">Initialize Repository</span>
+                        <span class="badge" id="init-status" style="margin-left: auto;">Not checked</span>
+                    </div>
+                    <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 0.9rem;">
+                        Create your IPFS repository and generate your node identity.
+                    </p>
+                    <div class="form-group">
+                        <label>Profile</label>
+                        <select id="kubo-profile">
+                            <option value="default">Default (balanced for desktop)</option>
+                            <option value="server">Server (optimized for always-on)</option>
+                            <option value="lowpower">Low Power (minimal resources)</option>
+                            <option value="randomports">Random Ports (NAT-friendly)</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="initKubo()">🔧 Initialize IPFS</button>
+                </div>
+                
+                <!-- Step 3: Start Daemon -->
+                <div class="card" style="background: var(--bg-tertiary); margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                        <span class="step-number" style="background: var(--accent-blue); color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">3</span>
+                        <span class="card-title">Start Daemon</span>
+                        <span class="badge" id="daemon-status" style="margin-left: auto;">Not running</span>
+                    </div>
+                    <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 0.9rem;">
+                        Start the IPFS daemon to connect to the network.
+                    </p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="enable-gateway" checked>
+                                Enable Gateway (port 8080)
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="enable-pubsub">
+                                Enable PubSub
+                            </label>
+                        </div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-success" onclick="startKubo()" id="start-btn">▶️ Start Daemon</button>
+                        <button class="btn btn-danger" onclick="stopKubo()" id="stop-btn" disabled>⏹️ Stop Daemon</button>
+                    </div>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="card" style="background: var(--bg-tertiary);">
+                    <div class="card-title" style="margin-bottom: 12px;">Quick Actions</div>
+                    <div class="btn-group" style="flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="openWebUI()">🌐 Open Web UI</button>
+                        <button class="btn btn-secondary" onclick="viewConfig()">📄 View Config</button>
+                        <button class="btn btn-secondary" onclick="openDataDir()">📁 Open Data Dir</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Docker Alternative -->
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 12px;">🐳 Docker Alternative</div>
+                <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 0.9rem;">
+                    Prefer Docker? Run kubo in a container instead:
+                </p>
+                <div style="background: var(--bg-primary); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
+                    <code>docker run -d --name ipfs \<br>
+                    &nbsp;&nbsp;-p 5001:5001 \<br>
+                    &nbsp;&nbsp;-p 8080:8080 \<br>
+                    &nbsp;&nbsp;-v ipfs_data:/data/ipfs \<br>
+                    &nbsp;&nbsp;ipfs/kubo:latest</code>
+                </div>
+                <button class="btn btn-secondary" style="margin-top: 12px;" onclick="copyDockerCommand()">📋 Copy Command</button>
+            </div>
+        </div>
+        
+        <!-- Pins Tab -->
+        <div class="tab-content active" id="tab-pins">
+            <div class="search-container">
+                <input type="text" class="search-input" id="search-input" placeholder="Search by CID, name, or tag...">
+                <select id="type-filter" style="width: auto; padding: 10px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                    <option value="recursive">Recursive</option>
+                    <option value="direct">Direct</option>
+                    <option value="all">All Types</option>
+                </select>
+                <button class="btn btn-primary" onclick="searchPins()">Search</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Local Pinned Content</span>
+                    <button class="btn btn-sm btn-secondary" onclick="refreshPins()">↻ Refresh</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CID</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Size</th>
+                                <th>Pinned At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pins-table">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="empty-state" id="pins-empty" style="display: none;">
+                    <div class="empty-state-icon">📭</div>
+                    <p>No local pins found</p>
+                    <p style="font-size: 0.9rem; margin-top: 8px;">Pin content to your local IPFS node to get started</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add Content Tab -->
+        <div class="tab-content" id="tab-add">
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 16px;">Pin Existing CID</div>
+                <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 0.9rem;">
+                    Pin content from the IPFS network to your local node. Content will be fetched and stored locally.
+                </p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>CID</label>
+                        <input type="text" id="pin-cid" placeholder="QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG">
+                    </div>
+                    <div class="form-group">
+                        <label>Name (local metadata)</label>
+                        <input type="text" id="pin-name" placeholder="my-module-v1.0.0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="pin-recursive" checked>
+                        Recursive pin (include linked content)
+                    </label>
+                </div>
+                <button class="btn btn-primary" onclick="pinCid()">📌 Pin to Local Node</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 16px;">Add New Content</div>
+                <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                    <div class="drop-zone-icon">📁</div>
+                    <p>Drop files here or click to browse</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">
+                        Content will be added and pinned to your local IPFS node
+                    </p>
+                    <input type="file" id="file-input" style="display: none;" multiple>
+                </div>
+                <div style="margin-top: 16px;">
+                    <div class="form-group">
+                        <label>Or paste content directly</label>
+                        <textarea id="add-content" placeholder="Paste content here (text or base64)"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Filename</label>
+                            <input type="text" id="add-filename" placeholder="module.wasm">
+                        </div>
+                        <div class="form-group">
+                            <label>CID Version</label>
+                            <select id="add-cid-version">
+                                <option value="1">CIDv1 (default)</option>
+                                <option value="0">CIDv0 (legacy Qm...)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="add-pin" checked>
+                            Pin after adding
+                        </label>
+                    </div>
+                    <button class="btn btn-success" onclick="addContent()">➕ Add to IPFS</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- IPNS Tab -->
+        <div class="tab-content" id="tab-ipns">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">IPNS Keys</span>
+                    <button class="btn btn-sm btn-secondary" onclick="refreshKeys()">↻ Refresh</button>
+                </div>
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Manage IPNS keys for publishing mutable names.
+                </p>
+                <div id="keys-list">
+                    <!-- Populated by JS -->
+                </div>
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>New Key Name</label>
+                            <input type="text" id="new-key-name" placeholder="my-key">
+                        </div>
+                        <div class="form-group">
+                            <label>Key Type</label>
+                            <select id="new-key-type">
+                                <option value="ed25519">Ed25519 (recommended)</option>
+                                <option value="rsa">RSA</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="generateKey()">🔑 Generate Key</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Publish to IPNS</span>
+                </div>
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    IPNS provides a mutable pointer to IPFS content. Publish a CID to make it accessible via a stable name.
+                </p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>CID to Publish</label>
+                        <input type="text" id="ipns-cid" placeholder="QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG">
+                    </div>
+                    <div class="form-group">
+                        <label>Key Name</label>
+                        <select id="ipns-key">
+                            <option value="self">self (default)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>TTL (seconds)</label>
+                        <input type="number" id="ipns-ttl" value="3600">
+                    </div>
+                    <div class="form-group">
+                        <label>Lifetime (seconds)</label>
+                        <input type="number" id="ipns-lifetime" value="86400">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="publishIpns()">🔗 Publish to IPNS</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Resolve IPNS Name</span>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label>IPNS Name (Peer ID or domain)</label>
+                        <input type="text" id="resolve-name" placeholder="k51qzi5uqu5... or gateway.cryft.network">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: flex-end;">
+                        <button class="btn btn-secondary" onclick="resolveIpns()">🔍 Resolve</button>
+                    </div>
+                </div>
+                <div id="resolve-result" style="display: none; margin-top: 16px;">
+                    <div class="ipns-record">
+                        <div>
+                            <div class="ipns-name" id="resolved-name"></div>
+                            <div class="ipns-value" id="resolved-cid"></div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-secondary" onclick="copyResolved()">📋 Copy</button>
+                            <button class="btn btn-sm btn-secondary" onclick="openResolvedGateway()">🔗 Open</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Node Info Tab -->
+        <div class="tab-content" id="tab-node">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Local Node Information</span>
+                    <button class="btn btn-sm btn-secondary" onclick="refreshNodeInfo()">↻ Refresh</button>
+                </div>
+                <div class="node-info" id="node-info">
+                    <div class="node-info-item">
+                        <div class="node-info-label">Peer ID</div>
+                        <div class="node-info-value" id="info-peer-id">-</div>
+                    </div>
+                    <div class="node-info-item">
+                        <div class="node-info-label">Agent Version</div>
+                        <div class="node-info-value" id="info-agent">-</div>
+                    </div>
+                    <div class="node-info-item">
+                        <div class="node-info-label">Protocol Version</div>
+                        <div class="node-info-value" id="info-protocol">-</div>
+                    </div>
+                    <div class="node-info-item">
+                        <div class="node-info-label">Connection Status</div>
+                        <div class="node-info-value" id="info-status">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Listen Addresses</span>
+                </div>
+                <div id="listen-addresses" style="font-family: monospace; font-size: 0.85rem;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Gateway Status</span>
+                    <button class="btn btn-sm btn-secondary" onclick="checkGateways()">↻ Check</button>
+                </div>
+                <div class="gateway-grid" id="gateway-grid">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Settings Tab -->
+        <div class="tab-content" id="tab-settings">
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 16px;">Local IPFS Node</div>
+                <div class="form-group">
+                    <label>API Endpoint</label>
+                    <input type="text" id="config-api-url" value="http://127.0.0.1:5001">
+                </div>
+                <div class="form-group">
+                    <label>Local Gateway</label>
+                    <input type="text" id="config-local-gateway" value="http://127.0.0.1:8080">
+                </div>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 8px;">
+                    These should match your local kubo daemon configuration.
+                </p>
+            </div>
+            
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 16px;">Public Gateway</div>
+                <div class="form-group">
+                    <label>Primary Gateway (for sharing)</label>
+                    <input type="text" id="config-public-gateway" value="https://gateway.cryft.network">
+                </div>
+                <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 8px;">
+                    Public gateway URLs are used for shareable links. Your content must be accessible on the network for others to retrieve it.
+                </p>
+            </div>
+            
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 16px;">Request Limits</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Request Timeout (seconds)</label>
+                        <input type="number" id="config-timeout" value="60">
+                    </div>
+                    <div class="form-group">
+                        <label>Max Add Size (MB)</label>
+                        <input type="number" id="config-max-size" value="100">
+                    </div>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script>
+        // Configuration
+        const CONFIG = {
+            apiBase: '/api/modules/ipfs_v1',
+            localApi: 'http://127.0.0.1:5001',
+            localGateway: 'http://127.0.0.1:8080',
+            publicGateway: 'https://gateway.cryft.network'
+        };
+        
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+            });
+        });
+        
+        // File drop zone
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+        
+        async function handleFiles(files) {
+            for (const file of files) {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const content = btoa(new Uint8Array(e.target.result).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+                    await addToIpfs(content, true, file.name);
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }
+        
+        // API calls
+        async function callModule(operation, data = {}) {
+            try {
+                const response = await fetch(`${CONFIG.apiBase}/call`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ operation, data })
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('API error:', error);
+                showToast('API request failed: ' + error.message, 'error');
+                return { error: error.message };
+            }
+        }
+        
+        // Node status
+        async function checkNodeStatus() {
+            const result = await callModule('node_status', {});
+            const statusDot = document.getElementById('local-node-status');
+            const peerId = document.getElementById('node-peer-id');
+            
+            if (result.online) {
+                statusDot.className = 'status-dot online';
+                peerId.textContent = result.peerId ? result.peerId.substring(0, 12) + '...' : '';
+            } else {
+                statusDot.className = 'status-dot offline';
+                peerId.textContent = result.error || 'Offline';
+            }
+            
+            return result;
+        }
+        
+        async function refreshNodeInfo() {
+            const result = await callModule('node_id', {});
+            
+            if (result.error) {
+                showToast('Failed to get node info: ' + result.error, 'error');
+                return;
+            }
+            
+            document.getElementById('info-peer-id').textContent = result.ID || '-';
+            document.getElementById('info-agent').textContent = result.AgentVersion || '-';
+            document.getElementById('info-protocol').textContent = result.ProtocolVersion || '-';
+            document.getElementById('info-status').innerHTML = '<span style="color: var(--accent-green)">● Online</span>';
+            
+            // Show addresses
+            const addrs = document.getElementById('listen-addresses');
+            if (result.Addresses && result.Addresses.length > 0) {
+                addrs.innerHTML = result.Addresses.map(a => 
+                    `<div style="padding: 4px 0; border-bottom: 1px solid var(--border-color);">${a}</div>`
+                ).join('');
+            } else {
+                addrs.innerHTML = '<div style="color: var(--text-secondary);">No addresses found</div>';
+            }
+        }
+        
+        // Pin operations
+        async function pinCid() {
+            const cid = document.getElementById('pin-cid').value.trim();
+            const name = document.getElementById('pin-name').value.trim() || undefined;
+            const recursive = document.getElementById('pin-recursive').checked;
+            
+            if (!cid) {
+                showToast('Please enter a CID', 'error');
+                return;
+            }
+            
+            showToast('Pinning content...', 'info');
+            const result = await callModule('ipfs_pin', { cid, name, recursive });
+            
+            if (result.error) {
+                showToast('Pin failed: ' + result.error, 'error');
+            } else {
+                showToast('Content pinned successfully!', 'success');
+                document.getElementById('pin-cid').value = '';
+                document.getElementById('pin-name').value = '';
+                refreshPins();
+            }
+        }
+        
+        async function unpinCid(cid) {
+            if (!confirm(`Unpin ${cid.substring(0, 16)}...?`)) return;
+            
+            const result = await callModule('ipfs_unpin', { cid });
+            if (result.error) {
+                showToast('Unpin failed: ' + result.error, 'error');
+            } else {
+                showToast('Content unpinned', 'success');
+                refreshPins();
+            }
+        }
+        
+        async function searchPins() {
+            const query = document.getElementById('search-input').value.trim();
+            const result = await callModule('ipfs_search', { query, limit: 100 });
+            renderPins(result.pins || result || []);
+        }
+        
+        async function refreshPins() {
+            const pinType = document.getElementById('type-filter').value;
+            const result = await callModule('ipfs_ls', { pinType });
+            renderPins(result.pins || result || []);
+        }
+        
+        function renderPins(pins) {
+            const tbody = document.getElementById('pins-table');
+            const emptyState = document.getElementById('pins-empty');
+            
+            // Handle both array and object formats
+            if (Array.isArray(pins)) {
+                if (pins.length === 0) {
+                    tbody.innerHTML = '';
+                    emptyState.style.display = 'block';
+                    document.getElementById('pin-count').textContent = '0';
+                    return;
+                }
+                
+                emptyState.style.display = 'none';
+                tbody.innerHTML = pins.map(pin => `
+                    <tr>
+                        <td class="cid-cell">
+                            <a href="${CONFIG.publicGateway}/ipfs/${pin.cid}" target="_blank" title="${pin.cid}">
+                                ${pin.cid.substring(0, 12)}...${pin.cid.slice(-4)}
+                            </a>
+                        </td>
+                        <td>${pin.name || '-'}</td>
+                        <td><span class="badge badge-${pin.pinType || 'recursive'}">${pin.pinType || 'recursive'}</span></td>
+                        <td>${pin.size ? formatBytes(pin.size) : '-'}</td>
+                        <td>${formatDate(pin.pinnedAt)}</td>
+                        <td>
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('${pin.cid}')">📋</button>
+                                <button class="btn btn-sm btn-secondary" onclick="openGateway('${pin.cid}')">🔗</button>
+                                <button class="btn btn-sm btn-danger" onclick="unpinCid('${pin.cid}')">🗑️</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+                
+                document.getElementById('pin-count').textContent = pins.length;
+            } else {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+            }
+        }
+        
+        // Add content
+        async function addContent() {
+            const content = document.getElementById('add-content').value;
+            const filename = document.getElementById('add-filename').value.trim() || undefined;
+            const cidVersion = parseInt(document.getElementById('add-cid-version').value);
+            const pin = document.getElementById('add-pin').checked;
+            
+            if (!content) {
+                showToast('Please enter content to add', 'error');
+                return;
+            }
+            
+            await addToIpfs(content, false, filename, pin, cidVersion);
+        }
+        
+        async function addToIpfs(content, base64 = false, filename, pin = true, cidVersion = 1) {
+            showToast('Adding content to IPFS...', 'info');
+            
+            const result = await callModule('ipfs_add', {
+                content,
+                base64,
+                filename,
+                pin,
+                cidVersion
+            });
+            
+            if (result.error) {
+                showToast('Add failed: ' + result.error, 'error');
+            } else {
+                showToast(`Added to IPFS: ${result.cid || 'Success'}`, 'success');
+                document.getElementById('add-content').value = '';
+                if (pin) refreshPins();
+            }
+        }
+        
+        // IPNS
+        async function refreshKeys() {
+            const result = await callModule('ipns_keys', {});
+            const keysList = document.getElementById('keys-list');
+            const keySelect = document.getElementById('ipns-key');
+            
+            if (result.error) {
+                keysList.innerHTML = '<div style="color: var(--text-secondary);">Failed to load keys</div>';
+                return;
+            }
+            
+            const keys = result.Keys || result || [];
+            
+            if (keys.length === 0) {
+                keysList.innerHTML = '<div style="color: var(--text-secondary);">No keys found</div>';
+            } else {
+                keysList.innerHTML = keys.map(k => `
+                    <div class="key-item">
+                        <div>
+                            <div class="key-name">${k.Name || k.name}</div>
+                            <div class="key-id">${k.Id || k.id}</div>
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('${k.Id || k.id}')">📋</button>
+                    </div>
+                `).join('');
+                
+                // Update key select
+                keySelect.innerHTML = keys.map(k => 
+                    `<option value="${k.Name || k.name}">${k.Name || k.name}</option>`
+                ).join('');
+            }
+        }
+        
+        async function generateKey() {
+            const name = document.getElementById('new-key-name').value.trim();
+            const keyType = document.getElementById('new-key-type').value;
+            
+            if (!name) {
+                showToast('Please enter a key name', 'error');
+                return;
+            }
+            
+            const result = await callModule('ipns_keys', { generate: name, keyType });
+            
+            if (result.error) {
+                showToast('Key generation failed: ' + result.error, 'error');
+            } else {
+                showToast('Key generated successfully', 'success');
+                document.getElementById('new-key-name').value = '';
+                refreshKeys();
+            }
+        }
+        
+        async function publishIpns() {
+            const cid = document.getElementById('ipns-cid').value.trim();
+            const key = document.getElementById('ipns-key').value;
+            const ttl = parseInt(document.getElementById('ipns-ttl').value);
+            const lifetime = parseInt(document.getElementById('ipns-lifetime').value);
+            
+            if (!cid) {
+                showToast('Please enter a CID', 'error');
+                return;
+            }
+            
+            showToast('Publishing to IPNS...', 'info');
+            const result = await callModule('ipns_publish', { cid, key, ttl, lifetime });
+            
+            if (result.error) {
+                showToast('Publish failed: ' + result.error, 'error');
+            } else {
+                showToast(`Published! IPNS: ${result.name || result.Name || 'Success'}`, 'success');
+            }
+        }
+        
+        async function resolveIpns() {
+            const name = document.getElementById('resolve-name').value.trim();
+            
+            if (!name) {
+                showToast('Please enter an IPNS name', 'error');
+                return;
+            }
+            
+            showToast('Resolving IPNS name...', 'info');
+            const result = await callModule('ipns_resolve', { name });
+            
+            if (result.error) {
+                showToast('Resolve failed: ' + result.error, 'error');
+                document.getElementById('resolve-result').style.display = 'none';
+            } else {
+                document.getElementById('resolved-name').textContent = `/ipns/${result.name || name}`;
+                document.getElementById('resolved-cid').textContent = result.cid || result.Path || result;
+                document.getElementById('resolve-result').style.display = 'block';
+            }
+        }
+        
+        // Gateways
+        async function checkGateways() {
+            const gateways = [
+                { url: CONFIG.localGateway, name: 'Local Gateway', type: 'local' },
+                { url: CONFIG.publicGateway, name: 'Cryft Gateway', type: 'primary' },
+                { url: 'https://ipfs.io', name: 'IPFS.io', type: '' },
+                { url: 'https://dweb.link', name: 'dweb.link', type: '' }
+            ];
+            
+            const grid = document.getElementById('gateway-grid');
+            grid.innerHTML = gateways.map(gw => `
+                <div class="gateway-card ${gw.type}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span class="status-dot unknown" id="gw-${btoa(gw.url).substring(0,8)}"></span>
+                        ${gw.type ? `<span class="badge badge-${gw.type === 'local' ? 'direct' : 'pinned'}">${gw.type}</span>` : ''}
+                    </div>
+                    <div style="font-weight: 500; margin-bottom: 4px;">${gw.name}</div>
+                    <div class="gateway-url">${gw.url}</div>
+                </div>
+            `).join('');
+            
+            // Check each gateway
+            for (const gw of gateways) {
+                checkGateway(gw.url);
+            }
+        }
+        
+        async function checkGateway(url) {
+            const dotId = `gw-${btoa(url).substring(0,8)}`;
+            const dot = document.getElementById(dotId);
+            if (!dot) return;
+            
+            try {
+                const testUrl = `${url}/ipfs/QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn`; // empty dir
+                const response = await fetch(testUrl, { method: 'HEAD', mode: 'no-cors' });
+                dot.className = 'status-dot online';
+            } catch (e) {
+                dot.className = 'status-dot offline';
+            }
+        }
+        
+        // Config
+        async function saveConfig() {
+            const config = {
+                apiUrl: document.getElementById('config-api-url').value,
+                gatewayUrl: document.getElementById('config-local-gateway').value,
+                publicGateway: document.getElementById('config-public-gateway').value,
+                timeoutSecs: parseInt(document.getElementById('config-timeout').value),
+                maxAddSize: parseInt(document.getElementById('config-max-size').value) * 1024 * 1024
+            };
+            
+            const result = await callModule('set_config', config);
+            
+            if (result.error) {
+                showToast('Save failed: ' + result.error, 'error');
+            } else {
+                showToast('Configuration saved', 'success');
+                CONFIG.localApi = config.apiUrl;
+                CONFIG.localGateway = config.gatewayUrl;
+                CONFIG.publicGateway = config.publicGateway;
+            }
+        }
+        
+        // Utilities
+        function openGateway(cid) {
+            const url = `${CONFIG.publicGateway}/ipfs/${cid}`;
+            window.open(url, '_blank');
+        }
+        
+        function openResolvedGateway() {
+            const cid = document.getElementById('resolved-cid').textContent;
+            const cleanCid = cid.replace('/ipfs/', '');
+            openGateway(cleanCid);
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Copied to clipboard', 'info');
+            });
+        }
+        
+        function copyResolved() {
+            const cid = document.getElementById('resolved-cid').textContent;
+            copyToClipboard(cid);
+        }
+        
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+        
+        // ==================== KUBO MANAGEMENT ====================
+        
+        let kuboState = {
+            installed: false,
+            initialized: false,
+            running: false,
+            version: null,
+            peerId: null
+        };
+        
+        async function checkKuboStatus() {
+            const statusIcon = document.getElementById('kubo-status-icon');
+            const statusText = document.getElementById('kubo-status-text');
+            const statusDetail = document.getElementById('kubo-status-detail');
+            const installStatus = document.getElementById('install-status');
+            const initStatus = document.getElementById('init-status');
+            const daemonStatus = document.getElementById('daemon-status');
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            
+            statusIcon.textContent = '⏳';
+            statusText.textContent = 'Checking kubo status...';
+            statusDetail.textContent = '';
+            
+            try {
+                const response = await callModule('kubo_status', {});
+                const data = response.data || response;
+                
+                kuboState.installed = data.installed || false;
+                kuboState.initialized = data.initialized || false;
+                kuboState.running = data.running || false;
+                kuboState.version = data.version || null;
+                kuboState.peerId = data.peer_id || null;
+                
+                // Update install status
+                if (kuboState.installed) {
+                    installStatus.textContent = `✓ v${kuboState.version || 'unknown'}`;
+                    installStatus.className = 'badge success';
+                } else {
+                    installStatus.textContent = 'Not installed';
+                    installStatus.className = 'badge warning';
+                }
+                
+                // Update init status
+                if (kuboState.initialized) {
+                    initStatus.textContent = '✓ Initialized';
+                    initStatus.className = 'badge success';
+                } else {
+                    initStatus.textContent = kuboState.installed ? 'Not initialized' : 'Pending install';
+                    initStatus.className = 'badge warning';
+                }
+                
+                // Update daemon status
+                if (kuboState.running) {
+                    daemonStatus.textContent = '✓ Running';
+                    daemonStatus.className = 'badge success';
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                } else {
+                    daemonStatus.textContent = kuboState.initialized ? 'Stopped' : 'Pending setup';
+                    daemonStatus.className = 'badge warning';
+                    startBtn.disabled = !kuboState.initialized;
+                    stopBtn.disabled = true;
+                }
+                
+                // Update banner
+                if (kuboState.running) {
+                    statusIcon.textContent = '✅';
+                    statusText.textContent = 'Kubo is running';
+                    statusDetail.textContent = kuboState.peerId ? `Peer ID: ${kuboState.peerId.substring(0, 20)}...` : '';
+                    document.getElementById('kubo-status-banner').className = 'info-banner success';
+                } else if (kuboState.initialized) {
+                    statusIcon.textContent = '⚠️';
+                    statusText.textContent = 'Kubo is installed but not running';
+                    statusDetail.textContent = 'Click "Start Daemon" to connect to IPFS';
+                    document.getElementById('kubo-status-banner').className = 'info-banner warning';
+                } else if (kuboState.installed) {
+                    statusIcon.textContent = '⚠️';
+                    statusText.textContent = 'Kubo needs initialization';
+                    statusDetail.textContent = 'Run "Initialize IPFS" to create your node identity';
+                    document.getElementById('kubo-status-banner').className = 'info-banner warning';
+                } else {
+                    statusIcon.textContent = '❌';
+                    statusText.textContent = 'Kubo is not installed';
+                    statusDetail.textContent = 'Download and install kubo to get started';
+                    document.getElementById('kubo-status-banner').className = 'info-banner error';
+                }
+                
+            } catch (error) {
+                console.error('Failed to check kubo status:', error);
+                statusIcon.textContent = '❓';
+                statusText.textContent = 'Could not check kubo status';
+                statusDetail.textContent = error.message || 'Backend may not support kubo management';
+                document.getElementById('kubo-status-banner').className = 'info-banner warning';
+            }
+        }
+        
+        async function installKubo() {
+            const version = document.getElementById('kubo-version').value;
+            const platform = document.getElementById('kubo-platform').value;
+            
+            showToast(`Installing kubo v${version}...`, 'info');
+            
+            try {
+                const response = await callModule('kubo_install', {
+                    version: version,
+                    platform: platform
+                });
+                
+                if (response.success) {
+                    showToast('Kubo installed successfully!', 'success');
+                    await checkKuboStatus();
+                } else {
+                    showToast(response.error || 'Installation failed', 'error');
+                }
+            } catch (error) {
+                showToast(`Installation failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function openKuboDownloads() {
+            window.open('https://dist.ipfs.tech/#kubo', '_blank');
+        }
+        
+        async function initKubo() {
+            const profile = document.getElementById('kubo-profile').value;
+            
+            showToast(`Initializing IPFS repository with ${profile} profile...`, 'info');
+            
+            try {
+                const response = await callModule('kubo_init', {
+                    profile: profile
+                });
+                
+                if (response.success) {
+                    showToast('IPFS repository initialized!', 'success');
+                    if (response.peer_id) {
+                        showToast(`Your Peer ID: ${response.peer_id.substring(0, 20)}...`, 'info');
+                    }
+                    await checkKuboStatus();
+                } else {
+                    showToast(response.error || 'Initialization failed', 'error');
+                }
+            } catch (error) {
+                showToast(`Initialization failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function startKubo() {
+            const enableGateway = document.getElementById('enable-gateway').checked;
+            const enablePubsub = document.getElementById('enable-pubsub').checked;
+            
+            showToast('Starting IPFS daemon...', 'info');
+            document.getElementById('start-btn').disabled = true;
+            
+            try {
+                const response = await callModule('kubo_start', {
+                    enable_gateway: enableGateway,
+                    enable_pubsub: enablePubsub
+                });
+                
+                if (response.success) {
+                    showToast('IPFS daemon started!', 'success');
+                    await checkKuboStatus();
+                    // Also refresh the node status in main UI
+                    await checkNodeStatus();
+                } else {
+                    showToast(response.error || 'Failed to start daemon', 'error');
+                    document.getElementById('start-btn').disabled = false;
+                }
+            } catch (error) {
+                showToast(`Failed to start daemon: ${error.message}`, 'error');
+                document.getElementById('start-btn').disabled = false;
+            }
+        }
+        
+        async function stopKubo() {
+            showToast('Stopping IPFS daemon...', 'info');
+            document.getElementById('stop-btn').disabled = true;
+            
+            try {
+                const response = await callModule('kubo_stop', {});
+                
+                if (response.success) {
+                    showToast('IPFS daemon stopped', 'success');
+                    await checkKuboStatus();
+                    await checkNodeStatus();
+                } else {
+                    showToast(response.error || 'Failed to stop daemon', 'error');
+                    document.getElementById('stop-btn').disabled = false;
+                }
+            } catch (error) {
+                showToast(`Failed to stop daemon: ${error.message}`, 'error');
+                document.getElementById('stop-btn').disabled = false;
+            }
+        }
+        
+        function openWebUI() {
+            window.open('http://127.0.0.1:5001/webui', '_blank');
+        }
+        
+        async function viewConfig() {
+            try {
+                const response = await callModule('kubo_config', { action: 'show' });
+                if (response.config) {
+                    const configWin = window.open('', 'IPFS Config', 'width=800,height=600');
+                    configWin.document.write(`
+                        <html>
+                        <head><title>IPFS Config</title></head>
+                        <body style="background:#1e1e1e;color:#d4d4d4;font-family:monospace;padding:16px;">
+                        <pre>${JSON.stringify(response.config, null, 2)}</pre>
+                        </body>
+                        </html>
+                    `);
+                } else {
+                    showToast('Could not load config', 'error');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        }
+        
+        function openDataDir() {
+            // This varies by OS - try common paths
+            const paths = {
+                'windows-amd64': `${process.env?.USERPROFILE || '~'}/.ipfs`,
+                'default': '~/.ipfs'
+            };
+            showToast('IPFS data directory: ~/.ipfs', 'info');
+        }
+        
+        function copyDockerCommand() {
+            const cmd = `docker run -d --name ipfs \\
+  -p 5001:5001 \\
+  -p 8080:8080 \\
+  -v ipfs_data:/data/ipfs \\
+  ipfs/kubo:latest`;
+            navigator.clipboard.writeText(cmd).then(() => {
+                showToast('Docker command copied!', 'success');
+            }).catch(() => {
+                showToast('Failed to copy to clipboard', 'error');
+            });
+        }
+        
+        // ==================== END KUBO MANAGEMENT ====================
+        
+        // Initialize
+        async function init() {
+            // Check kubo setup status first
+            await checkKuboStatus();
+            
+            // Check node status
+            await checkNodeStatus();
+            
+            // Set gateway status to unknown initially
+            document.getElementById('gateway-status').classList.add('unknown');
+            
+            // Load initial data
+            await refreshPins();
+            await refreshKeys();
+            checkGateways();
+            
+            // Refresh node info
+            refreshNodeInfo();
+        }
+        
+        init();
+    </script>
+</body>
+</html>

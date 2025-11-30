@@ -419,6 +419,101 @@
       </div>
     </div>
 
+    <!-- Module Signing Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🔐 Module Signing</span>
+        <span id="signer-moduleSignBadge" class="badge"><span class="dot pending"></span>No Key</span>
+      </div>
+      <div class="card-body">
+        <div class="section-label">Signing Key Management</div>
+        <div class="info-grid" style="margin-bottom: var(--pad-lg);">
+          <div class="info-item">
+            <span class="info-label">Key ID</span>
+            <span id="signer-moduleKeyId" class="info-value">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Key Type</span>
+            <span id="signer-moduleKeyType" class="info-value">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Public Key</span>
+            <span id="signer-moduleKeyPubkey" class="info-value" style="font-family: var(--font-mono); font-size: 0.75rem;">—</span>
+          </div>
+        </div>
+        
+        <div class="btn-row" style="margin-bottom: var(--pad-lg);">
+          <button id="signer-genModuleKeyBtn" class="btn btn-accent">Generate Key</button>
+          <button id="signer-importModuleKeyBtn" class="btn">Import Key</button>
+          <button id="signer-exportModuleKeyBtn" class="btn" disabled>Export Public Key</button>
+        </div>
+        
+        <div class="section-label">Sign WASM Module</div>
+        <label for="signer-moduleWasmPath">WASM File Path or Hash</label>
+        <input type="text" id="signer-moduleWasmPath" placeholder="/path/to/module.wasm or SHA256 hash" />
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad-md);">
+          <div>
+            <label for="signer-moduleId">Module ID</label>
+            <input type="text" id="signer-moduleId" placeholder="my_module_v1" />
+          </div>
+          <div>
+            <label for="signer-moduleVersion">Version</label>
+            <input type="text" id="signer-moduleVersion" placeholder="1.0.0" />
+          </div>
+        </div>
+        
+        <label for="signer-publisherId">Publisher ID</label>
+        <input type="text" id="signer-publisherId" placeholder="my-org" />
+        
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="signer-hashModuleBtn" class="btn">Hash WASM</button>
+          <button id="signer-signModuleBtn" class="btn btn-accent" disabled>Sign Module</button>
+          <button id="signer-copySignatureBtn" class="btn" disabled>Copy Signature</button>
+        </div>
+        
+        <div id="signer-moduleSignOutput" class="output">Generate or import a signing key to get started.</div>
+      </div>
+    </div>
+
+    <!-- Verify Module Signature Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">✓ Verify Module Signature</span>
+      </div>
+      <div class="card-body">
+        <label for="signer-verifyWasmHash">WASM Hash (SHA256)</label>
+        <input type="text" id="signer-verifyWasmHash" placeholder="64-character hex hash" />
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad-md);">
+          <div>
+            <label for="signer-verifyModuleId">Module ID</label>
+            <input type="text" id="signer-verifyModuleId" placeholder="module_v1" />
+          </div>
+          <div>
+            <label for="signer-verifyVersion">Version</label>
+            <input type="text" id="signer-verifyVersion" placeholder="1.0.0" />
+          </div>
+        </div>
+        
+        <label for="signer-verifyPublisherId">Publisher ID</label>
+        <input type="text" id="signer-verifyPublisherId" placeholder="publisher-id" />
+        
+        <label for="signer-verifyPublicKey">Publisher Public Key</label>
+        <input type="text" id="signer-verifyPublicKey" placeholder="ed25519 public key (hex)" />
+        
+        <label for="signer-verifySignature">Signature</label>
+        <textarea id="signer-verifySignature" placeholder="Hex-encoded signature" style="min-height: 60px;"></textarea>
+        
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="signer-verifyModuleBtn" class="btn btn-accent">Verify Signature</button>
+          <button id="signer-loadFromManifestBtn" class="btn">Load from Manifest</button>
+        </div>
+        
+        <div id="signer-verifyModuleOutput" class="output">Enter module details and signature to verify.</div>
+      </div>
+    </div>
+
     <!-- Key Generation Guide Card -->
     <div class="card">
       <div class="card-header">
@@ -854,6 +949,316 @@ web3signer --http-listen-port=9000 eth1 \\
       updateGuide();
 
       $('refreshTrustBtn').addEventListener('click', fetchTrustState);
+
+      // ==================== MODULE SIGNING ====================
+      
+      let moduleSigningKey = null;
+      let lastSignature = null;
+      
+      async function callModule(operation, params) {
+        const res = await fetch('/v1/module/bls_tls_signer_v1/call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operation, ...params })
+        });
+        return res.json();
+      }
+      
+      async function checkModuleSigningKey() {
+        try {
+          const res = await callModule('module_signing_key', { action: 'list' });
+          if (res.keys && res.keys.length > 0) {
+            moduleSigningKey = res.keys[0];
+            $('moduleKeyId').textContent = moduleSigningKey.key_id;
+            $('moduleKeyType').textContent = moduleSigningKey.key_type;
+            $('moduleKeyPubkey').textContent = moduleSigningKey.public_key.substring(0, 24) + '...';
+            $('moduleSignBadge').innerHTML = '<span class="dot ok"></span>Key Ready';
+            $('moduleSignBadge').className = 'badge ok';
+            $('exportModuleKeyBtn').disabled = false;
+            $('signModuleBtn').disabled = false;
+          } else {
+            moduleSigningKey = null;
+            $('moduleKeyId').textContent = '—';
+            $('moduleKeyType').textContent = '—';
+            $('moduleKeyPubkey').textContent = '—';
+            $('moduleSignBadge').innerHTML = '<span class="dot pending"></span>No Key';
+            $('moduleSignBadge').className = 'badge';
+            $('exportModuleKeyBtn').disabled = true;
+            $('signModuleBtn').disabled = true;
+          }
+        } catch (e) {
+          console.error('Failed to check module signing key:', e);
+        }
+      }
+      
+      $('genModuleKeyBtn').addEventListener('click', async () => {
+        const output = $('moduleSignOutput');
+        output.className = 'output';
+        output.textContent = 'Generating Ed25519 key pair...';
+        
+        try {
+          const res = await callModule('module_signing_key', {
+            action: 'generate',
+            key_id: 'default',
+            key_type: 'ed25519'
+          });
+          
+          if (res.success || res.pending) {
+            output.className = 'output success';
+            output.textContent = '✓ Key generation requested.\n\n' + JSON.stringify(res, null, 2);
+            await checkModuleSigningKey();
+          } else {
+            output.className = 'output error';
+            output.textContent = '✗ ' + (res.error || 'Key generation failed');
+          }
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Request failed: ' + e.message;
+        }
+      });
+      
+      $('importModuleKeyBtn').addEventListener('click', async () => {
+        const privateKey = prompt('Enter Ed25519 private key (hex):');
+        if (!privateKey) return;
+        
+        const output = $('moduleSignOutput');
+        output.className = 'output';
+        output.textContent = 'Importing key...';
+        
+        try {
+          const res = await callModule('module_signing_key', {
+            action: 'import',
+            key_id: 'default',
+            key_type: 'ed25519',
+            private_key: privateKey
+          });
+          
+          if (res.success || res.pending) {
+            output.className = 'output success';
+            output.textContent = '✓ Key import requested.\n\n' + JSON.stringify(res, null, 2);
+            await checkModuleSigningKey();
+          } else {
+            output.className = 'output error';
+            output.textContent = '✗ ' + (res.error || 'Key import failed');
+          }
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Request failed: ' + e.message;
+        }
+      });
+      
+      $('exportModuleKeyBtn').addEventListener('click', async () => {
+        const output = $('moduleSignOutput');
+        output.className = 'output';
+        output.textContent = 'Exporting public key...';
+        
+        try {
+          const res = await callModule('module_signing_key', {
+            action: 'export_pubkey',
+            key_id: 'default'
+          });
+          
+          output.className = 'output success';
+          output.textContent = '✓ Public Key:\n\n' + (res.public_key || moduleSigningKey?.public_key || '—');
+          
+          navigator.clipboard.writeText(res.public_key || moduleSigningKey?.public_key || '');
+          output.textContent += '\n\n(Copied to clipboard)';
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Request failed: ' + e.message;
+        }
+      });
+      
+      $('hashModuleBtn').addEventListener('click', async () => {
+        const wasmPath = $('moduleWasmPath').value.trim();
+        const output = $('moduleSignOutput');
+        
+        if (!wasmPath) {
+          output.className = 'output error';
+          output.textContent = '✗ Please enter a WASM file path.';
+          return;
+        }
+        
+        // Check if it's already a hash (64 hex chars)
+        if (/^[a-fA-F0-9]{64}$/.test(wasmPath)) {
+          output.className = 'output success';
+          output.textContent = '✓ Using provided hash:\n\n' + wasmPath.toLowerCase();
+          $('signModuleBtn').disabled = !moduleSigningKey;
+          return;
+        }
+        
+        output.className = 'output';
+        output.textContent = 'Computing SHA256 hash...';
+        
+        try {
+          const res = await callModule('hash_module', {
+            wasm_path: wasmPath
+          });
+          
+          if (res.hash || res.pending) {
+            output.className = 'output success';
+            output.textContent = '✓ WASM Hash:\n\n' + (res.hash || 'pending') + '\n\nSize: ' + (res.size || '?') + ' bytes';
+            if (res.hash) {
+              $('moduleWasmPath').value = res.hash;
+            }
+            $('signModuleBtn').disabled = !moduleSigningKey;
+          } else {
+            output.className = 'output error';
+            output.textContent = '✗ ' + (res.error || 'Hash computation failed');
+          }
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Request failed: ' + e.message;
+        }
+      });
+      
+      $('signModuleBtn').addEventListener('click', async () => {
+        const wasmHash = $('moduleWasmPath').value.trim();
+        const moduleId = $('moduleId').value.trim();
+        const version = $('moduleVersion').value.trim();
+        const publisherId = $('publisherId').value.trim();
+        const output = $('moduleSignOutput');
+        
+        if (!wasmHash || !moduleId || !version || !publisherId) {
+          output.className = 'output error';
+          output.textContent = '✗ Please fill in all fields.';
+          return;
+        }
+        
+        if (!/^[a-fA-F0-9]{64}$/.test(wasmHash)) {
+          output.className = 'output error';
+          output.textContent = '✗ WASM hash must be 64-character hex. Click "Hash WASM" first.';
+          return;
+        }
+        
+        output.className = 'output';
+        output.textContent = 'Signing module...';
+        
+        try {
+          const res = await callModule('sign_module', {
+            key_id: 'default',
+            wasm_hash: wasmHash,
+            module_id: moduleId,
+            version: version,
+            publisher_id: publisherId
+          });
+          
+          if (res.signature || res.pending) {
+            lastSignature = res.signature;
+            output.className = 'output success';
+            output.textContent = '✓ Module Signed!\n\n';
+            output.textContent += 'Signature:\n' + (res.signature || 'pending') + '\n\n';
+            output.textContent += 'Public Key:\n' + (res.public_key || moduleSigningKey?.public_key || '—') + '\n\n';
+            if (res.canonical_payload) {
+              output.textContent += 'Signed Payload:\n' + JSON.stringify(res.canonical_payload, null, 2);
+            }
+            $('copySignatureBtn').disabled = false;
+          } else {
+            output.className = 'output error';
+            output.textContent = '✗ ' + (res.error || 'Signing failed');
+          }
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Request failed: ' + e.message;
+        }
+      });
+      
+      $('copySignatureBtn').addEventListener('click', () => {
+        if (lastSignature) {
+          navigator.clipboard.writeText(lastSignature);
+          const btn = $('copySignatureBtn');
+          btn.textContent = '✓ Copied!';
+          setTimeout(() => { btn.textContent = 'Copy Signature'; }, 2000);
+        }
+      });
+      
+      // Verify Module
+      $('verifyModuleBtn').addEventListener('click', async () => {
+        const wasmHash = $('verifyWasmHash').value.trim();
+        const moduleId = $('verifyModuleId').value.trim();
+        const version = $('verifyVersion').value.trim();
+        const publisherId = $('verifyPublisherId').value.trim();
+        const publicKey = $('verifyPublicKey').value.trim();
+        const signature = $('verifySignature').value.trim();
+        const output = $('verifyModuleOutput');
+        
+        if (!wasmHash || !moduleId || !version || !publisherId || !publicKey || !signature) {
+          output.className = 'output error';
+          output.textContent = '✗ Please fill in all fields.';
+          return;
+        }
+        
+        output.className = 'output';
+        output.textContent = 'Verifying signature...';
+        
+        try {
+          const res = await callModule('verify_module', {
+            wasm_hash: wasmHash,
+            module_id: moduleId,
+            version: version,
+            publisher_id: publisherId,
+            public_key: publicKey,
+            signature: signature
+          });
+          
+          if (res.valid) {
+            output.className = 'output success';
+            output.textContent = '✓ SIGNATURE VALID\n\nThis module was signed by the specified publisher.';
+          } else if (res.valid === false) {
+            output.className = 'output error';
+            output.textContent = '✗ SIGNATURE INVALID\n\nThe signature does not match the module metadata.';
+          } else {
+            output.className = 'output';
+            output.textContent = 'Verification request sent.\n\n' + JSON.stringify(res, null, 2);
+          }
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Request failed: ' + e.message;
+        }
+      });
+      
+      $('loadFromManifestBtn').addEventListener('click', async () => {
+        const output = $('verifyModuleOutput');
+        output.className = 'output';
+        output.textContent = 'Loading modules from manifest...';
+        
+        try {
+          const res = await fetch('/api/modules');
+          const data = await res.json();
+          
+          if (!data.modules || data.modules.length === 0) {
+            output.textContent = 'No modules found in manifest.';
+            return;
+          }
+          
+          // Show module selector
+          let html = 'Select a module to verify:\n\n';
+          data.modules.forEach((m, i) => {
+            html += `${i + 1}. ${m.id} v${m.version} (${m.publisherId || 'unknown'})\n`;
+          });
+          output.textContent = html;
+          
+          const choice = prompt('Enter module number (1-' + data.modules.length + '):');
+          const idx = parseInt(choice) - 1;
+          if (idx >= 0 && idx < data.modules.length) {
+            const m = data.modules[idx];
+            $('verifyWasmHash').value = (m.hash || '').replace('sha256:', '');
+            $('verifyModuleId').value = m.id || '';
+            $('verifyVersion').value = m.version || '';
+            $('verifyPublisherId').value = m.publisherId || '';
+            $('verifySignature').value = m.signature || '';
+            output.textContent = 'Loaded: ' + m.id + '\n\nEnter the publisher public key to verify.';
+          }
+        } catch (e) {
+          output.className = 'output error';
+          output.textContent = '✗ Failed to load manifest: ' + e.message;
+        }
+      });
+      
+      // Check for existing signing key on load
+      checkModuleSigningKey();
+      
+      // ==================== END MODULE SIGNING ====================
 
       fetchStatus();
       fetchTrustState();

@@ -2,8 +2,9 @@
 #
 # Trusted publishers and (optionally) attestation keys for CryftTEE.
 # CryftTEE will only load modules whose manifest entry:
-#   - Has publisherId present in [publishers]
+#   - Has publisherId present in [publishers] or [github_publishers]
 #   - Has a signature that verifies against the publisher's public key
+#   - (Optional) Passes GitHub verification checks
 #
 # This is TOML so ops can manage it without touching code.
 
@@ -22,7 +23,7 @@ enforce_signatures = false
 strict_manifest = false
 
 # ---------------------------------------------------------------------
-# Trusted module publishers.
+# Trusted module publishers (Ed25519/BLS key-based).
 #
 # Each publisher has:
 #   id        : string used in modules/manifest.json publisherId
@@ -40,6 +41,70 @@ publicKey = "BASE64_PUBLIC_KEY_GOES_HERE"
 id        = "cryft-labs-experimental"
 algo      = "ed25519"
 publicKey = "BASE64_PUBLIC_KEY_FOR_EXPERIMENTAL"
+
+# ---------------------------------------------------------------------
+# GitHub-verified publishers.
+#
+# Modules from these publishers are verified using GitHub's signing
+# infrastructure (GPG commit signatures, SSH signatures, or GitHub
+# Actions attestations).
+#
+# Each github_publisher has:
+#   id                     : string used in modules/manifest.json publisherId
+#   github_org             : GitHub organization or user name
+#   allowed_repos          : list of allowed repository names (empty = any)
+#   require_signed_commits : require GPG/SSH signed commits (default: true)
+#   require_actions_build  : require module was built by GitHub Actions
+#   allowed_workflows      : list of allowed workflow files (if require_actions_build)
+#   allowed_signers        : list of GitHub usernames allowed to sign (empty = any)
+#   allow_prereleases      : allow pre-release versions (default: false)
+# ---------------------------------------------------------------------
+
+[[github_publishers]]
+id                     = "cryft-labs"
+github_org             = "cryft-labs"
+allowed_repos          = ["cryfttee-modules", "cryfttee"]
+require_signed_commits = true
+require_actions_build  = true
+allowed_workflows      = ["release.yml", "build-module.yml"]
+allowed_signers        = []  # Empty = any org member with verified commits
+allow_prereleases      = false
+
+[[github_publishers]]
+id                     = "cryft-labs-experimental"
+github_org             = "cryft-labs"
+allowed_repos          = ["cryfttee-modules-experimental"]
+require_signed_commits = true
+require_actions_build  = false  # Allow local builds for experimental
+allowed_signers        = []
+allow_prereleases      = true
+
+# Example: Community publisher (stricter verification)
+# [[github_publishers]]
+# id                     = "community-modules"
+# github_org             = "cryfttee-community"
+# allowed_repos          = ["verified-modules"]
+# require_signed_commits = true
+# require_actions_build  = true
+# allowed_workflows      = ["release.yml"]
+# allowed_signers        = ["trusted-maintainer-1", "trusted-maintainer-2"]
+# min_account_age_days   = 90  # Signer's GitHub account must be >90 days old
+# allow_prereleases      = false
+
+# ---------------------------------------------------------------------
+# GitHub API Configuration (optional)
+# ---------------------------------------------------------------------
+
+[github]
+# GitHub API token for higher rate limits (optional)
+# Can also be set via CRYFTTEE_GITHUB_TOKEN environment variable
+# api_token = "ghp_xxxxxxxxxxxxxxxxxxxx"
+
+# GitHub Enterprise base URL (optional, for self-hosted GitHub)
+# api_base_url = "https://github.mycompany.com/api/v3"
+
+# Cache verification results for this many seconds
+cache_ttl_seconds = 300
 
 # ---------------------------------------------------------------------
 # Optional: runtime attestation key used by CryftTEE to sign receipts

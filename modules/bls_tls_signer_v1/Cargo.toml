@@ -1,14 +1,16 @@
 [package]
 name = "bls_tls_signer"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Cryft Labs"]
-description = "BLS/TLS signing WASM module for CryftTEE"
+description = "BLS/TLS signing WASM module for CryftTEE with module signing capability"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [profile.release]
 opt-level = "s"

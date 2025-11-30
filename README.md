@@ -253,6 +253,156 @@ Modules can optionally provide a web GUI that renders as a tab in the kiosk inte
 - **Hash Verification**: Module code is verified against manifest hash
 - **Graceful Failures**: Module errors never crash the runtime
 - **GUI Sandboxing**: Module GUIs run in sandboxed iframes
+- **GitHub Verification**: Modules can be verified via GitHub signatures
+
+## Publisher Trust & GitHub Verification
+
+CryftTEE supports multiple methods to verify module authenticity:
+
+### 1. Traditional Ed25519 Signatures
+
+Publishers sign modules with Ed25519 keys registered in `trust.toml`:
+
+```toml
+[[publishers]]
+id        = "cryft-labs"
+algo      = "ed25519"
+publicKey = "BASE64_PUBLIC_KEY_HERE"
+```
+
+### 2. GitHub-Based Verification
+
+Verify modules using GitHub's signing infrastructure:
+
+```toml
+[[github_publishers]]
+id                     = "cryft-labs"
+github_org             = "cryft-labs"
+allowed_repos          = ["cryfttee-modules"]
+require_signed_commits = true      # GPG/SSH signed commits
+require_actions_build  = true      # Built by GitHub Actions
+allowed_workflows      = ["release.yml"]
+allowed_signers        = []        # Empty = any org member
+allow_prereleases      = false
+```
+
+#### GitHub Verification Methods
+
+| Method | Description | Trust Level |
+|--------|-------------|-------------|
+| **Signed Commits** | GPG or SSH signature on commit | High - requires verified key |
+| **GitHub Actions** | Module built by CI workflow | High - reproducible builds |
+| **Attestations** | Sigstore/cosign attestations | Highest - cryptographic provenance |
+
+#### Setting Up GPG Commit Signing
+
+```bash
+# Generate GPG key (if needed)
+gpg --full-generate-key
+
+# Add key to GitHub
+gpg --armor --export YOUR_KEY_ID | pbcopy
+# Paste in GitHub Settings > SSH and GPG keys
+
+# Configure Git to sign commits
+git config --global user.signingkey YOUR_KEY_ID
+git config --global commit.gpgsign true
+
+# Verify a commit is signed
+git log --show-signature -1
+```
+
+#### Setting Up SSH Commit Signing
+
+```bash
+# Use existing SSH key or generate new one
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# Add to GitHub as a Signing Key (not just Authentication)
+# GitHub Settings > SSH and GPG keys > New SSH key > Key type: Signing Key
+
+# Configure Git
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git config --global commit.gpgsign true
+```
+
+#### GitHub Actions Workflow for Module Releases
+
+```yaml
+# .github/workflows/release.yml
+name: Release Module
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write  # For attestations
+      
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build WASM module
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          
+      - name: Compute hash
+        run: |
+          sha256sum target/wasm32-unknown-unknown/release/*.wasm > checksums.sha256
+          
+      - name: Create attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'target/wasm32-unknown-unknown/release/*.wasm'
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/wasm32-unknown-unknown/release/*.wasm
+            checksums.sha256
+```
+
+### Verification Flow
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    Module Verification                           │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   1. Load module from manifest.json                              │
+│      └─▶ Extract publisherId, hash, signature                    │
+│                                                                  │
+│   2. Check publisher type                                        │
+│      ├─▶ Ed25519: Verify signature against public key            │
+│      └─▶ GitHub: Query GitHub API for verification               │
+│                                                                  │
+│   3. GitHub verification checks:                                 │
+│      ├─▶ Repository in allowed list?                             │
+│      ├─▶ Commit signature verified by GitHub?                    │
+│      ├─▶ Signer in allowed list?                                 │
+│      ├─▶ Built by allowed workflow? (if required)                │
+│      └─▶ Attestation valid? (if using Sigstore)                  │
+│                                                                  │
+│   4. Result: Module trusted or rejected                          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Environment Variables
+
+```bash
+# GitHub API token for higher rate limits (optional)
+export CRYFTTEE_GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+
+# For GitHub Enterprise
+export CRYFTTEE_GITHUB_API_URL="https://github.mycompany.com/api/v3"
+```
 
 ## Development
 
