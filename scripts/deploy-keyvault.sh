@@ -54,6 +54,10 @@ SCRIPTS_DIR="${DATA_DIR}/scripts"
 # Deploy mode: "full" (Vault + Web3Signer) or "web3signer" (Web3Signer only)
 DEPLOY_MODE="${DEPLOY_MODE:-full}"
 
+# Upgrade behavior flags (can be set via CLI or env)
+FORCE_UPGRADE="${FORCE_UPGRADE:-false}"
+CLEAN_INSTALL="${CLEAN_INSTALL:-false}"
+
 # =============================================================================
 # Colors and Logging
 # =============================================================================
@@ -1920,6 +1924,87 @@ deploy_remote() {
         fi
     fi
     
+    # Check for existing deployment
+    step "Checking for existing deployment..."
+    EXISTING_DEPLOYMENT=false
+    EXISTING_VAULT_DATA=false
+    
+    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -f ${CONFIG_DIR}/docker-compose.yml ]" 2>/dev/null; then
+        EXISTING_DEPLOYMENT=true
+    fi
+    
+    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -d ${VAULT_DATA}/data ] && [ -n \"\$(ls -A ${VAULT_DATA}/data 2>/dev/null)\" ]" 2>/dev/null; then
+        EXISTING_VAULT_DATA=true
+    fi
+    
+    if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║  ⚠  EXISTING DEPLOYMENT DETECTED                                 ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        info "Found existing CryftTEE KeyVault deployment on ${KEYVAULT_HOST}"
+        
+        if [ "${CLEAN_INSTALL}" = "true" ]; then
+            echo ""
+            warn "CLEAN INSTALL REQUESTED - ALL DATA WILL BE DESTROYED!"
+            if [ "${EXISTING_VAULT_DATA}" = "true" ]; then
+                error "Refusing to destroy existing Vault data without explicit confirmation."
+                echo "To force clean install, first manually remove: ${VAULT_DATA}/data"
+                exit 1
+            fi
+            step "Removing existing deployment..."
+            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
+            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true"
+            info "Clean slate ready for fresh installation."
+            EXISTING_DEPLOYMENT=false
+        elif [ "${FORCE_UPGRADE}" = "true" ]; then
+            info "Force upgrade enabled - skipping confirmation prompt"
+        else
+            if [ "${EXISTING_VAULT_DATA}" = "true" ]; then
+                echo ""
+                warn "Vault data directory contains existing data!"
+                info "  Location: ${VAULT_DATA}/data"
+                info "  This data will be PRESERVED (Vault will not be re-initialized)"
+                echo ""
+            fi
+            
+            echo "This upgrade will:"
+            echo "  ✓ Update configuration files (docker-compose.yml, etc.)"
+            echo "  ✓ Update helper scripts (import-key.sh, status.sh, etc.)"
+            echo "  ✓ Restart services with new configuration"
+            if [ "${EXISTING_VAULT_DATA}" = "true" ]; then
+                echo "  ✓ PRESERVE existing Vault data and keys"
+                echo "  ✓ PRESERVE existing AppRole credentials"
+            fi
+            echo ""
+            echo "Backup will be created at: ${CONFIG_DIR}/backup-\$(date +%Y%m%d-%H%M%S)/"
+            echo ""
+            echo "Use --force to skip this prompt in CI/CD pipelines."
+            echo ""
+            
+            read -p "Continue with upgrade? [y/N] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                info "Upgrade cancelled."
+                exit 0
+            fi
+        fi
+        
+        if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
+            # Create backup of existing config
+            step "Backing up existing configuration..."
+            BACKUP_DIR="${CONFIG_DIR}/backup-$(date +%Y%m%d-%H%M%S)"
+            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo mkdir -p ${BACKUP_DIR} && sudo cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl ${BACKUP_DIR}/ 2>/dev/null || true"
+            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cp -r ${SCRIPTS_DIR}/*.sh ${BACKUP_DIR}/ 2>/dev/null || true"
+            info "Backup created at ${BACKUP_DIR}"
+            
+            # Stop services before upgrade
+            step "Stopping services for upgrade..."
+            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
+        fi
+    fi
+    
     # Create temp directory
     LOCAL_TMP=$(mktemp -d)
     trap "rm -rf ${LOCAL_TMP}" EXIT
@@ -2229,6 +2314,88 @@ deploy_local() {
         error "Docker daemon not running or not accessible"
     fi
     
+    # Check for existing deployment
+    step "Checking for existing deployment..."
+    EXISTING_DEPLOYMENT=false
+    EXISTING_VAULT_DATA=false
+    
+    if [ -f "${CONFIG_DIR}/docker-compose.yml" ]; then
+        EXISTING_DEPLOYMENT=true
+    fi
+    
+    if [ -d "${VAULT_DATA}/data" ] && [ -n "$(ls -A ${VAULT_DATA}/data 2>/dev/null)" ]; then
+        EXISTING_VAULT_DATA=true
+    fi
+    
+    if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║  ⚠  EXISTING DEPLOYMENT DETECTED                                 ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        info "Found existing CryftTEE KeyVault deployment on this machine"
+        
+        if [ "${CLEAN_INSTALL}" = "true" ]; then
+            echo ""
+            warn "CLEAN INSTALL REQUESTED - ALL DATA WILL BE DESTROYED!"
+            if [ "${EXISTING_VAULT_DATA}" = "true" ]; then
+                error "Refusing to destroy existing Vault data without explicit confirmation."
+                echo "To force clean install, first manually remove: ${VAULT_DATA}/data"
+                exit 1
+            fi
+            step "Removing existing deployment..."
+            sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+            sudo rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true
+            info "Clean slate ready for fresh installation."
+            EXISTING_DEPLOYMENT=false
+        elif [ "${FORCE_UPGRADE}" = "true" ]; then
+            info "Force upgrade enabled - skipping confirmation prompt"
+        else
+            if [ "${EXISTING_VAULT_DATA}" = "true" ]; then
+                echo ""
+                warn "Vault data directory contains existing data!"
+                info "  Location: ${VAULT_DATA}/data"
+                info "  This data will be PRESERVED (Vault will not be re-initialized)"
+                echo ""
+            fi
+            
+            echo "This upgrade will:"
+            echo "  ✓ Update configuration files (docker-compose.yml, etc.)"
+            echo "  ✓ Update helper scripts (import-key.sh, status.sh, etc.)"
+            echo "  ✓ Restart services with new configuration"
+            if [ "${EXISTING_VAULT_DATA}" = "true" ]; then
+                echo "  ✓ PRESERVE existing Vault data and keys"
+                echo "  ✓ PRESERVE existing AppRole credentials"
+            fi
+            echo ""
+            echo "Backup will be created at: ${CONFIG_DIR}/backup-$(date +%Y%m%d-%H%M%S)/"
+            echo ""
+            echo "Use --force to skip this prompt in CI/CD pipelines."
+            echo ""
+            
+            read -p "Continue with upgrade? [y/N] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                info "Upgrade cancelled."
+                exit 0
+            fi
+        fi
+        
+        if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
+            # Create backup of existing config
+            step "Backing up existing configuration..."
+            BACKUP_DIR="${CONFIG_DIR}/backup-$(date +%Y%m%d-%H%M%S)"
+            sudo mkdir -p "${BACKUP_DIR}"
+            sudo cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl "${BACKUP_DIR}/" 2>/dev/null || true
+            sudo cp -r ${SCRIPTS_DIR}/*.sh "${BACKUP_DIR}/" 2>/dev/null || true
+            info "Backup created at ${BACKUP_DIR}"
+            
+            # Stop services before upgrade
+            step "Stopping services for upgrade..."
+            sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+        fi
+    fi
+    
     # Create directories
     step "Creating directories..."
     sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
@@ -2365,6 +2532,18 @@ deploy_local() {
 
 show_banner
 
+# Parse global flags first
+for arg in "$@"; do
+    case "$arg" in
+        --force|-f)
+            FORCE_UPGRADE=true
+            ;;
+        --clean)
+            CLEAN_INSTALL=true
+            ;;
+    esac
+done
+
 case "${1:-}" in
     --local)
         deploy_local "web3signer"
@@ -2394,7 +2573,7 @@ case "${1:-}" in
         test_web3signer
         ;;
     --help|-h)
-        echo "Usage: $0 [options]"
+        echo "Usage: $0 [options] [flags]"
         echo ""
         echo "Deploy Web3Signer + HashiCorp Vault for CryftTEE key management."
         echo "Plug-and-play setup - Vault auto-initializes and unseals on first run!"
@@ -2407,6 +2586,10 @@ case "${1:-}" in
         echo "  --remote            Deploy full stack to remote server"
         echo "  --web3signer-only   Deploy only Web3Signer to remote server"
         echo "  --install-docker    Install Docker on remote server"
+        echo ""
+        echo "Upgrade Flags (can be combined with any deployment option):"
+        echo "  --force, -f         Skip confirmation prompt (for CI/CD)"
+        echo "  --clean             Remove existing config (preserves Vault data)"
         echo ""
         echo "Status & Testing:"
         echo "  --status            Check service status"
@@ -2421,6 +2604,13 @@ case "${1:-}" in
         echo "  KEYVAULT_HOST       Remote host (default: ${KEYVAULT_HOST})"
         echo "  KEYVAULT_USER       SSH user (default: ${KEYVAULT_USER})"
         echo "  WEB3SIGNER_PORT     Web3Signer port (default: ${WEB3SIGNER_PORT})"
+        echo "  FORCE_UPGRADE       Set to 'true' to skip prompts"
+        echo ""
+        echo "Upgrade Behavior:"
+        echo "  • Existing deployments are detected automatically"
+        echo "  • Config files are backed up before overwrite"
+        echo "  • Vault data (keys, secrets) is ALWAYS preserved"
+        echo "  • AppRole credentials remain valid after upgrade"
         echo ""
         echo "╔══════════════════════════════════════════════════════════════╗"
         echo "║  Plug-and-Play Setup (Zero Manual Configuration!)            ║"
