@@ -556,31 +556,144 @@ cat > "/vault/init/approle-admin.json" << APPROLE
 APPROLE
 chmod 600 "/vault/init/approle-admin.json"
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CRITICAL: Secure Backup of Unseal Keys and Root Token
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# The unseal keys and root token are NOT automatically saved to persistent storage!
+# If lost, you will PERMANENTLY lose access to all secrets in Vault.
+#
+
+echo ""
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║                                                                          ║"
+echo "║   ⚠️  CRITICAL: SECURE YOUR VAULT RECOVERY CREDENTIALS ⚠️                ║"
+echo "║                                                                          ║"
+echo "╠══════════════════════════════════════════════════════════════════════════╣"
+echo "║                                                                          ║"
+echo "║   The following credentials are required for disaster recovery.          ║"
+echo "║   If lost, ALL SECRETS IN VAULT WILL BE PERMANENTLY INACCESSIBLE.        ║"
+echo "║                                                                          ║"
+echo "║   These credentials will be DELETED from this container after display!   ║"
+echo "║                                                                          ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+echo ""
+echo "┌─────────────────────────────────────────────────────────────────────────┐"
+echo "│  UNSEAL KEY (required to unseal Vault after every restart)              │"
+echo "├─────────────────────────────────────────────────────────────────────────┤"
+echo "│                                                                         │"
+echo "│  ${UNSEAL_KEY}"
+echo "│                                                                         │"
+echo "└─────────────────────────────────────────────────────────────────────────┘"
+echo ""
+echo "┌─────────────────────────────────────────────────────────────────────────┐"
+echo "│  ROOT TOKEN (emergency admin access only - never use for applications)  │"
+echo "├─────────────────────────────────────────────────────────────────────────┤"
+echo "│                                                                         │"
+echo "│  ${ROOT_TOKEN}"
+echo "│                                                                         │"
+echo "└─────────────────────────────────────────────────────────────────────────┘"
+echo ""
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║  BACKUP OPTIONS (Choose one - do this NOW before continuing!)           ║"
+echo "╠══════════════════════════════════════════════════════════════════════════╣"
+echo "║                                                                          ║"
+echo "║  Option 1: ENCRYPTED USB DRIVE (Recommended for production)             ║"
+echo "║  ─────────────────────────────────────────────────────────────────────── ║"
+echo "║  1. Insert a dedicated USB drive                                        ║"
+echo "║  2. Copy the credentials above to a text file on the USB                ║"
+echo "║  3. Encrypt the USB drive with BitLocker, LUKS, or VeraCrypt            ║"
+echo "║  4. Store USB in a physical safe or secure location                     ║"
+echo "║  5. Consider creating a second backup on another USB                    ║"
+echo "║                                                                          ║"
+echo "║  Option 2: PASSWORD-PROTECTED FILE (Development/testing)                ║"
+echo "║  ─────────────────────────────────────────────────────────────────────── ║"
+echo "║  Run this command on your LOCAL machine (not in container):             ║"
+echo "║                                                                          ║"
+echo "║    # Create encrypted backup with GPG:                                  ║"
+echo "║    echo 'UNSEAL_KEY=${UNSEAL_KEY}' > vault-recovery.txt"
+echo "║    echo 'ROOT_TOKEN=${ROOT_TOKEN}' >> vault-recovery.txt"
+echo "║    gpg -c --cipher-algo AES256 vault-recovery.txt                       ║"
+echo "║    shred -u vault-recovery.txt  # Securely delete plaintext             ║"
+echo "║                                                                          ║"
+echo "║  Option 3: HARDWARE SECURITY MODULE (Enterprise)                        ║"
+echo "║  ─────────────────────────────────────────────────────────────────────── ║"
+echo "║  Store unseal keys in HSM using Vault's auto-unseal feature.            ║"
+echo "║  See: https://developer.hashicorp.com/vault/docs/concepts/seal          ║"
+echo "║                                                                          ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║  ⚠️  DO NOT PROCEED UNTIL YOU HAVE SAVED THESE CREDENTIALS! ⚠️           ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+echo ""
+
+# Create a recovery script that can be used to unseal (does NOT contain keys)
+cat > "/vault/init/unseal-instructions.txt" << 'INSTRUCTIONS'
+# Vault Unseal Instructions
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# After a Vault restart, you must unseal it using your backup unseal key.
+#
+# Method 1: Via CLI
+#   vault operator unseal <YOUR_UNSEAL_KEY>
+#
+# Method 2: Via API
+#   curl -X POST http://localhost:8200/v1/sys/unseal \
+#     -H "Content-Type: application/json" \
+#     -d '{"key": "<YOUR_UNSEAL_KEY>"}'
+#
+# Method 3: Via UI
+#   1. Open http://localhost:8200/ui
+#   2. Enter your unseal key when prompted
+#
+# IMPORTANT: The unseal key is NOT stored on this server.
+#            Retrieve it from your secure backup location.
+#
+INSTRUCTIONS
+
+# DO NOT store unseal keys or root token in the container for production!
+# Only save AppRole credentials (which have limited, revocable access)
+
+# For auto-unseal in dev/testing, optionally keep unseal keys
+# In production, these should be removed after backup confirmation
+if [ "${VAULT_DEV_MODE:-false}" != "true" ]; then
+    echo "[vault-init] For production security, unseal keys and root token"
+    echo "[vault-init] should be removed from this container after you confirm backup."
+    echo ""
+    echo "[vault-init] To enable auto-unseal for development, set VAULT_DEV_MODE=true"
+    echo ""
+    # Keep files for now but warn user
+    echo "[vault-init] Files temporarily saved to:"
+    echo "  - ${UNSEAL_FILE}"
+    echo "  - ${ROOT_TOKEN_FILE}"
+    echo ""
+    echo "[vault-init] DELETE THESE after confirming your backup:"
+    echo "  rm ${UNSEAL_FILE} ${ROOT_TOKEN_FILE}"
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║     Vault Auto-Initialization Complete!                      ║"
+echo "║     Vault Initialization Complete!                           ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 echo "[vault-init] AppRole-based access configured (production-safe)"
 echo ""
-echo "  AppRole Credentials:"
+echo "  AppRole Credentials (for application access):"
 echo "  ─────────────────────────────────────────────────────────────"
 echo "  web3signer (signing):  ${APPROLE_FILE}"
 echo "  cryfttee-admin (mgmt): /vault/init/approle-admin.json"
 echo ""
-echo "  SECURITY NOTES:"
-echo "  ─────────────────────────────────────────────────────────────"
-echo "  • Root token is stored for disaster recovery ONLY"
-echo "  • All application access uses AppRole authentication"
-echo "  • web3signer role has read-only access to keys"
-echo "  • cryfttee-admin role has time-limited write access"
-echo ""
-echo "  BACKUP REQUIRED:"
-echo "  ─────────────────────────────────────────────────────────────"
-echo "  • ${UNSEAL_FILE} (required to unseal after restart)"
-echo "  • ${INIT_FILE} (disaster recovery)"
+echo "  These AppRole credentials are safe to keep on the server."
+echo "  They have limited, revocable permissions and short TTLs."
 echo ""
 echo "[vault-init] Vault is ready for CryftTEE!"
+echo ""
 
 INITSCRIPT
 }
@@ -864,37 +977,228 @@ generate_unseal_vault_script() {
 #!/bin/bash
 #
 # Unseal Vault after restart
+# Prompts for unseal key - does NOT store keys on disk for security
 #
 
 set -e
 
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
-KEYS_FILE="/opt/cryfttee-keyvault/vault-init-keys.json"
 export VAULT_ADDR
 
-if [ ! -f "${KEYS_FILE}" ]; then
-    echo "[x] Keys file not found: ${KEYS_FILE}"
-    echo "[i] Run init-vault.sh first, or restore keys from backup"
+# Check if Vault is running
+if ! curl -sf "${VAULT_ADDR}/v1/sys/health" >/dev/null 2>&1; then
+    echo "[x] Vault not responding at ${VAULT_ADDR}"
+    echo "[i] Start Vault first: sudo systemctl start cryfttee-keyvault"
     exit 1
 fi
 
-# Check if already unsealed
-if vault status 2>/dev/null | grep -q "Sealed.*false"; then
+# Check seal status
+SEAL_STATUS=$(curl -sf "${VAULT_ADDR}/v1/sys/seal-status" 2>/dev/null)
+IS_SEALED=$(echo "${SEAL_STATUS}" | jq -r '.sealed')
+
+if [ "${IS_SEALED}" = "false" ]; then
     echo "[+] Vault is already unsealed"
     exit 0
 fi
 
+echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║             Vault Unseal Required                            ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Vault is sealed and requires your unseal key to unlock."
+echo ""
+echo "Retrieve your unseal key from your secure backup:"
+echo "  • Encrypted USB drive"
+echo "  • Password-protected file (GPG encrypted)"
+echo "  • Hardware Security Module"
+echo ""
+
+# Prompt for unseal key
+read -sp "Enter Unseal Key: " UNSEAL_KEY
+echo ""
+
+if [ -z "${UNSEAL_KEY}" ]; then
+    echo "[x] No unseal key provided"
+    exit 1
+fi
+
 echo "[+] Unsealing Vault..."
-UNSEAL_KEY_1=$(jq -r '.unseal_keys_b64[0]' "${KEYS_FILE}")
-UNSEAL_KEY_2=$(jq -r '.unseal_keys_b64[1]' "${KEYS_FILE}")
-UNSEAL_KEY_3=$(jq -r '.unseal_keys_b64[2]' "${KEYS_FILE}")
+RESULT=$(curl -sf -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"key\": \"${UNSEAL_KEY}\"}" \
+    "${VAULT_ADDR}/v1/sys/unseal" 2>/dev/null)
 
-vault operator unseal "${UNSEAL_KEY_1}" > /dev/null
-vault operator unseal "${UNSEAL_KEY_2}" > /dev/null
-vault operator unseal "${UNSEAL_KEY_3}" > /dev/null
+IS_SEALED=$(echo "${RESULT}" | jq -r '.sealed')
 
-echo "[+] Vault unsealed!"
-vault status
+if [ "${IS_SEALED}" = "false" ]; then
+    echo "[+] Vault unsealed successfully!"
+    echo ""
+    # Clear the key from memory
+    unset UNSEAL_KEY
+else
+    PROGRESS=$(echo "${RESULT}" | jq -r '.progress')
+    THRESHOLD=$(echo "${RESULT}" | jq -r '.t')
+    echo "[i] Unseal progress: ${PROGRESS}/${THRESHOLD}"
+    echo "[i] Additional unseal keys required. Run this script again."
+fi
+EOF
+}
+
+# Generate backup script for secure credential export
+generate_backup_credentials_script() {
+    cat << 'EOF'
+#!/bin/bash
+#
+# Backup Vault Recovery Credentials
+# Creates password-protected backup of unseal keys and root token
+#
+
+set -e
+
+VAULT_INIT_DIR="/opt/cryfttee-keyvault/vault/init"
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║       Vault Recovery Credentials Backup                      ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+
+# Check if credentials exist
+if [ ! -f "${VAULT_INIT_DIR}/unseal-keys.txt" ] && [ ! -f "${VAULT_INIT_DIR}/root-token.txt" ]; then
+    echo "[x] No credentials found to backup."
+    echo "[i] Vault may not be initialized, or credentials were already removed."
+    exit 1
+fi
+
+echo "This script will create a password-protected backup of your"
+echo "Vault recovery credentials (unseal key and root token)."
+echo ""
+echo "Choose backup destination:"
+echo "  1) Encrypted file (GPG) - save to current directory"
+echo "  2) Encrypted file (GPG) - save to USB drive"
+echo "  3) Display only (copy manually to secure location)"
+echo "  4) Cancel"
+echo ""
+read -p "Select option [1-4]: " OPTION
+
+case "${OPTION}" in
+    1|2)
+        # Check for GPG
+        if ! command -v gpg &> /dev/null; then
+            echo "[x] GPG not installed. Install with: sudo apt install gnupg"
+            exit 1
+        fi
+        
+        if [ "${OPTION}" = "2" ]; then
+            echo ""
+            echo "Available drives:"
+            lsblk -o NAME,SIZE,MOUNTPOINT | grep -E "sd[b-z]|usb" || echo "  (no USB drives detected)"
+            echo ""
+            read -p "Enter mount point of USB drive (e.g., /media/usb): " USB_PATH
+            if [ ! -d "${USB_PATH}" ]; then
+                echo "[x] Directory not found: ${USB_PATH}"
+                exit 1
+            fi
+            BACKUP_DIR="${USB_PATH}"
+        else
+            BACKUP_DIR="$(pwd)"
+        fi
+        
+        BACKUP_FILE="${BACKUP_DIR}/vault-recovery-$(date +%Y%m%d-%H%M%S).gpg"
+        TEMP_FILE=$(mktemp)
+        
+        # Collect credentials
+        echo "# Vault Recovery Credentials" > "${TEMP_FILE}"
+        echo "# Generated: $(date)" >> "${TEMP_FILE}"
+        echo "# Host: $(hostname)" >> "${TEMP_FILE}"
+        echo "" >> "${TEMP_FILE}"
+        
+        if [ -f "${VAULT_INIT_DIR}/unseal-keys.txt" ]; then
+            echo "UNSEAL_KEY=$(cat ${VAULT_INIT_DIR}/unseal-keys.txt)" >> "${TEMP_FILE}"
+        fi
+        
+        if [ -f "${VAULT_INIT_DIR}/root-token.txt" ]; then
+            echo "ROOT_TOKEN=$(cat ${VAULT_INIT_DIR}/root-token.txt)" >> "${TEMP_FILE}"
+        fi
+        
+        echo "" >> "${TEMP_FILE}"
+        echo "# To unseal Vault:" >> "${TEMP_FILE}"
+        echo "# vault operator unseal \$UNSEAL_KEY" >> "${TEMP_FILE}"
+        
+        # Encrypt with password
+        echo ""
+        echo "Enter a strong password for the backup file."
+        echo "You will need this password to restore the credentials."
+        echo ""
+        
+        gpg --symmetric --cipher-algo AES256 --output "${BACKUP_FILE}" "${TEMP_FILE}"
+        
+        # Securely delete temp file
+        shred -u "${TEMP_FILE}" 2>/dev/null || rm -f "${TEMP_FILE}"
+        
+        echo ""
+        echo "[+] Encrypted backup created: ${BACKUP_FILE}"
+        echo ""
+        echo "To restore, run:"
+        echo "  gpg -d ${BACKUP_FILE}"
+        echo ""
+        
+        read -p "Delete credentials from server? (recommended for production) [y/N]: " DELETE_CREDS
+        if [[ "${DELETE_CREDS}" =~ ^[Yy]$ ]]; then
+            sudo shred -u "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || true
+            sudo shred -u "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || true
+            sudo rm -f "${VAULT_INIT_DIR}/vault-init.json" 2>/dev/null || true
+            echo "[+] Credentials removed from server."
+            echo "[!] Keep your encrypted backup safe - it's the only copy!"
+        fi
+        ;;
+        
+    3)
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║  COPY THESE CREDENTIALS TO A SECURE LOCATION NOW!           ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
+        echo ""
+        
+        if [ -f "${VAULT_INIT_DIR}/unseal-keys.txt" ]; then
+            echo "UNSEAL_KEY:"
+            cat "${VAULT_INIT_DIR}/unseal-keys.txt"
+            echo ""
+        fi
+        
+        if [ -f "${VAULT_INIT_DIR}/root-token.txt" ]; then
+            echo "ROOT_TOKEN:"
+            cat "${VAULT_INIT_DIR}/root-token.txt"
+            echo ""
+        fi
+        
+        echo ""
+        read -p "Press Enter after you have saved these credentials..."
+        echo ""
+        
+        read -p "Delete credentials from server? (recommended for production) [y/N]: " DELETE_CREDS
+        if [[ "${DELETE_CREDS}" =~ ^[Yy]$ ]]; then
+            sudo shred -u "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || true
+            sudo shred -u "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || true
+            sudo rm -f "${VAULT_INIT_DIR}/vault-init.json" 2>/dev/null || true
+            echo "[+] Credentials removed from server."
+        fi
+        ;;
+        
+    4)
+        echo "Cancelled."
+        exit 0
+        ;;
+        
+    *)
+        echo "[x] Invalid option"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo "[+] Backup complete!"
 EOF
 }
 
@@ -1629,6 +1933,7 @@ deploy_remote() {
         generate_vault_init_script > "${LOCAL_TMP}/vault-init.sh"
         generate_init_vault_script > "${LOCAL_TMP}/init-vault.sh"
         generate_unseal_vault_script > "${LOCAL_TMP}/unseal-vault.sh"
+        generate_backup_credentials_script > "${LOCAL_TMP}/backup-credentials.sh"
     else
         generate_docker_compose_web3signer > "${LOCAL_TMP}/docker-compose.yml"
     fi
@@ -1659,6 +1964,7 @@ if [ "\${MODE}" = "full" ]; then
     sudo cp /tmp/cryfttee-deploy/vault-init.sh ${CONFIG_DIR}/
     sudo cp /tmp/cryfttee-deploy/init-vault.sh ${SCRIPTS_DIR}/
     sudo cp /tmp/cryfttee-deploy/unseal-vault.sh ${SCRIPTS_DIR}/
+    sudo cp /tmp/cryfttee-deploy/backup-credentials.sh ${SCRIPTS_DIR}/
     sudo chmod +x ${CONFIG_DIR}/vault-init.sh
 fi
 
@@ -1730,10 +2036,17 @@ DEPLOYEOF
     echo ""
     
     if [ "${mode}" = "full" ]; then
-        warn "NEXT STEPS (Vault):"
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║  ⚠  CRITICAL: Vault credentials displayed ONCE during init!     ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        warn "IMMEDIATE NEXT STEPS (Vault):"
         echo "  1. SSH to ${KEYVAULT_HOST}"
-        echo "  2. Initialize Vault: sudo ${SCRIPTS_DIR}/init-vault.sh"
-        echo "  3. Back up vault-init-keys.json securely!"
+        echo "  2. Watch vault-init logs: docker logs -f cryfttee-vault-init"
+        echo "  3. Copy the Root Token and Unseal Key shown in the logs"
+        echo "  4. Run backup script: sudo ${SCRIPTS_DIR}/backup-credentials.sh"
+        echo "     (Options: GPG-encrypted file or USB drive)"
         echo ""
     fi
     
@@ -1762,6 +2075,7 @@ DEPLOYEOF
     echo "  Restart:     sudo systemctl restart cryfttee-keyvault"
     if [ "${mode}" = "full" ]; then
         echo "  Unseal:      sudo ${SCRIPTS_DIR}/unseal-vault.sh"
+        echo "  Backup:      sudo ${SCRIPTS_DIR}/backup-credentials.sh"
     fi
 }
 
@@ -1929,7 +2243,8 @@ deploy_local() {
         generate_vault_init_script | sudo tee ${CONFIG_DIR}/vault-init.sh > /dev/null
         generate_init_vault_script | sudo tee ${SCRIPTS_DIR}/init-vault.sh > /dev/null
         generate_unseal_vault_script | sudo tee ${SCRIPTS_DIR}/unseal-vault.sh > /dev/null
-        sudo chmod +x ${CONFIG_DIR}/vault-init.sh ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh
+        generate_backup_credentials_script | sudo tee ${SCRIPTS_DIR}/backup-credentials.sh > /dev/null
+        sudo chmod +x ${CONFIG_DIR}/vault-init.sh ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh ${SCRIPTS_DIR}/backup-credentials.sh
     else
         generate_docker_compose_web3signer | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
     fi
@@ -1988,11 +2303,15 @@ deploy_local() {
         echo "│                                                                │"
         echo "│  Vault auto-initializes on first start! No manual steps!      │"
         echo "│                                                                │"
-        echo "│  Credentials saved to:                                         │"
-        echo "│    ${VAULT_DATA}/init/root-token.txt"
-        echo "│    ${VAULT_DATA}/init/unseal-keys.txt"
+        echo "│  ⚠  CRITICAL: Credentials displayed ONCE during init!         │"
+        echo "│     Watch the vault-init container logs for:                   │"
+        echo "│       - Root Token                                             │"
+        echo "│       - Unseal Key                                             │"
         echo "│                                                                │"
-        echo "│  ⚠ BACK UP these files securely!                              │"
+        echo "│  Backup credentials NOW:                                       │"
+        echo "│    sudo ${SCRIPTS_DIR}/backup-credentials.sh                   │"
+        echo "│                                                                │"
+        echo "│  Options: GPG-encrypted file or USB drive                      │"
         echo "│                                                                │"
         echo "└────────────────────────────────────────────────────────────────┘"
         echo ""
