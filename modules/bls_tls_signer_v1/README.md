@@ -101,45 +101,115 @@ curl -X POST http://localhost:9000/eth/v1/keystores \
 ## HashiCorp Vault Integration
 
 Web3Signer supports HashiCorp Vault as a secure key storage backend.
+**Important:** Always use AppRole authentication, never root tokens!
+
+### Vault Access Model
+
+CryftTEE uses two separate AppRoles with least-privilege access:
+
+| Role | Purpose | Permissions | TTL |
+|------|---------|-------------|-----|
+| `web3signer` | Runtime signing | Read-only key access | 1h |
+| `cryfttee-admin` | Key import/delete | Read/write key access | 15m |
 
 ### Setup Vault Secret Engine
 
 ```bash
 # Enable KV secrets engine v2
-vault secrets enable -path=web3signer kv-v2
+vault secrets enable -path=cryfttee kv-v2
 
-# Store BLS private key
-vault kv put web3signer/bls/validator-1 \
+# Store BLS private key (use admin AppRole or root for setup)
+vault kv put cryfttee/keys/bls/validator-1 \
   private_key="0x..." \
   public_key="0x..."
 
 # Store TLS private key
-vault kv put web3signer/tls/node-1 \
+vault kv put cryfttee/keys/tls/node-1 \
   private_key="-----BEGIN EC PRIVATE KEY-----..." \
   certificate="-----BEGIN CERTIFICATE-----..."
 ```
 
-### Web3Signer Vault Configuration
+### Create AppRole Policies (Least Privilege)
 
-Create `web3signer-vault.yaml`:
+```bash
+# Read-only policy for Web3Signer (signing operations)
+vault policy write cryfttee - << 'EOF'
+path "cryfttee/data/keys/bls/*" {
+  capabilities = ["read", "list"]
+}
+path "cryfttee/data/keys/tls/*" {
+  capabilities = ["read", "list"]
+}
+EOF
+
+# Admin policy for key management
+vault policy write cryfttee-admin - << 'EOF'
+path "cryfttee/data/keys/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+EOF
+```
+
+### Configure AppRole Authentication
+
+```bash
+# Enable AppRole auth method
+vault auth enable approle
+
+# Create Web3Signer role (read-only, long-lived)
+vault write auth/approle/role/web3signer \
+    token_policies="cryfttee" \
+    token_ttl=1h \
+    token_max_ttl=4h \
+    secret_id_ttl=0 \
+    secret_id_num_uses=0
+
+# Create Admin role (write access, short-lived)
+vault write auth/approle/role/cryfttee-admin \
+    token_policies="cryfttee-admin" \
+    token_ttl=15m \
+    token_max_ttl=1h \
+    secret_id_ttl=24h \
+    secret_id_num_uses=10
+
+# Get AppRole credentials
+vault read auth/approle/role/web3signer/role-id
+vault write -f auth/approle/role/web3signer/secret-id
+```
+
+### Web3Signer Vault Key Configuration
+
+Create `validator-1.yaml` in `/etc/web3signer/keys/`:
 
 ```yaml
 type: hashicorp
 keyType: BLS
 tlsEnabled: true
-keyPath: /v1/secret/data/web3signer/bls
-token: ${VAULT_TOKEN}
+keyPath: /v1/secret/data/cryfttee/keys/bls/validator-1
 serverHost: vault.example.com
 serverPort: 8200
 timeout: 10000
+# AppRole authentication
+authFilePath: /etc/web3signer/vault-approle.json
+```
+
+### AppRole Credentials File
+
+Create `/etc/web3signer/vault-approle.json`:
+
+```json
+{
+  "role_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "secret_id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+}
 ```
 
 ### Environment Variables for Vault
 
 ```bash
+# Only for CLI tools - Web3Signer uses AppRole file
 export VAULT_ADDR="https://vault.example.com:8200"
-export VAULT_TOKEN="hvs.xxxxxxxxxxxxx"
-export VAULT_NAMESPACE="admin"  # If using Vault Enterprise
+# Never set VAULT_TOKEN in production - use AppRole!
 ```
 
 ### Start Web3Signer with Vault
@@ -149,7 +219,7 @@ web3signer \
   --http-listen-port=9000 \
   eth2 \
   --network=mainnet \
-  --key-config-path=/etc/web3signer/vault-keys/
+  --key-config-path=/etc/web3signer/keys/
 ```
 
 ---

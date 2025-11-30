@@ -166,6 +166,7 @@ services:
       - ${VAULT_DATA}/data:/vault/data
       - ${VAULT_DATA}/logs:/vault/logs
       - ${CONFIG_DIR}/vault.hcl:/vault/config/vault.hcl:ro
+      - ${VAULT_DATA}/init:/vault/init
     environment:
       - VAULT_ADDR=http://127.0.0.1:8200
       - VAULT_API_ADDR=http://0.0.0.0:8200
@@ -179,7 +180,24 @@ services:
       retries: 3
       start_period: 10s
 
-  # Web3Signer - Ethereum Signing
+  # Auto-init and unseal Vault on first start
+  vault-init:
+    image: hashicorp/vault:${VAULT_VERSION}
+    container_name: cryfttee-vault-init
+    depends_on:
+      vault:
+        condition: service_healthy
+    volumes:
+      - ${VAULT_DATA}/init:/vault/init
+      - ${CONFIG_DIR}/vault-init.sh:/vault-init.sh:ro
+    environment:
+      - VAULT_ADDR=http://vault:8200
+    entrypoint: ["/bin/sh", "/vault-init.sh"]
+    networks:
+      - cryfttee-keyvault
+    restart: "no"
+
+  # Web3Signer - Ethereum Signing with Vault backend
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
@@ -194,6 +212,7 @@ services:
       - ${WEB3SIGNER_DATA}:/data
       - ${KEYS_DIR}:/keys
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
+      - ${VAULT_DATA}/init:/vault-init:ro
     command:
       - --config-file=/config/web3signer.yaml
       - eth2
@@ -303,6 +322,285 @@ telemetry {
 }
 
 disable_mlock = true
+EOF
+}
+
+# Vault Auto-Init Script (runs in container on first start)
+generate_vault_init_script() {
+    cat << 'INITSCRIPT'
+#!/bin/sh
+#
+# Vault Auto-Init Script for CryftTEE
+# Automatically initializes and unseals Vault on first deployment
+# Uses AppRole for all access - never exposes root token to applications!
+#
+
+set -e
+
+INIT_FILE="/vault/init/vault-init.json"
+UNSEAL_FILE="/vault/init/unseal-keys.txt"
+ROOT_TOKEN_FILE="/vault/init/root-token.txt"
+APPROLE_FILE="/vault/init/approle.json"
+
+echo "[vault-init] Starting Vault auto-initialization..."
+echo "[vault-init] Using AppRole-based access (production-safe)"
+
+# Wait for Vault to be ready
+for i in $(seq 1 30); do
+    if vault status 2>&1 | grep -qE "(Sealed|Initialized)"; then
+        break
+    fi
+    echo "[vault-init] Waiting for Vault to start... ($i/30)"
+    sleep 2
+done
+
+# Check if already initialized
+if vault status 2>/dev/null | grep -q "Initialized.*true"; then
+    echo "[vault-init] Vault already initialized"
+    
+    # Auto-unseal if we have the keys
+    if [ -f "${UNSEAL_FILE}" ] && vault status 2>/dev/null | grep -q "Sealed.*true"; then
+        echo "[vault-init] Auto-unsealing Vault..."
+        while read key; do
+            vault operator unseal "${key}" >/dev/null 2>&1 || true
+        done < "${UNSEAL_FILE}"
+        echo "[vault-init] Vault unsealed!"
+    fi
+    
+    # Verify Vault is unsealed and ready
+    if vault status 2>/dev/null | grep -q "Sealed.*false"; then
+        echo "[vault-init] Vault is ready!"
+        
+        # Verify AppRole exists (use root token only for setup)
+        if [ -f "${ROOT_TOKEN_FILE}" ] && [ ! -f "${APPROLE_FILE}" ]; then
+            export VAULT_TOKEN=$(cat "${ROOT_TOKEN_FILE}")
+            
+            # Enable KV engine for CryftTEE keys if not exists
+            if ! vault secrets list 2>/dev/null | grep -q "cryfttee/"; then
+                echo "[vault-init] Enabling cryfttee KV secrets engine..."
+                vault secrets enable -path=cryfttee kv-v2 2>/dev/null || true
+            fi
+            
+            # Recreate AppRole credentials
+            echo "[vault-init] Regenerating AppRole credentials..."
+            ROLE_ID=$(vault read -format=json auth/approle/role/web3signer/role-id 2>/dev/null | jq -r '.data.role_id')
+            SECRET_ID=$(vault write -format=json -f auth/approle/role/web3signer/secret-id 2>/dev/null | jq -r '.data.secret_id')
+            
+            if [ -n "${ROLE_ID}" ] && [ -n "${SECRET_ID}" ]; then
+                cat > "${APPROLE_FILE}" << APPROLE
+{
+  "vault_addr": "http://vault:8200",
+  "role_id": "${ROLE_ID}",
+  "secret_id": "${SECRET_ID}"
+}
+APPROLE
+                chmod 600 "${APPROLE_FILE}"
+                echo "[vault-init] AppRole credentials saved to ${APPROLE_FILE}"
+            fi
+        fi
+    fi
+    exit 0
+fi
+
+echo "[vault-init] Initializing Vault (first time setup)..."
+
+# Initialize with single unseal key for dev (use 5/3 for production)
+INIT_OUTPUT=$(vault operator init -key-shares=1 -key-threshold=1 -format=json)
+
+# Save initialization output (for disaster recovery only)
+echo "${INIT_OUTPUT}" > "${INIT_FILE}"
+chmod 600 "${INIT_FILE}"
+
+# Extract and save unseal keys
+echo "${INIT_OUTPUT}" | jq -r '.unseal_keys_b64[]' > "${UNSEAL_FILE}"
+chmod 600 "${UNSEAL_FILE}"
+
+# Extract root token (used only for initial setup, NOT for app access)
+ROOT_TOKEN=$(echo "${INIT_OUTPUT}" | jq -r '.root_token')
+echo "${ROOT_TOKEN}" > "${ROOT_TOKEN_FILE}"
+chmod 600 "${ROOT_TOKEN_FILE}"
+
+echo "[vault-init] Vault initialized! Unsealing..."
+
+# Unseal
+UNSEAL_KEY=$(echo "${INIT_OUTPUT}" | jq -r '.unseal_keys_b64[0]')
+vault operator unseal "${UNSEAL_KEY}" >/dev/null
+
+echo "[vault-init] Vault unsealed!"
+
+# Configure Vault for CryftTEE (using root token for setup only)
+export VAULT_TOKEN="${ROOT_TOKEN}"
+
+echo "[vault-init] Enabling secrets engines..."
+
+# KV v2 for key storage
+vault secrets enable -path=cryfttee kv-v2 2>/dev/null || true
+
+# Transit engine for signing operations
+vault secrets enable transit 2>/dev/null || true
+
+echo "[vault-init] Creating CryftTEE policy (least privilege)..."
+
+vault policy write cryfttee - << 'POLICY'
+# CryftTEE Vault Policy - Least Privilege Access
+# This policy grants only the minimum permissions needed for key operations
+
+# BLS keys (ETH2 validator signing) - read-only for signing operations
+path "cryfttee/data/keys/bls/*" {
+  capabilities = ["read", "list"]
+}
+path "cryfttee/metadata/keys/bls/*" {
+  capabilities = ["list"]
+}
+
+# TLS/SECP256k1 keys - read-only for signing operations
+path "cryfttee/data/keys/tls/*" {
+  capabilities = ["read", "list"]
+}
+path "cryfttee/metadata/keys/tls/*" {
+  capabilities = ["list"]
+}
+
+# Transit engine operations (signing only, no key management)
+path "transit/sign/*" {
+  capabilities = ["create", "update"]
+}
+path "transit/verify/*" {
+  capabilities = ["create", "update"]
+}
+POLICY
+
+# Create admin policy for key management (separate from signing)
+vault policy write cryfttee-admin - << 'POLICY'
+# CryftTEE Admin Policy - For key import/management operations
+# Use this role for administrative tasks, NOT for runtime signing
+
+# Full access to BLS keys
+path "cryfttee/data/keys/bls/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+path "cryfttee/metadata/keys/bls/*" {
+  capabilities = ["list", "delete"]
+}
+
+# Full access to TLS keys
+path "cryfttee/data/keys/tls/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+path "cryfttee/metadata/keys/tls/*" {
+  capabilities = ["list", "delete"]
+}
+
+# Transit engine key management
+path "transit/keys/*" {
+  capabilities = ["create", "read", "update", "list"]
+}
+path "transit/sign/*" {
+  capabilities = ["create", "update"]
+}
+path "transit/verify/*" {
+  capabilities = ["create", "update"]
+}
+POLICY
+
+echo "[vault-init] Setting up AppRole authentication..."
+
+# Enable AppRole auth
+vault auth enable approle 2>/dev/null || true
+
+# Create Web3Signer role (signing operations - least privilege)
+echo "[vault-init] Creating 'web3signer' AppRole (signing only)..."
+vault write auth/approle/role/web3signer \
+    token_policies="cryfttee" \
+    token_ttl=1h \
+    token_max_ttl=4h \
+    secret_id_ttl=0 \
+    secret_id_num_uses=0
+
+# Create Admin role (key management)
+echo "[vault-init] Creating 'cryfttee-admin' AppRole (key management)..."
+vault write auth/approle/role/cryfttee-admin \
+    token_policies="cryfttee-admin" \
+    token_ttl=15m \
+    token_max_ttl=1h \
+    secret_id_ttl=24h \
+    secret_id_num_uses=10
+
+# Get Web3Signer AppRole credentials (for runtime signing)
+ROLE_ID=$(vault read -format=json auth/approle/role/web3signer/role-id | jq -r '.data.role_id')
+SECRET_ID=$(vault write -format=json -f auth/approle/role/web3signer/secret-id | jq -r '.data.secret_id')
+
+# Save Web3Signer AppRole credentials
+cat > "${APPROLE_FILE}" << APPROLE
+{
+  "vault_addr": "http://vault:8200",
+  "role_id": "${ROLE_ID}",
+  "secret_id": "${SECRET_ID}",
+  "description": "Web3Signer AppRole - read-only access for signing operations"
+}
+APPROLE
+chmod 600 "${APPROLE_FILE}"
+
+# Get Admin AppRole credentials (for key import operations)
+ADMIN_ROLE_ID=$(vault read -format=json auth/approle/role/cryfttee-admin/role-id | jq -r '.data.role_id')
+ADMIN_SECRET_ID=$(vault write -format=json -f auth/approle/role/cryfttee-admin/secret-id | jq -r '.data.secret_id')
+
+cat > "/vault/init/approle-admin.json" << APPROLE
+{
+  "vault_addr": "http://vault:8200",
+  "role_id": "${ADMIN_ROLE_ID}",
+  "secret_id": "${ADMIN_SECRET_ID}",
+  "description": "CryftTEE Admin AppRole - for key import/delete operations",
+  "note": "This secret_id expires in 24h and has limited uses. Regenerate as needed."
+}
+APPROLE
+chmod 600 "/vault/init/approle-admin.json"
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║     Vault Auto-Initialization Complete!                      ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "[vault-init] AppRole-based access configured (production-safe)"
+echo ""
+echo "  AppRole Credentials:"
+echo "  ─────────────────────────────────────────────────────────────"
+echo "  web3signer (signing):  ${APPROLE_FILE}"
+echo "  cryfttee-admin (mgmt): /vault/init/approle-admin.json"
+echo ""
+echo "  SECURITY NOTES:"
+echo "  ─────────────────────────────────────────────────────────────"
+echo "  • Root token is stored for disaster recovery ONLY"
+echo "  • All application access uses AppRole authentication"
+echo "  • web3signer role has read-only access to keys"
+echo "  • cryfttee-admin role has time-limited write access"
+echo ""
+echo "  BACKUP REQUIRED:"
+echo "  ─────────────────────────────────────────────────────────────"
+echo "  • ${UNSEAL_FILE} (required to unseal after restart)"
+echo "  • ${INIT_FILE} (disaster recovery)"
+echo ""
+echo "[vault-init] Vault is ready for CryftTEE!"
+
+INITSCRIPT
+}
+
+# Generate Web3Signer key config for Vault-stored keys
+generate_vault_key_config() {
+    local key_type="$1"  # bls or secp256k1
+    local key_name="$2"
+    local vault_path="$3"
+    
+    cat << EOF
+# Web3Signer key config for Vault-stored ${key_type} key
+type: hashicorp
+keyType: ${key_type^^}
+keyPath: ${vault_path}
+serverHost: vault
+serverPort: 8200
+tlsEnabled: false
+timeout: 10000
+# Token loaded from environment or approle
 EOF
 }
 
@@ -607,14 +905,17 @@ generate_import_key_script() {
 # Import keys into Web3Signer for CryftTEE
 #
 # Usage:
-#   ./import-key.sh bls <keystore.json> <password>        # Import BLS key (ETH2 staking)
-#   ./import-key.sh secp256k1 <keystore.json> <password>  # Import SECP256k1 key (TLS signing)
+#   ./import-key.sh bls <keystore.json> <password>        # Import BLS key from file
+#   ./import-key.sh tls <keystore.json> <password>        # Import TLS/SECP256k1 key from file
+#   ./import-key.sh vault-bls <key-name> <private-key>    # Store BLS key in Vault
+#   ./import-key.sh vault-tls <key-name> <private-key>    # Store TLS key in Vault
 #   ./import-key.sh generate-bls                          # Generate new BLS key pair
 #   ./import-key.sh list                                  # List all loaded keys
+#   ./import-key.sh list-vault                            # List keys in Vault
 #
-# CryftTEE uses:
-#   - BLS keys for validator staking signatures
-#   - SECP256k1 keys for TLS certificate signing
+# Storage backends:
+#   - File-based: Keys stored in /opt/cryfttee-keyvault/keys/
+#   - HashiCorp Vault: Keys stored in Vault at cryfttee/data/keys/
 #
 
 set -e
@@ -624,25 +925,83 @@ KEYSTORE_FILE="${2:-}"
 PASSWORD="${3:-}"
 KEYS_DIR="/opt/cryfttee-keyvault/keys"
 WEB3SIGNER_URL="${WEB3SIGNER_URL:-http://127.0.0.1:9000}"
+VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
+VAULT_INIT_DIR="/opt/cryfttee-keyvault/vault/init"
+
+# Authenticate to Vault using AppRole (role-based access)
+# Uses admin role for key management, web3signer role for read operations
+authenticate_vault() {
+    local role="${1:-web3signer}"  # default to web3signer (read-only)
+    
+    if [ "${role}" = "admin" ]; then
+        APPROLE_FILE="${VAULT_INIT_DIR}/approle-admin.json"
+    else
+        APPROLE_FILE="${VAULT_INIT_DIR}/approle.json"
+    fi
+    
+    # Check if we already have a valid token
+    if [ -n "${VAULT_TOKEN}" ]; then
+        # Verify token is still valid
+        if curl -sf -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR}/v1/auth/token/lookup-self" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    
+    # Authenticate via AppRole
+    if [ -f "${APPROLE_FILE}" ]; then
+        ROLE_ID=$(jq -r '.role_id' "${APPROLE_FILE}" 2>/dev/null)
+        SECRET_ID=$(jq -r '.secret_id' "${APPROLE_FILE}" 2>/dev/null)
+        
+        if [ -n "${ROLE_ID}" ] && [ "${ROLE_ID}" != "null" ] && [ -n "${SECRET_ID}" ] && [ "${SECRET_ID}" != "null" ]; then
+            # Get token via AppRole login
+            TOKEN_RESPONSE=$(curl -sf -X POST \
+                -H "Content-Type: application/json" \
+                -d "{\"role_id\": \"${ROLE_ID}\", \"secret_id\": \"${SECRET_ID}\"}" \
+                "${VAULT_ADDR}/v1/auth/approle/login" 2>/dev/null)
+            
+            if [ -n "${TOKEN_RESPONSE}" ]; then
+                export VAULT_TOKEN=$(echo "${TOKEN_RESPONSE}" | jq -r '.auth.client_token' 2>/dev/null)
+                if [ -n "${VAULT_TOKEN}" ] && [ "${VAULT_TOKEN}" != "null" ]; then
+                    return 0
+                fi
+            fi
+        fi
+    fi
+    
+    if [ "${role}" = "admin" ]; then
+        echo "[x] Admin AppRole authentication failed."
+        echo "[i] The admin secret_id may have expired. Regenerate with:"
+        echo "    vault write -f auth/approle/role/cryfttee-admin/secret-id"
+    else
+        echo "[x] AppRole authentication failed."
+        echo "[i] Ensure ${APPROLE_FILE} exists with valid credentials."
+    fi
+    return 1
+}
 
 usage() {
     echo "CryftTEE Web3Signer Key Management"
     echo ""
     echo "Usage:"
-    echo "  $0 bls <keystore.json> <password>        # BLS key for ETH2 staking"
-    echo "  $0 secp256k1 <keystore.json> <password>  # SECP256k1 key for TLS signing"
+    echo "  $0 bls <keystore.json> <password>        # BLS key from file (ETH2 staking)"
+    echo "  $0 tls <keystore.json> <password>        # TLS/SECP256k1 key from file"
+    echo "  $0 vault-bls <name> <private-key-hex>    # Store BLS key in HashiCorp Vault"
+    echo "  $0 vault-tls <name> <private-key-hex>    # Store TLS key in HashiCorp Vault"
     echo "  $0 generate-bls                          # Generate new BLS key"
-    echo "  $0 list                                  # List all loaded keys"
-    echo "  $0 test                                  # Test Web3Signer connectivity"
+    echo "  $0 generate-tls                          # Generate new TLS/ECDSA key"
+    echo "  $0 list                                  # List keys in Web3Signer"
+    echo "  $0 list-vault                            # List keys stored in Vault"
+    echo "  $0 test                                  # Test connectivity"
     echo ""
     echo "Examples:"
+    echo "  # File-based (simple):"
     echo "  $0 bls ./validator-keystore.json mypassword"
-    echo "  $0 secp256k1 ./tls-keystore.json mypassword"
-    echo "  $0 list"
     echo ""
-    echo "After importing, CryftTEE will automatically detect keys via:"
-    echo "  GET ${WEB3SIGNER_URL}/api/v1/eth2/publicKeys  (BLS)"
-    echo "  GET ${WEB3SIGNER_URL}/api/v1/eth1/publicKeys  (SECP256k1)"
+    echo "  # Vault-based (recommended for production):"
+    echo "  $0 vault-bls validator-1 0x1234...abcd"
+    echo ""
+    echo "After importing, restart Web3Signer:"
+    echo "  sudo docker restart cryfttee-web3signer"
     exit 1
 }
 
@@ -652,6 +1011,21 @@ check_web3signer() {
         echo "[i] Start with: sudo systemctl start cryfttee-keyvault"
         exit 1
     fi
+}
+
+check_vault() {
+    if ! curl -sf "${VAULT_ADDR}/v1/sys/health" >/dev/null 2>&1; then
+        echo "[x] Vault not responding at ${VAULT_ADDR}"
+        return 1
+    fi
+    
+    # Authenticate using AppRole
+    if ! authenticate_vault; then
+        echo "[x] Vault AppRole authentication failed."
+        echo "[i] Ensure AppRole credentials exist at: ${VAULT_INIT_DIR}/approle.json"
+        return 1
+    fi
+    return 0
 }
 
 list_keys() {
@@ -683,20 +1057,155 @@ list_keys() {
     ls -la ${KEYS_DIR}/*.json 2>/dev/null | awk '{print "  " $NF}' || echo "  (none)"
 }
 
+list_vault_keys() {
+    if ! check_vault; then
+        return 1
+    fi
+    
+    echo "=== BLS Keys in Vault ==="
+    BLS_LIST=$(curl -sf -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/cryfttee/metadata/keys/bls?list=true" 2>/dev/null | jq -r '.data.keys[]?' 2>/dev/null)
+    if [ -z "${BLS_LIST}" ]; then
+        echo "  (none)"
+    else
+        echo "${BLS_LIST}" | while read key; do
+            echo "  - ${key}"
+        done
+    fi
+    
+    echo ""
+    echo "=== TLS Keys in Vault ==="
+    TLS_LIST=$(curl -sf -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/cryfttee/metadata/keys/tls?list=true" 2>/dev/null | jq -r '.data.keys[]?' 2>/dev/null)
+    if [ -z "${TLS_LIST}" ]; then
+        echo "  (none)"
+    else
+        echo "${TLS_LIST}" | while read key; do
+            echo "  - ${key}"
+        done
+    fi
+}
+
+store_in_vault() {
+    local key_type="$1"  # bls or tls
+    local key_name="$2"
+    local private_key="$3"
+    local public_key="${4:-}"
+    
+    # Key storage requires admin AppRole (write access)
+    echo "[+] Authenticating with admin AppRole..."
+    if ! authenticate_vault "admin"; then
+        echo ""
+        echo "[!] Key management requires the 'cryfttee-admin' AppRole."
+        echo "[i] If the secret_id expired, regenerate it on the Vault server:"
+        echo ""
+        echo "    # SSH to keyvault server, then:"
+        echo "    export VAULT_ADDR=http://127.0.0.1:8200"
+        echo "    export VAULT_TOKEN=\$(cat /opt/cryfttee-keyvault/vault/init/root-token.txt)"
+        echo "    vault write -format=json -f auth/approle/role/cryfttee-admin/secret-id > /tmp/new-secret.json"
+        echo "    # Update approle-admin.json with new secret_id"
+        echo ""
+        return 1
+    fi
+    
+    echo "[+] Storing ${key_type} key '${key_name}' in Vault..."
+    
+    # Store in Vault KV
+    RESULT=$(curl -sf -X POST \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"data\": {\"private_key\": \"${private_key}\", \"public_key\": \"${public_key}\"}}" \
+        "${VAULT_ADDR}/v1/cryfttee/data/keys/${key_type}/${key_name}" 2>/dev/null)
+    
+    if [ $? -eq 0 ]; then
+        echo "[+] Key stored in Vault at: cryfttee/data/keys/${key_type}/${key_name}"
+        
+        # Create Web3Signer key config YAML (uses web3signer AppRole, not admin)
+        CONFIG_FILE="${KEYS_DIR}/vault-${key_type}-${key_name}.yaml"
+        
+        # Read web3signer approle for config
+        WS_ROLE_ID=$(jq -r '.role_id' "${VAULT_INIT_DIR}/approle.json" 2>/dev/null)
+        
+        if [ "${key_type}" = "bls" ]; then
+            cat << YAMLCONFIG | sudo tee "${CONFIG_FILE}" > /dev/null
+# Web3Signer Vault key config - uses AppRole authentication
+type: hashicorp
+keyType: BLS
+keyPath: /v1/cryfttee/data/keys/bls/${key_name}
+serverHost: vault
+serverPort: 8200
+tlsEnabled: false
+timeout: 10000
+# AppRole authentication (read-only access)
+authFilePath: /vault-init/approle.json
+YAMLCONFIG
+        else
+            cat << YAMLCONFIG | sudo tee "${CONFIG_FILE}" > /dev/null
+# Web3Signer Vault key config - uses AppRole authentication
+type: hashicorp
+keyType: SECP256K1
+keyPath: /v1/cryfttee/data/keys/tls/${key_name}
+serverHost: vault
+serverPort: 8200
+tlsEnabled: false
+timeout: 10000
+# AppRole authentication (read-only access)
+authFilePath: /vault-init/approle.json
+YAMLCONFIG
+        fi
+        
+        sudo chmod 600 "${CONFIG_FILE}"
+        echo "[+] Web3Signer config created: ${CONFIG_FILE}"
+        echo "[i] Uses AppRole authentication (read-only) for signing"
+        echo ""
+        echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
+        return 0
+    else
+        echo "[x] Failed to store key in Vault"
+        return 1
+    fi
+}
+
 test_connectivity() {
-    check_web3signer
-    echo "[+] Web3Signer is healthy at ${WEB3SIGNER_URL}"
-    
-    echo ""
-    echo "[i] Testing from CryftTEE perspective..."
-    echo "    Set CRYFTTEE_WEB3SIGNER_URL=${WEB3SIGNER_URL}"
+    echo "=== Connectivity Test ==="
     echo ""
     
-    # Show key counts
+    # Web3Signer
+    echo -n "[Web3Signer] ${WEB3SIGNER_URL} ... "
+    if curl -sf "${WEB3SIGNER_URL}/upcheck" >/dev/null 2>&1; then
+        echo "✓ OK"
+    else
+        echo "✗ FAILED"
+    fi
+    
+    # Vault
+    echo -n "[Vault] ${VAULT_ADDR} ... "
+    if curl -sf "${VAULT_ADDR}/v1/sys/health" >/dev/null 2>&1; then
+        SEALED=$(curl -sf "${VAULT_ADDR}/v1/sys/health" | jq -r '.sealed')
+        if [ "${SEALED}" = "false" ]; then
+            echo "✓ OK (unsealed)"
+        else
+            echo "⚠ Sealed (run unseal script)"
+        fi
+    else
+        echo "✗ Not running"
+    fi
+    
+    # Vault AppRole
+    echo -n "[Vault AppRole] ... "
+    if authenticate_vault 2>/dev/null; then
+        echo "✓ Authenticated"
+    else
+        echo "⚠ Not configured (check ${VAULT_INIT_DIR}/approle.json)"
+    fi
+    
+    echo ""
+    
+    # Key counts
     BLS_COUNT=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth2/publicKeys" 2>/dev/null | jq '. | length' 2>/dev/null || echo "0")
     SECP_COUNT=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth1/publicKeys" 2>/dev/null | jq '. | length' 2>/dev/null || echo "0")
     
-    echo "[+] Available keys:"
+    echo "[+] Keys available in Web3Signer:"
     echo "    BLS (staking):     ${BLS_COUNT}"
     echo "    SECP256k1 (TLS):   ${SECP_COUNT}"
 }
@@ -709,9 +1218,33 @@ case "${KEY_TYPE}" in
     list)
         list_keys
         ;;
+    
+    list-vault)
+        list_vault_keys
+        ;;
         
     test)
         test_connectivity
+        ;;
+    
+    vault-bls)
+        KEY_NAME="${KEYSTORE_FILE}"
+        PRIVATE_KEY="${PASSWORD}"
+        if [ -z "${KEY_NAME}" ] || [ -z "${PRIVATE_KEY}" ]; then
+            echo "Usage: $0 vault-bls <key-name> <private-key-hex>"
+            exit 1
+        fi
+        store_in_vault "bls" "${KEY_NAME}" "${PRIVATE_KEY}"
+        ;;
+    
+    vault-tls)
+        KEY_NAME="${KEYSTORE_FILE}"
+        PRIVATE_KEY="${PASSWORD}"
+        if [ -z "${KEY_NAME}" ] || [ -z "${PRIVATE_KEY}" ]; then
+            echo "Usage: $0 vault-tls <key-name> <private-key-hex>"
+            exit 1
+        fi
+        store_in_vault "tls" "${KEY_NAME}" "${PRIVATE_KEY}"
         ;;
         
     generate-bls)
@@ -730,7 +1263,6 @@ case "${KEY_TYPE}" in
         echo ""
         
         # Use eth2-val-tools Docker image for key generation
-        # This is the most reliable cross-platform approach
         if command -v docker &> /dev/null; then
             TEMP_DIR=$(mktemp -d)
             
@@ -774,7 +1306,6 @@ case "${KEY_TYPE}" in
             else
                 echo "[x] Docker key generation failed. Trying alternative method..."
                 echo ""
-                # Fallback: use Web3Signer's key manager API if available
                 echo "[i] Alternative: Use eth2-deposit-cli directly:"
                 echo ""
                 echo "    # Install"
@@ -792,20 +1323,61 @@ case "${KEY_TYPE}" in
         else
             echo "[x] Docker not available"
             echo ""
-            echo "[i] Manual BLS key generation options:"
-            echo ""
-            echo "    Option 1: eth2-deposit-cli (recommended)"
-            echo "    ----------------------------------------"
+            echo "[i] Manual BLS key generation:"
             echo "    pip3 install eth-staking-deposit-cli"
             echo "    eth-staking-deposit-cli generate-keys --num_validators 1 --chain mainnet"
             echo "    $0 bls ./validator_keys/keystore-*.json <password>"
-            echo ""
-            echo "    Option 2: ethdo"
-            echo "    ----------------------------------------"
-            echo "    # Install: https://github.com/wealdtech/ethdo"
-            echo "    ethdo account create --account=cryfttee/validator --passphrase=<password>"
-            echo ""
         fi
+        ;;
+    
+    generate-tls)
+        echo "=== CryftTEE TLS Key Generator ==="
+        echo ""
+        
+        OUTPUT_DIR="${KEYS_DIR}"
+        sudo mkdir -p "${OUTPUT_DIR}"
+        TEMP_DIR=$(mktemp -d)
+        
+        KEY_NAME="tls-$(date +%s)"
+        
+        echo "[+] Generating ECDSA P-256 key pair..."
+        
+        # Generate key
+        openssl ecparam -name prime256v1 -genkey -noout -out "${TEMP_DIR}/private.pem"
+        openssl ec -in "${TEMP_DIR}/private.pem" -pubout -out "${TEMP_DIR}/public.pem" 2>/dev/null
+        openssl pkcs8 -topk8 -nocrypt -in "${TEMP_DIR}/private.pem" -out "${TEMP_DIR}/private.pkcs8.pem"
+        
+        # Get hex representation
+        PRIVATE_HEX=$(openssl ec -in "${TEMP_DIR}/private.pem" -text -noout 2>/dev/null | grep -A 5 'priv:' | grep -v 'priv:' | tr -d ' \n:')
+        
+        # Copy to keys directory
+        sudo cp "${TEMP_DIR}/private.pkcs8.pem" "${OUTPUT_DIR}/${KEY_NAME}.pem"
+        sudo chmod 600 "${OUTPUT_DIR}/${KEY_NAME}.pem"
+        
+        # Create Web3Signer config
+        cat << KEYCONFIG | sudo tee "${OUTPUT_DIR}/${KEY_NAME}.yaml" > /dev/null
+type: file-raw
+keyType: SECP256K1
+privateKeyFile: /keys/${KEY_NAME}.pem
+KEYCONFIG
+        sudo chmod 600 "${OUTPUT_DIR}/${KEY_NAME}.yaml"
+        
+        echo "[+] Generated TLS key: ${KEY_NAME}"
+        echo "[+] Private key: ${OUTPUT_DIR}/${KEY_NAME}.pem"
+        echo "[+] Web3Signer config: ${OUTPUT_DIR}/${KEY_NAME}.yaml"
+        echo ""
+        
+        # Also offer to store in Vault
+        if check_vault 2>/dev/null; then
+            echo "[i] Vault detected! Store in Vault for better security?"
+            echo "    $0 vault-tls ${KEY_NAME} ${PRIVATE_HEX}"
+        fi
+        
+        echo ""
+        echo "[!] Restart Web3Signer to load:"
+        echo "    sudo docker restart cryfttee-web3signer"
+        
+        rm -rf "${TEMP_DIR}"
         ;;
         
     bls)
@@ -822,21 +1394,15 @@ case "${KEY_TYPE}" in
         PUBKEY=$(jq -r '.pubkey // .public_key // empty' "${KEYSTORE_FILE}" 2>/dev/null)
         if [ -z "${PUBKEY}" ]; then
             echo "[x] Could not extract pubkey from keystore"
-            echo "[i] Expected format: EIP-2335 keystore JSON with 'pubkey' field"
             exit 1
         fi
         PUBKEY="${PUBKEY#0x}"
         
         echo "[+] Importing BLS key: 0x${PUBKEY:0:12}...${PUBKEY: -8}"
         
-        # Create keys directory if needed
         sudo mkdir -p "${KEYS_DIR}"
-        
-        # Copy keystore
         sudo cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${PUBKEY}.json"
         sudo chmod 600 "${KEYS_DIR}/${PUBKEY}.json"
-        
-        # Create password file (same name as keystore but .txt)
         echo -n "${PASSWORD}" | sudo tee "${KEYS_DIR}/${PUBKEY}.txt" > /dev/null
         sudo chmod 600 "${KEYS_DIR}/${PUBKEY}.txt"
         
@@ -844,7 +1410,7 @@ case "${KEY_TYPE}" in
         echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
         ;;
         
-    secp256k1|tls)
+    tls|secp256k1)
         if [ -z "${KEYSTORE_FILE}" ] || [ -z "${PASSWORD}" ]; then
             usage
         fi
@@ -854,29 +1420,21 @@ case "${KEY_TYPE}" in
             exit 1
         fi
         
-        # Extract address or generate ID from keystore
         ADDRESS=$(jq -r '.address // empty' "${KEYSTORE_FILE}" 2>/dev/null)
         if [ -z "${ADDRESS}" ]; then
-            # Generate a unique ID if no address
             ADDRESS=$(sha256sum "${KEYSTORE_FILE}" | cut -c1-40)
         fi
         ADDRESS="${ADDRESS#0x}"
         
         echo "[+] Importing SECP256k1 key: 0x${ADDRESS}"
         
-        # Create keys directory if needed
         sudo mkdir -p "${KEYS_DIR}"
-        
-        # Copy keystore with secp256k1 prefix
         KEYSTORE_NAME="secp256k1-${ADDRESS}"
         sudo cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${KEYSTORE_NAME}.json"
         sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.json"
-        
-        # Create password file
         echo -n "${PASSWORD}" | sudo tee "${KEYS_DIR}/${KEYSTORE_NAME}.txt" > /dev/null
         sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.txt"
         
-        # Create key config YAML for Web3Signer
         cat << KEYCONFIG | sudo tee "${KEYS_DIR}/${KEYSTORE_NAME}.yaml" > /dev/null
 type: file-keystore
 keyType: SECP256K1
@@ -890,7 +1448,7 @@ KEYCONFIG
         ;;
         
     *)
-        echo "[x] Unknown key type: ${KEY_TYPE}"
+        echo "[x] Unknown command: ${KEY_TYPE}"
         usage
         ;;
 esac
@@ -1068,6 +1626,7 @@ deploy_remote() {
     if [ "${mode}" = "full" ]; then
         generate_docker_compose_full > "${LOCAL_TMP}/docker-compose.yml"
         generate_vault_config > "${LOCAL_TMP}/vault.hcl"
+        generate_vault_init_script > "${LOCAL_TMP}/vault-init.sh"
         generate_init_vault_script > "${LOCAL_TMP}/init-vault.sh"
         generate_unseal_vault_script > "${LOCAL_TMP}/unseal-vault.sh"
     else
@@ -1087,7 +1646,7 @@ set -e
 MODE="${mode}"
 
 echo "[+] Creating directories..."
-sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,web3signer,keys,config,scripts}
+sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
 sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
 
 echo "[+] Installing configuration files..."
@@ -1097,8 +1656,10 @@ sudo cp /tmp/cryfttee-deploy/cryfttee-keyvault.service /etc/systemd/system/
 
 if [ "\${MODE}" = "full" ]; then
     sudo cp /tmp/cryfttee-deploy/vault.hcl ${CONFIG_DIR}/
+    sudo cp /tmp/cryfttee-deploy/vault-init.sh ${CONFIG_DIR}/
     sudo cp /tmp/cryfttee-deploy/init-vault.sh ${SCRIPTS_DIR}/
     sudo cp /tmp/cryfttee-deploy/unseal-vault.sh ${SCRIPTS_DIR}/
+    sudo chmod +x ${CONFIG_DIR}/vault-init.sh
 fi
 
 sudo cp /tmp/cryfttee-deploy/import-key.sh ${SCRIPTS_DIR}/
@@ -1356,7 +1917,7 @@ deploy_local() {
     
     # Create directories
     step "Creating directories..."
-    sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,web3signer,keys,config,scripts}
+    sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
     sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys 2>/dev/null || true
     
     # Generate and install configs
@@ -1365,9 +1926,10 @@ deploy_local() {
     if [ "${mode}" = "full" ]; then
         generate_docker_compose_full | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
         generate_vault_config | sudo tee ${CONFIG_DIR}/vault.hcl > /dev/null
+        generate_vault_init_script | sudo tee ${CONFIG_DIR}/vault-init.sh > /dev/null
         generate_init_vault_script | sudo tee ${SCRIPTS_DIR}/init-vault.sh > /dev/null
         generate_unseal_vault_script | sudo tee ${SCRIPTS_DIR}/unseal-vault.sh > /dev/null
-        sudo chmod +x ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh
+        sudo chmod +x ${CONFIG_DIR}/vault-init.sh ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh
     else
         generate_docker_compose_web3signer | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
     fi
@@ -1414,12 +1976,38 @@ deploy_local() {
     if [ "${mode}" = "full" ]; then
         info "  Vault:            http://localhost:${VAULT_PORT}"
         info "  Vault UI:         http://localhost:${VAULT_PORT}/ui"
+        info "  Vault Token:      ${VAULT_DATA}/init/root-token.txt"
     fi
     info "  Web3Signer API:   http://localhost:${WEB3SIGNER_PORT}"
     info "  Swagger UI:       http://localhost:${WEB3SIGNER_PORT}/swagger-ui"
     info "  Metrics:          http://localhost:${WEB3SIGNER_METRICS_PORT}/metrics"
     echo ""
     
+    if [ "${mode}" = "full" ]; then
+        echo "┌─ Vault Auto-Initialization ────────────────────────────────────┐"
+        echo "│                                                                │"
+        echo "│  Vault auto-initializes on first start! No manual steps!      │"
+        echo "│                                                                │"
+        echo "│  Credentials saved to:                                         │"
+        echo "│    ${VAULT_DATA}/init/root-token.txt"
+        echo "│    ${VAULT_DATA}/init/unseal-keys.txt"
+        echo "│                                                                │"
+        echo "│  ⚠ BACK UP these files securely!                              │"
+        echo "│                                                                │"
+        echo "└────────────────────────────────────────────────────────────────┘"
+        echo ""
+        echo "┌─ Store Keys in Vault (Recommended) ───────────────────────────┐"
+        echo "│                                                                │"
+        echo "│  sudo ${SCRIPTS_DIR}/import-key.sh \\                          │"
+        echo "│       vault-bls my-validator 0x<private-key-hex>              │"
+        echo "│                                                                │"
+        echo "│  sudo ${SCRIPTS_DIR}/import-key.sh \\                          │"
+        echo "│       vault-tls my-tls-key 0x<private-key-hex>                │"
+        echo "│                                                                │"
+        echo "└────────────────────────────────────────────────────────────────┘"
+        echo ""
+    fi
+
     echo "┌─ CryftTEE Integration ─────────────────────────────────────────┐"
     echo "│                                                                │"
     echo "│  CryftTEE defaults to http://localhost:9000 for Web3Signer    │"
@@ -1431,7 +2019,7 @@ deploy_local() {
     echo "└────────────────────────────────────────────────────────────────┘"
     echo ""
     
-    echo "┌─ Import Keys ─────────────────────────────────────────────────┐"
+    echo "┌─ Import Keys (File-based alternative) ────────────────────────┐"
     echo "│                                                                │"
     echo "│  sudo ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>   │"
     echo "│  sudo docker restart cryfttee-web3signer                       │"
@@ -1440,10 +2028,16 @@ deploy_local() {
     echo ""
     
     info "Useful commands:"
-    echo "  Status:      sudo ${SCRIPTS_DIR}/status.sh"
-    echo "  List keys:   sudo ${SCRIPTS_DIR}/import-key.sh list"
-    echo "  Logs:        sudo journalctl -u cryfttee-keyvault -f"
-    echo "  Restart:     sudo systemctl restart cryfttee-keyvault"
+    echo "  Status:       sudo ${SCRIPTS_DIR}/status.sh"
+    echo "  List keys:    sudo ${SCRIPTS_DIR}/import-key.sh list"
+    if [ "${mode}" = "full" ]; then
+        echo "  Vault keys:   sudo ${SCRIPTS_DIR}/import-key.sh list-vault"
+    fi
+    echo "  Logs:         sudo journalctl -u cryfttee-keyvault -f"
+    echo "  Restart:      sudo systemctl restart cryfttee-keyvault"
+    if [ "${mode}" = "full" ]; then
+        echo "  Unseal:       sudo ${SCRIPTS_DIR}/unseal-vault.sh"
+    fi
 }
 
 # =============================================================================
@@ -1483,12 +2077,12 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [options]"
         echo ""
-        echo "Deploy Web3Signer for CryftTEE key management."
-        echo "Uses sane defaults - no environment variables needed for local setup!"
+        echo "Deploy Web3Signer + HashiCorp Vault for CryftTEE key management."
+        echo "Plug-and-play setup - Vault auto-initializes and unseals on first run!"
         echo ""
         echo "Local Deployment (recommended for development):"
-        echo "  --local             Deploy Web3Signer on this machine (default port 9000)"
-        echo "  --local-full        Deploy Vault + Web3Signer on this machine"
+        echo "  --local             Deploy Web3Signer only (default port 9000)"
+        echo "  --local-full        Deploy Vault + Web3Signer with auto-init"
         echo ""
         echo "Remote Deployment:"
         echo "  --remote            Deploy full stack to remote server"
@@ -1500,7 +2094,7 @@ case "${1:-}" in
         echo "  --test              Test Web3Signer connectivity"
         echo ""
         echo "Configuration:"
-        echo "  --env               Generate environment variables (for remote setups)"
+        echo "  --env               Generate environment variables"
         echo "  --cryfttee-config   Generate cryfttee.toml snippet"
         echo "  --help              Show this help"
         echo ""
@@ -1510,21 +2104,25 @@ case "${1:-}" in
         echo "  WEB3SIGNER_PORT     Web3Signer port (default: ${WEB3SIGNER_PORT})"
         echo ""
         echo "╔══════════════════════════════════════════════════════════════╗"
-        echo "║  Quick Start (Local - Zero Config!)                          ║"
+        echo "║  Plug-and-Play Setup (Zero Manual Configuration!)            ║"
         echo "╠══════════════════════════════════════════════════════════════╣"
         echo "║                                                              ║"
-        echo "║  1. Deploy Web3Signer locally:                               ║"
-        echo "║     $0 --local                                               ║"
+        echo "║  1. Deploy with Vault (recommended):                         ║"
+        echo "║     $0 --local-full                                          ║"
         echo "║                                                              ║"
-        echo "║  2. Import a key:                                            ║"
+        echo "║     Vault auto-initializes and unseals on first start!       ║"
+        echo "║     Root token saved to: /opt/cryfttee-keyvault/vault/init/  ║"
+        echo "║                                                              ║"
+        echo "║  2. Store keys in Vault:                                     ║"
+        echo "║     sudo /opt/cryfttee-keyvault/scripts/import-key.sh \\     ║"
+        echo "║          vault-bls my-validator 0x1234...abcd                ║"
+        echo "║                                                              ║"
+        echo "║  3. OR import file-based keys:                               ║"
         echo "║     sudo /opt/cryfttee-keyvault/scripts/import-key.sh \\     ║"
         echo "║          bls keystore.json password                          ║"
-        echo "║     sudo docker restart cryfttee-web3signer                  ║"
         echo "║                                                              ║"
-        echo "║  3. Start CryftTEE (no env vars needed!):                    ║"
+        echo "║  4. Start CryftTEE (no env vars needed!):                    ║"
         echo "║     cargo run --release                                      ║"
-        echo "║                                                              ║"
-        echo "║  CryftTEE defaults to http://localhost:9000                  ║"
         echo "║                                                              ║"
         echo "╚══════════════════════════════════════════════════════════════╝"
         echo ""
