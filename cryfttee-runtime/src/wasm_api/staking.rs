@@ -5,8 +5,17 @@ use serde::{Deserialize, Serialize};
 /// BLS register request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlsRegisterRequest {
-    /// Key mode: "ephemeral", "persistent", or "import"
+    /// Key mode: "verify", "generate", "ephemeral", "persistent", or "import"
+    /// - "verify": Verify that public_key exists in Web3Signer (CryftGo has existing key)
+    /// - "generate": Generate new key (only allowed if CryftGo indicates no keys exist)
+    /// - "persistent": Alias for generate
+    /// - "ephemeral": Ephemeral key for testing
+    /// - "import": Import provided secret key
     pub mode: String,
+    /// Public key to verify exists in Web3Signer (hex-encoded, 0x-prefixed)
+    /// Required for "verify" mode - this is the key CryftGo has in its local store
+    #[serde(rename = "publicKey")]
+    pub public_key: Option<String>,
     /// Base64-encoded ephemeral BLS secret key (for ephemeral/import mode)
     #[serde(rename = "ephemeralKeyB64")]
     pub ephemeral_key_b64: Option<String>,
@@ -68,8 +77,17 @@ pub struct BlsSignResponse {
 /// TLS register request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TlsRegisterRequest {
-    /// Key mode: "ephemeral", "persistent", or "import"
+    /// Key mode: "verify", "generate", "ephemeral", "persistent", or "import"
+    /// - "verify": Verify that public_key exists in Web3Signer (CryftGo has existing key)
+    /// - "generate": Generate new key (only allowed if CryftGo indicates no keys exist)
+    /// - "persistent": Alias for generate
+    /// - "ephemeral": Ephemeral key for testing
+    /// - "import": Import provided secret key
     pub mode: String,
+    /// Public key to verify exists in Web3Signer (hex-encoded, 0x-prefixed)
+    /// Required for "verify" mode - this is the key CryftGo has in its local store
+    #[serde(rename = "publicKey")]
+    pub public_key: Option<String>,
     /// Base64-encoded ephemeral TLS key PEM (for testing)
     #[serde(rename = "ephemeralKeyPEM")]
     pub ephemeral_key_pem: Option<String>,
@@ -181,12 +199,31 @@ pub struct WasmRuntimeStatus {
     pub last_error: Option<String>,
 }
 
+/// Key mode constants
+pub const KEY_MODE_PERSISTENT: u32 = 0;
+pub const KEY_MODE_EPHEMERAL: u32 = 1;
+pub const KEY_MODE_IMPORT: u32 = 2;
+pub const KEY_MODE_VERIFY: u32 = 3;
+pub const KEY_MODE_GENERATE: u32 = 4;
+
 /// Parse key mode string to u32
 pub fn parse_key_mode(mode: &str) -> Result<u32, String> {
     match mode.to_lowercase().as_str() {
-        "persistent" => Ok(0),
-        "ephemeral" => Ok(1),
-        "import" => Ok(2),
-        _ => Err(format!("Invalid key mode: {}", mode)),
+        "persistent" => Ok(KEY_MODE_PERSISTENT),
+        "ephemeral" => Ok(KEY_MODE_EPHEMERAL),
+        "import" => Ok(KEY_MODE_IMPORT),
+        "verify" => Ok(KEY_MODE_VERIFY),
+        "generate" => Ok(KEY_MODE_GENERATE),
+        _ => Err(format!("Invalid key mode: {}. Valid modes: verify, generate, ephemeral, persistent, import", mode)),
     }
+}
+
+/// Check if mode requires a public key
+pub fn mode_requires_public_key(mode: u32) -> bool {
+    mode == KEY_MODE_VERIFY
+}
+
+/// Check if mode is for key generation
+pub fn mode_is_generation(mode: u32) -> bool {
+    mode == KEY_MODE_GENERATE || mode == KEY_MODE_PERSISTENT
 }

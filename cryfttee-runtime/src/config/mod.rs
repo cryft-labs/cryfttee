@@ -53,6 +53,11 @@ impl CryftteeConfig {
             config.schema_enabled = file_config.schema.enabled;
             config.log_level = file_config.logging.level;
             config.log_json = file_config.logging.json;
+
+            // Web3Signer configuration
+            config.web3signer_url = file_config.web3signer.url;
+            config.web3signer_timeout = file_config.web3signer.timeout;
+            config.web3signer_health_check_interval = file_config.web3signer.health_check_interval;
         }
 
         // Override with CLI/env values (these take precedence)
@@ -101,6 +106,21 @@ impl CryftteeConfig {
         }
         if config.verified_binary_hash.is_none() {
             warn!("No CRYFTTEE_VERIFIED_BINARY_HASH set - attestation will use self-reported hash (less secure)");
+        }
+
+        // Web3Signer URL from environment (overrides config file)
+        if let Ok(url) = std::env::var("CRYFTTEE_WEB3SIGNER_URL") {
+            if !url.is_empty() {
+                info!("Using Web3Signer URL from environment: {}", url);
+                config.web3signer_url = url;
+            }
+        }
+
+        // Web3Signer timeout from environment
+        if let Ok(timeout) = std::env::var("CRYFTTEE_WEB3SIGNER_TIMEOUT") {
+            if let Ok(t) = timeout.parse::<u64>() {
+                config.web3signer_timeout = t;
+            }
         }
 
         info!("Instance: {}", config.instance_name);

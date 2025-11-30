@@ -7,14 +7,15 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
-use tracing::{info, error};
+use tracing::{info, error, warn};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::wasm_api::staking::{
     BlsRegisterRequest, BlsRegisterResponse, BlsSignRequest, BlsSignResponse,
     TlsRegisterRequest, TlsRegisterResponse, TlsSignRequest, TlsSignResponse,
     StatusResponse, ModuleStatusEntry, Web3SignerStatus, WasmRuntimeStatus,
-    parse_key_mode,
+    parse_key_mode, mode_requires_public_key, mode_is_generation,
+    KEY_MODE_VERIFY, KEY_MODE_GENERATE, KEY_MODE_PERSISTENT,
 };
 use crate::runtime::Dispatcher;
 use crate::CRYFTTEE_VERSION;
@@ -30,20 +31,106 @@ pub struct ErrorResponse {
 }
 
 /// BLS register endpoint
+/// 
+/// Modes:
+/// - "verify": Verify that CryftGo's existing public key exists in Web3Signer
+/// - "generate": Generate new key (only if CryftGo has no keys)
+/// - "persistent": Alias for generate
+/// - "ephemeral": Ephemeral key for testing
+/// - "import": Import provided secret key
 pub async fn bls_register(
     State(state): State<AppState>,
     Json(request): Json<BlsRegisterRequest>,
 ) -> Result<Json<BlsRegisterResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!("BLS register request: mode={}", request.mode);
 
-    let registry = state.registry.read().await;
-    let dispatcher = Dispatcher::new(&registry);
-
     let mode = parse_key_mode(&request.mode)
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
             error: "Invalid mode".to_string(),
             details: Some(e),
         })))?;
+
+    // Handle verify mode: check that CryftGo's key exists in Web3Signer
+    if mode == KEY_MODE_VERIFY {
+        let pubkey = request.public_key.as_ref()
+            .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                error: "Missing public key".to_string(),
+                details: Some("verify mode requires publicKey field containing the key from CryftGo's local store".to_string()),
+            })))?;
+
+        info!("Verifying BLS key exists in Web3Signer: {}...", &pubkey[..std::cmp::min(20, pubkey.len())]);
+
+        let runtime_state = state.runtime_state.read().await;
+        let web3signer_url = state.config.get_web3signer_url();
+
+        // First check if Web3Signer is reachable
+        if !runtime_state.web3signer_reachable {
+            error!("Cannot verify key - Web3Signer not reachable");
+            return Err((StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+                error: "Web3Signer not reachable".to_string(),
+                details: runtime_state.web3signer_last_error.clone(),
+            })));
+        }
+
+        // Verify the key exists in Web3Signer
+        runtime_state.verify_bls_pubkey_exists(&web3signer_url, pubkey).await
+            .map_err(|e| {
+                error!("BLS key verification failed: {}", e);
+                (StatusCode::NOT_FOUND, Json(ErrorResponse {
+                    error: "Key not found in Web3Signer".to_string(),
+                    details: Some(format!(
+                        "The BLS key {} from CryftGo's local store was not found in Web3Signer. \
+                         This is a critical error - the key may have been lost or Web3Signer \
+                         is misconfigured. Node cannot start safely. Error: {}",
+                        pubkey, e
+                    )),
+                }))
+            })?;
+
+        info!("BLS key verified successfully in Web3Signer");
+
+        // Return success - key exists, use the provided public key
+        return Ok(Json(BlsRegisterResponse {
+            key_handle: pubkey.clone(), // Use pubkey as handle for existing keys
+            bls_pub_key_b64: BASE64.encode(hex::decode(pubkey.trim_start_matches("0x")).unwrap_or_default()),
+            module_id: "bls_tls_signer_v1".to_string(),
+            module_version: "1.0.0".to_string(),
+        }));
+    }
+
+    // Handle generate/persistent mode: only allowed if no keys exist
+    if mode_is_generation(mode) {
+        // CryftGo should only request generation if it has no keys
+        // Log this for audit purposes
+        warn!("Key generation requested - CryftGo indicates no existing keys");
+        
+        // Optionally verify Web3Signer has no keys (extra safety)
+        let runtime_state = state.runtime_state.read().await;
+        if runtime_state.web3signer_reachable {
+            let web3signer_url = state.config.get_web3signer_url();
+            match runtime_state.fetch_bls_pubkeys(&web3signer_url).await {
+                Ok(existing_keys) if !existing_keys.is_empty() => {
+                    warn!(
+                        "Generation requested but Web3Signer already has {} BLS keys: {:?}",
+                        existing_keys.len(),
+                        existing_keys.iter().map(|k| &k[..std::cmp::min(16, k.len())]).collect::<Vec<_>>()
+                    );
+                    // Don't fail - CryftGo may be initializing with a fresh local store
+                    // but Web3Signer has keys from a previous run
+                }
+                Ok(_) => {
+                    info!("Web3Signer has no existing BLS keys, generation is appropriate");
+                }
+                Err(e) => {
+                    warn!("Could not check existing keys in Web3Signer: {}", e);
+                }
+            }
+        }
+    }
+
+    // Proceed with key registration through the WASM module
+    let registry = state.registry.read().await;
+    let dispatcher = Dispatcher::new(&registry);
 
     let key_material = request.ephemeral_key_b64.as_ref()
         .map(|b64| BASE64.decode(b64))
@@ -111,20 +198,101 @@ pub async fn bls_sign(
 }
 
 /// TLS register endpoint
+/// 
+/// Modes:
+/// - "verify": Verify that CryftGo's existing public key exists in Web3Signer
+/// - "generate": Generate new key (only if CryftGo has no keys)
+/// - "persistent": Alias for generate
+/// - "ephemeral": Ephemeral key for testing
+/// - "import": Import provided secret key
 pub async fn tls_register(
     State(state): State<AppState>,
     Json(request): Json<TlsRegisterRequest>,
 ) -> Result<Json<TlsRegisterResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!("TLS register request: mode={}", request.mode);
 
-    let registry = state.registry.read().await;
-    let dispatcher = Dispatcher::new(&registry);
-
     let mode = parse_key_mode(&request.mode)
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
             error: "Invalid mode".to_string(),
             details: Some(e),
         })))?;
+
+    // Handle verify mode: check that CryftGo's key exists in Web3Signer
+    if mode == KEY_MODE_VERIFY {
+        let pubkey = request.public_key.as_ref()
+            .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                error: "Missing public key".to_string(),
+                details: Some("verify mode requires publicKey field containing the key from CryftGo's local store".to_string()),
+            })))?;
+
+        info!("Verifying TLS key exists in Web3Signer: {}...", &pubkey[..std::cmp::min(20, pubkey.len())]);
+
+        let runtime_state = state.runtime_state.read().await;
+        let web3signer_url = state.config.get_web3signer_url();
+
+        // First check if Web3Signer is reachable
+        if !runtime_state.web3signer_reachable {
+            error!("Cannot verify key - Web3Signer not reachable");
+            return Err((StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+                error: "Web3Signer not reachable".to_string(),
+                details: runtime_state.web3signer_last_error.clone(),
+            })));
+        }
+
+        // Verify the key exists in Web3Signer
+        runtime_state.verify_tls_pubkey_exists(&web3signer_url, pubkey).await
+            .map_err(|e| {
+                error!("TLS key verification failed: {}", e);
+                (StatusCode::NOT_FOUND, Json(ErrorResponse {
+                    error: "Key not found in Web3Signer".to_string(),
+                    details: Some(format!(
+                        "The TLS key {} from CryftGo's local store was not found in Web3Signer. \
+                         This is a critical error - the key may have been lost or Web3Signer \
+                         is misconfigured. Node ID would change if we generated a new key. \
+                         Node cannot start safely. Error: {}",
+                        pubkey, e
+                    )),
+                }))
+            })?;
+
+        info!("TLS key verified successfully in Web3Signer");
+
+        // Return success - key exists, use the provided public key
+        return Ok(Json(TlsRegisterResponse {
+            key_handle: pubkey.clone(),
+            cert_chain_pem: String::new(), // No cert for verify mode
+            module_id: "bls_tls_signer_v1".to_string(),
+            module_version: "1.0.0".to_string(),
+        }));
+    }
+
+    // Handle generate/persistent mode: only allowed if no keys exist
+    if mode_is_generation(mode) {
+        warn!("TLS key generation requested - CryftGo indicates no existing keys");
+        
+        let runtime_state = state.runtime_state.read().await;
+        if runtime_state.web3signer_reachable {
+            let web3signer_url = state.config.get_web3signer_url();
+            match runtime_state.fetch_tls_pubkeys(&web3signer_url).await {
+                Ok(existing_keys) if !existing_keys.is_empty() => {
+                    warn!(
+                        "Generation requested but Web3Signer already has {} TLS keys",
+                        existing_keys.len()
+                    );
+                }
+                Ok(_) => {
+                    info!("Web3Signer has no existing TLS keys, generation is appropriate");
+                }
+                Err(e) => {
+                    warn!("Could not check existing keys in Web3Signer: {}", e);
+                }
+            }
+        }
+    }
+
+    // Proceed with key registration through the WASM module
+    let registry = state.registry.read().await;
+    let dispatcher = Dispatcher::new(&registry);
 
     let key_material = request.ephemeral_key_pem.as_ref()
         .map(|pem| pem.as_bytes().to_vec());

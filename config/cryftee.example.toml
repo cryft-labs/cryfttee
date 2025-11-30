@@ -54,3 +54,15 @@ level = "info"
 
 # Optional structured log output.
 json  = false
+
+[web3signer]
+# Web3Signer URL for BLS and TLS key operations.
+# This is where cryfttee connects to sign staking messages.
+# Deploy with: ./scripts/deploy-keyvault.sh --web3signer-only
+url = "http://localhost:9000"
+
+# Request timeout in seconds
+timeout = 30
+
+# Health check interval in seconds (for UI status updates)
+health_check_interval = 10

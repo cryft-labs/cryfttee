@@ -15,6 +15,8 @@
 #   ./deploy-keyvault.sh --install-docker   # Install Docker on remote first
 #   ./deploy-keyvault.sh --status           # Check service status
 #   ./deploy-keyvault.sh --env              # Generate CryftTEE env vars
+#   ./deploy-keyvault.sh --test             # Test Web3Signer from CryftTEE
+#   ./deploy-keyvault.sh --cryfttee-config  # Generate cryfttee.toml snippet
 #
 # Tested on: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS
 #
@@ -25,6 +27,7 @@ set -euo pipefail
 # Configuration
 # =============================================================================
 
+# Remote deployment target (for --remote mode)
 KEYVAULT_HOST="${KEYVAULT_HOST:-100.111.2.1}"
 KEYVAULT_USER="${KEYVAULT_USER:-cryftcreator}"
 
@@ -32,10 +35,13 @@ KEYVAULT_USER="${KEYVAULT_USER:-cryftcreator}"
 VAULT_VERSION="${VAULT_VERSION:-1.15.4}"
 VAULT_PORT="${VAULT_PORT:-8200}"
 
-# Web3Signer settings
-WEB3SIGNER_VERSION="${WEB3SIGNER_VERSION:-latest}"
-WEB3SIGNER_PORT="${WEB3SIGNER_PORT:-9000}"
+# Web3Signer settings - these match CryftTEE defaults
+WEB3SIGNER_VERSION="${WEB3SIGNER_VERSION:-24.6.0}"  # Use stable release, not 'latest'
+WEB3SIGNER_PORT="${WEB3SIGNER_PORT:-9000}"          # Default: 9000 (matches CryftTEE default)
 WEB3SIGNER_METRICS_PORT="${WEB3SIGNER_METRICS_PORT:-9001}"
+
+# CryftTEE integration - localhost by default (no env vars needed)
+CRYFTTEE_HOST="${CRYFTTEE_HOST:-localhost}"
 
 # Directories
 DATA_DIR="/opt/cryfttee-keyvault"
@@ -211,7 +217,7 @@ networks:
 EOF
 }
 
-# Docker Compose - Web3Signer Only
+# Docker Compose - Web3Signer Only (recommended for CryftTEE)
 generate_docker_compose_web3signer() {
     cat << EOF
 version: '3.8'
@@ -222,31 +228,50 @@ services:
     container_name: cryfttee-web3signer
     restart: unless-stopped
     ports:
+      # Main API - CryftTEE connects here
       - "${WEB3SIGNER_PORT}:9000"
+      # Metrics endpoint for monitoring
       - "${WEB3SIGNER_METRICS_PORT}:9001"
     volumes:
+      # Persistent data (slashing protection DB)
       - ${WEB3SIGNER_DATA}:/data
-      - ${KEYS_DIR}:/keys
+      # Key storage directory
+      - ${KEYS_DIR}:/keys:ro
+      # Configuration
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
     command:
       - --config-file=/config/web3signer.yaml
       - eth2
-      - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
+      - --slashing-protection-enabled=true
+      - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection;NON_KEYWORDS=KEY,VALUE
       - --keystores-path=/keys
+      - --keystores-passwords-path=/keys
     environment:
-      - JAVA_OPTS=-Xmx512m -Xms256m
+      - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
+      # Expose to CryftTEE via Tailscale/LAN
+      - LOG4J_FORMAT_MSG_NO_LOOKUPS=true
     networks:
-      - cryfttee-keyvault
+      cryfttee-keyvault:
+        aliases:
+          - web3signer
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9000/upcheck"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/upcheck"]
+      interval: 10s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   cryfttee-keyvault:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 EOF
 }
 
@@ -286,24 +311,66 @@ generate_web3signer_config() {
     cat << EOF
 # Web3Signer Configuration for CryftTEE
 # Supports both BLS (consensus) and SECP256k1 (execution/TLS) signing
+#
+# API Endpoints available:
+#   GET  /upcheck                          - Health check
+#   GET  /api/v1/eth2/publicKeys           - List BLS public keys
+#   POST /api/v1/eth2/sign/:identifier     - Sign with BLS key
+#   GET  /api/v1/eth1/publicKeys           - List SECP256k1 public keys  
+#   POST /api/v1/eth1/sign/:identifier     - Sign with SECP256k1 key
+#   GET  /api/v1/keys                      - List all keys (key manager API)
+#   POST /api/v1/keys                      - Import key (key manager API)
+#   DELETE /api/v1/keys/:identifier        - Delete key (key manager API)
 
 http-listen-host: "0.0.0.0"
 http-listen-port: 9000
+
+# CORS - allow CryftTEE connections from any origin
 http-cors-origins: ["*"]
 http-host-allowlist: ["*"]
 
+# Metrics for monitoring
 metrics-enabled: true
 metrics-host: "0.0.0.0"
 metrics-port: 9001
+metrics-host-allowlist: ["*"]
 
+# Logging
 logging: "INFO"
 
-# Enable Key Manager API for dynamic key management
+# Key Manager API - REQUIRED for CryftTEE key operations
+# This enables dynamic key import/delete via REST API
 key-manager-api-enabled: true
 
-# Swagger UI for API exploration (disable in production)
+# Swagger UI for API exploration (useful for debugging, can disable in production)
 swagger-ui-enabled: true
+
+# Idle connection timeout (ms) - increase for reliability
+idle-connection-timeout-seconds: 60
 EOF
+}
+
+# Web3Signer key config generator for file-based keys
+generate_web3signer_key_config() {
+    local key_type="$1"  # bls or secp256k1
+    local keystore_file="$2"
+    local password_file="$3"
+    
+    if [ "${key_type}" = "bls" ]; then
+        cat << EOF
+type: file-keystore
+keyType: BLS
+keystoreFile: ${keystore_file}
+keystorePasswordFile: ${password_file}
+EOF
+    else
+        cat << EOF
+type: file-keystore
+keyType: SECP256K1
+keystoreFile: ${keystore_file}
+keystorePasswordFile: ${password_file}
+EOF
+    fi
 }
 
 # Systemd Service
@@ -537,12 +604,17 @@ generate_import_key_script() {
     cat << 'EOF'
 #!/bin/bash
 #
-# Import keys into Web3Signer
+# Import keys into Web3Signer for CryftTEE
 #
 # Usage:
-#   ./import-key.sh bls <keystore.json> <password>     # Import BLS key (ETH2 consensus)
-#   ./import-key.sh secp256k1 <keystore.json> <password>  # Import SECP256k1 key (ETH1/TLS)
-#   ./import-key.sh tls <private-key.pem>              # Import TLS private key
+#   ./import-key.sh bls <keystore.json> <password>        # Import BLS key (ETH2 staking)
+#   ./import-key.sh secp256k1 <keystore.json> <password>  # Import SECP256k1 key (TLS signing)
+#   ./import-key.sh generate-bls                          # Generate new BLS key pair
+#   ./import-key.sh list                                  # List all loaded keys
+#
+# CryftTEE uses:
+#   - BLS keys for validator staking signatures
+#   - SECP256k1 keys for TLS certificate signing
 #
 
 set -e
@@ -551,18 +623,82 @@ KEY_TYPE="${1:-}"
 KEYSTORE_FILE="${2:-}"
 PASSWORD="${3:-}"
 KEYS_DIR="/opt/cryfttee-keyvault/keys"
+WEB3SIGNER_URL="${WEB3SIGNER_URL:-http://127.0.0.1:9000}"
 
 usage() {
+    echo "CryftTEE Web3Signer Key Management"
+    echo ""
     echo "Usage:"
-    echo "  $0 bls <keystore.json> <password>        # BLS key for ETH2 consensus signing"
-    echo "  $0 secp256k1 <keystore.json> <password>  # SECP256k1 key for ETH1/TLS signing"
-    echo "  $0 tls <private-key.pem>                 # Raw TLS private key (SECP256k1)"
+    echo "  $0 bls <keystore.json> <password>        # BLS key for ETH2 staking"
+    echo "  $0 secp256k1 <keystore.json> <password>  # SECP256k1 key for TLS signing"
+    echo "  $0 generate-bls                          # Generate new BLS key"
+    echo "  $0 list                                  # List all loaded keys"
+    echo "  $0 test                                  # Test Web3Signer connectivity"
     echo ""
     echo "Examples:"
     echo "  $0 bls ./validator-keystore.json mypassword"
-    echo "  $0 secp256k1 ./eth1-keystore.json mypassword"
-    echo "  $0 tls ./tls-private-key.pem"
+    echo "  $0 secp256k1 ./tls-keystore.json mypassword"
+    echo "  $0 list"
+    echo ""
+    echo "After importing, CryftTEE will automatically detect keys via:"
+    echo "  GET ${WEB3SIGNER_URL}/api/v1/eth2/publicKeys  (BLS)"
+    echo "  GET ${WEB3SIGNER_URL}/api/v1/eth1/publicKeys  (SECP256k1)"
     exit 1
+}
+
+check_web3signer() {
+    if ! curl -sf "${WEB3SIGNER_URL}/upcheck" >/dev/null 2>&1; then
+        echo "[x] Web3Signer not responding at ${WEB3SIGNER_URL}"
+        echo "[i] Start with: sudo systemctl start cryfttee-keyvault"
+        exit 1
+    fi
+}
+
+list_keys() {
+    check_web3signer
+    
+    echo "=== BLS Keys (ETH2 Staking) ==="
+    BLS_KEYS=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth2/publicKeys" 2>/dev/null || echo "[]")
+    if [ "${BLS_KEYS}" = "[]" ] || [ -z "${BLS_KEYS}" ]; then
+        echo "  (none loaded)"
+    else
+        echo "${BLS_KEYS}" | jq -r '.[]' 2>/dev/null | while read key; do
+            echo "  - ${key}"
+        done
+    fi
+    
+    echo ""
+    echo "=== SECP256k1 Keys (TLS Signing) ==="
+    SECP_KEYS=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth1/publicKeys" 2>/dev/null || echo "[]")
+    if [ "${SECP_KEYS}" = "[]" ] || [ -z "${SECP_KEYS}" ]; then
+        echo "  (none loaded)"
+    else
+        echo "${SECP_KEYS}" | jq -r '.[]' 2>/dev/null | while read key; do
+            echo "  - ${key}"
+        done
+    fi
+    
+    echo ""
+    echo "=== Key Files on Disk ==="
+    ls -la ${KEYS_DIR}/*.json 2>/dev/null | awk '{print "  " $NF}' || echo "  (none)"
+}
+
+test_connectivity() {
+    check_web3signer
+    echo "[+] Web3Signer is healthy at ${WEB3SIGNER_URL}"
+    
+    echo ""
+    echo "[i] Testing from CryftTEE perspective..."
+    echo "    Set CRYFTTEE_WEB3SIGNER_URL=${WEB3SIGNER_URL}"
+    echo ""
+    
+    # Show key counts
+    BLS_COUNT=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth2/publicKeys" 2>/dev/null | jq '. | length' 2>/dev/null || echo "0")
+    SECP_COUNT=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth1/publicKeys" 2>/dev/null | jq '. | length' 2>/dev/null || echo "0")
+    
+    echo "[+] Available keys:"
+    echo "    BLS (staking):     ${BLS_COUNT}"
+    echo "    SECP256k1 (TLS):   ${SECP_COUNT}"
 }
 
 if [ -z "${KEY_TYPE}" ]; then
@@ -570,6 +706,26 @@ if [ -z "${KEY_TYPE}" ]; then
 fi
 
 case "${KEY_TYPE}" in
+    list)
+        list_keys
+        ;;
+        
+    test)
+        test_connectivity
+        ;;
+        
+    generate-bls)
+        echo "[!] BLS key generation requires external tooling."
+        echo "[i] Use eth2-deposit-cli or similar:"
+        echo "    https://github.com/ethereum/staking-deposit-cli"
+        echo ""
+        echo "    pip install eth2-deposit-cli"
+        echo "    eth2-deposit-cli generate-keys --num_validators 1"
+        echo ""
+        echo "[i] Then import the generated keystore:"
+        echo "    $0 bls ./validator_keys/keystore-*.json <password>"
+        ;;
+        
     bls)
         if [ -z "${KEYSTORE_FILE}" ] || [ -z "${PASSWORD}" ]; then
             usage
@@ -581,27 +737,32 @@ case "${KEY_TYPE}" in
         fi
         
         # Extract pubkey
-        PUBKEY=$(jq -r '.pubkey // .public_key // empty' "${KEYSTORE_FILE}")
+        PUBKEY=$(jq -r '.pubkey // .public_key // empty' "${KEYSTORE_FILE}" 2>/dev/null)
         if [ -z "${PUBKEY}" ]; then
             echo "[x] Could not extract pubkey from keystore"
+            echo "[i] Expected format: EIP-2335 keystore JSON with 'pubkey' field"
             exit 1
         fi
         PUBKEY="${PUBKEY#0x}"
         
-        echo "[+] Importing BLS key: 0x${PUBKEY:0:8}...${PUBKEY: -8}"
+        echo "[+] Importing BLS key: 0x${PUBKEY:0:12}...${PUBKEY: -8}"
+        
+        # Create keys directory if needed
+        sudo mkdir -p "${KEYS_DIR}"
         
         # Copy keystore
-        cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${PUBKEY}.json"
-        chmod 600 "${KEYS_DIR}/${PUBKEY}.json"
+        sudo cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${PUBKEY}.json"
+        sudo chmod 600 "${KEYS_DIR}/${PUBKEY}.json"
         
-        # Create password file
-        echo -n "${PASSWORD}" > "${KEYS_DIR}/${PUBKEY}.txt"
-        chmod 600 "${KEYS_DIR}/${PUBKEY}.txt"
+        # Create password file (same name as keystore but .txt)
+        echo -n "${PASSWORD}" | sudo tee "${KEYS_DIR}/${PUBKEY}.txt" > /dev/null
+        sudo chmod 600 "${KEYS_DIR}/${PUBKEY}.txt"
         
         echo "[+] BLS key imported to ${KEYS_DIR}/"
+        echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
         ;;
         
-    secp256k1)
+    secp256k1|tls)
         if [ -z "${KEYSTORE_FILE}" ] || [ -z "${PASSWORD}" ]; then
             usage
         fi
@@ -611,8 +772,8 @@ case "${KEY_TYPE}" in
             exit 1
         fi
         
-        # Extract address from keystore
-        ADDRESS=$(jq -r '.address // empty' "${KEYSTORE_FILE}")
+        # Extract address or generate ID from keystore
+        ADDRESS=$(jq -r '.address // empty' "${KEYSTORE_FILE}" 2>/dev/null)
         if [ -z "${ADDRESS}" ]; then
             # Generate a unique ID if no address
             ADDRESS=$(sha256sum "${KEYSTORE_FILE}" | cut -c1-40)
@@ -621,54 +782,29 @@ case "${KEY_TYPE}" in
         
         echo "[+] Importing SECP256k1 key: 0x${ADDRESS}"
         
-        # Copy keystore
-        cp "${KEYSTORE_FILE}" "${KEYS_DIR}/secp256k1-${ADDRESS}.json"
-        chmod 600 "${KEYS_DIR}/secp256k1-${ADDRESS}.json"
+        # Create keys directory if needed
+        sudo mkdir -p "${KEYS_DIR}"
+        
+        # Copy keystore with secp256k1 prefix
+        KEYSTORE_NAME="secp256k1-${ADDRESS}"
+        sudo cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${KEYSTORE_NAME}.json"
+        sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.json"
         
         # Create password file
-        echo -n "${PASSWORD}" > "${KEYS_DIR}/secp256k1-${ADDRESS}.txt"
-        chmod 600 "${KEYS_DIR}/secp256k1-${ADDRESS}.txt"
+        echo -n "${PASSWORD}" | sudo tee "${KEYS_DIR}/${KEYSTORE_NAME}.txt" > /dev/null
+        sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.txt"
         
-        # Create key config for Web3Signer
-        cat > "${KEYS_DIR}/secp256k1-${ADDRESS}.yaml" << KEYCONFIG
+        # Create key config YAML for Web3Signer
+        cat << KEYCONFIG | sudo tee "${KEYS_DIR}/${KEYSTORE_NAME}.yaml" > /dev/null
 type: file-keystore
 keyType: SECP256K1
-keystoreFile: /keys/secp256k1-${ADDRESS}.json
-keystorePasswordFile: /keys/secp256k1-${ADDRESS}.txt
+keystoreFile: /keys/${KEYSTORE_NAME}.json
+keystorePasswordFile: /keys/${KEYSTORE_NAME}.txt
 KEYCONFIG
+        sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.yaml"
         
-        echo "[+] SECP256k1 key imported to ${KEYS_DIR}/"
-        ;;
-        
-    tls)
-        PEM_FILE="${KEYSTORE_FILE}"
-        
-        if [ -z "${PEM_FILE}" ]; then
-            usage
-        fi
-        
-        if [ ! -f "${PEM_FILE}" ]; then
-            echo "[x] File not found: ${PEM_FILE}"
-            exit 1
-        fi
-        
-        # Generate key ID from public key hash
-        KEY_ID=$(openssl ec -in "${PEM_FILE}" -pubout 2>/dev/null | sha256sum | cut -c1-16)
-        
-        echo "[+] Importing TLS private key: ${KEY_ID}"
-        
-        # Copy PEM file
-        cp "${PEM_FILE}" "${KEYS_DIR}/tls-${KEY_ID}.pem"
-        chmod 600 "${KEYS_DIR}/tls-${KEY_ID}.pem"
-        
-        # Create key config for Web3Signer
-        cat > "${KEYS_DIR}/tls-${KEY_ID}.yaml" << KEYCONFIG
-type: file-raw
-keyType: SECP256K1
-privateKeyFile: /keys/tls-${KEY_ID}.pem
-KEYCONFIG
-        
-        echo "[+] TLS key imported to ${KEYS_DIR}/"
+        echo "[+] SECP256k1/TLS key imported to ${KEYS_DIR}/"
+        echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
         ;;
         
     *)
@@ -678,12 +814,7 @@ KEYCONFIG
 esac
 
 echo ""
-echo "[!] Restart Web3Signer to load the new key:"
-echo "    sudo docker restart cryfttee-web3signer"
-echo ""
-echo "[i] Check loaded keys:"
-echo "    curl -s http://localhost:9000/api/v1/eth2/publicKeys | jq     # BLS keys"
-echo "    curl -s http://localhost:9000/api/v1/eth1/publicKeys | jq     # SECP256k1 keys"
+echo "[i] Verify keys loaded with: $0 list"
 EOF
 }
 
@@ -694,65 +825,121 @@ generate_status_script() {
 # Check CryftTEE KeyVault stack status
 #
 
-echo "=== CryftTEE KeyVault Status ==="
+WEB3SIGNER_URL="${WEB3SIGNER_URL:-http://127.0.0.1:9000}"
+CRYFTTEE_URL="${CRYFTTEE_URL:-http://127.0.0.1:3232}"
+
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║           CryftTEE KeyVault Status                           ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 # Check systemd service
-echo "[Service Status]"
-systemctl status cryfttee-keyvault --no-pager -l 2>/dev/null | head -10 || echo "Service not found"
+echo "┌─ Service Status ─────────────────────────────────────────────┐"
+if systemctl is-active --quiet cryfttee-keyvault 2>/dev/null; then
+    echo "│ cryfttee-keyvault: ✓ Active"
+else
+    echo "│ cryfttee-keyvault: ✗ Inactive or not installed"
+fi
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
 # Check containers
-echo "[Container Status]"
-docker ps --filter "name=cryfttee" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "Docker not available"
+echo "┌─ Container Status ────────────────────────────────────────────┐"
+docker ps --filter "name=cryfttee" --format "│ {{.Names}}: {{.Status}}" 2>/dev/null || echo "│ Docker not available"
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# Check Vault
-echo "[Vault Status]"
-if curl -sf http://127.0.0.1:8200/v1/sys/health 2>/dev/null | jq -r '"Initialized: \(.initialized), Sealed: \(.sealed)"' 2>/dev/null; then
-    :
-else
-    echo "Not running or not deployed"
+# Check Vault (if deployed)
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "cryfttee-vault"; then
+    echo "┌─ Vault Status ─────────────────────────────────────────────────┐"
+    if curl -sf http://127.0.0.1:8200/v1/sys/health 2>/dev/null | jq -r '"│ Initialized: \(.initialized), Sealed: \(.sealed)"' 2>/dev/null; then
+        :
+    else
+        echo "│ Not responding"
+    fi
+    echo "└──────────────────────────────────────────────────────────────┘"
+    echo ""
 fi
-echo ""
 
 # Check Web3Signer
-echo "[Web3Signer Status]"
-if curl -sf http://127.0.0.1:9000/upcheck 2>/dev/null; then
-    echo " - Health: OK"
+echo "┌─ Web3Signer Status ───────────────────────────────────────────┐"
+if curl -sf "${WEB3SIGNER_URL}/upcheck" >/dev/null 2>&1; then
+    echo "│ Health:  ✓ Healthy"
+    echo "│ URL:     ${WEB3SIGNER_URL}"
+    
+    # Latency check
+    LATENCY=$(curl -sf -w "%{time_total}" -o /dev/null "${WEB3SIGNER_URL}/upcheck" 2>/dev/null || echo "?")
+    if [ "${LATENCY}" != "?" ]; then
+        LATENCY_MS=$(echo "${LATENCY} * 1000" | bc 2>/dev/null || echo "${LATENCY}s")
+        echo "│ Latency: ${LATENCY_MS}ms"
+    fi
 else
-    echo "Not responding"
+    echo "│ Health:  ✗ Not responding at ${WEB3SIGNER_URL}"
 fi
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# Check loaded BLS keys
-echo "[BLS Keys (ETH2 Consensus)]"
-BLS_KEYS=$(curl -sf http://127.0.0.1:9000/api/v1/eth2/publicKeys 2>/dev/null)
+# Check loaded keys
+echo "┌─ BLS Keys (Staking) ──────────────────────────────────────────┐"
+BLS_KEYS=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth2/publicKeys" 2>/dev/null)
 if [ -n "${BLS_KEYS}" ] && [ "${BLS_KEYS}" != "[]" ]; then
-    echo "${BLS_KEYS}" | jq -r '.[]' 2>/dev/null | while read key; do
-        echo "  - ${key:0:18}...${key: -8}"
+    BLS_COUNT=$(echo "${BLS_KEYS}" | jq '. | length' 2>/dev/null || echo "0")
+    echo "│ Count: ${BLS_COUNT} key(s) loaded"
+    echo "${BLS_KEYS}" | jq -r '.[]' 2>/dev/null | head -5 | while read key; do
+        echo "│   0x${key:0:16}...${key: -8}"
     done
+    if [ "${BLS_COUNT}" -gt 5 ]; then
+        echo "│   ... and $((BLS_COUNT - 5)) more"
+    fi
 else
-    echo "  (none loaded)"
+    echo "│ Count: 0 (no BLS keys loaded)"
 fi
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# Check loaded SECP256k1 keys
-echo "[SECP256k1 Keys (ETH1/TLS)]"
-SECP_KEYS=$(curl -sf http://127.0.0.1:9000/api/v1/eth1/publicKeys 2>/dev/null)
+echo "┌─ SECP256k1 Keys (TLS) ─────────────────────────────────────────┐"
+SECP_KEYS=$(curl -sf "${WEB3SIGNER_URL}/api/v1/eth1/publicKeys" 2>/dev/null)
 if [ -n "${SECP_KEYS}" ] && [ "${SECP_KEYS}" != "[]" ]; then
-    echo "${SECP_KEYS}" | jq -r '.[]' 2>/dev/null | while read key; do
-        echo "  - ${key:0:18}...${key: -8}"
+    SECP_COUNT=$(echo "${SECP_KEYS}" | jq '. | length' 2>/dev/null || echo "0")
+    echo "│ Count: ${SECP_COUNT} key(s) loaded"
+    echo "${SECP_KEYS}" | jq -r '.[]' 2>/dev/null | head -5 | while read key; do
+        echo "│   0x${key:0:16}...${key: -8}"
     done
 else
-    echo "  (none loaded)"
+    echo "│ Count: 0 (no SECP256k1/TLS keys loaded)"
 fi
+echo "└──────────────────────────────────────────────────────────────┘"
 echo ""
 
-# Show key files
-echo "[Key Files on Disk]"
-ls -la /opt/cryfttee-keyvault/keys/*.json 2>/dev/null | awk '{print "  " $NF}' || echo "  (none)"
-ls -la /opt/cryfttee-keyvault/keys/*.pem 2>/dev/null | awk '{print "  " $NF}' || true
+# Show key files on disk
+echo "┌─ Key Files on Disk ───────────────────────────────────────────┐"
+KEY_COUNT=$(ls /opt/cryfttee-keyvault/keys/*.json 2>/dev/null | wc -l || echo "0")
+echo "│ JSON keystores: ${KEY_COUNT}"
+ls /opt/cryfttee-keyvault/keys/*.json 2>/dev/null | head -3 | while read f; do
+    echo "│   $(basename $f)"
+done
+if [ "${KEY_COUNT}" -gt 3 ]; then
+    echo "│   ... and $((KEY_COUNT - 3)) more"
+fi
+echo "└──────────────────────────────────────────────────────────────┘"
+echo ""
+
+# CryftTEE connectivity (if running locally)
+echo "┌─ CryftTEE Integration ────────────────────────────────────────┐"
+if curl -sf "${CRYFTTEE_URL}/api/context" >/dev/null 2>&1; then
+    HEALTH=$(curl -sf "${CRYFTTEE_URL}/api/context" 2>/dev/null | jq -r '.health.web3signer // "unknown"' 2>/dev/null)
+    echo "│ CryftTEE:        ✓ Running at ${CRYFTTEE_URL}"
+    echo "│ Web3Signer seen: ${HEALTH}"
+else
+    echo "│ CryftTEE:        Not detected at ${CRYFTTEE_URL}"
+    echo "│ (This is normal if CryftTEE runs on a different host)"
+fi
+echo "└──────────────────────────────────────────────────────────────┘"
+echo ""
+
+echo "┌─ Environment for CryftTEE ────────────────────────────────────┐"
+echo "│ export CRYFTTEE_WEB3SIGNER_URL=${WEB3SIGNER_URL}"
+echo "└──────────────────────────────────────────────────────────────┘"
 EOF
 }
 
@@ -885,26 +1072,49 @@ DEPLOYEOF
     echo ""
     log "Deployment complete!"
     echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║           CryftTEE KeyVault Deployed                         ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
     info "Services:"
     if [ "${mode}" = "full" ]; then
         info "  Vault:            http://${KEYVAULT_HOST}:${VAULT_PORT}"
         info "  Vault UI:         http://${KEYVAULT_HOST}:${VAULT_PORT}/ui"
     fi
     info "  Web3Signer API:   http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
+    info "  Swagger UI:       http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}/swagger-ui"
     info "  Metrics:          http://${KEYVAULT_HOST}:${WEB3SIGNER_METRICS_PORT}/metrics"
     echo ""
     
     if [ "${mode}" = "full" ]; then
-        warn "NEXT STEPS:"
+        warn "NEXT STEPS (Vault):"
         echo "  1. SSH to ${KEYVAULT_HOST}"
         echo "  2. Initialize Vault: sudo ${SCRIPTS_DIR}/init-vault.sh"
         echo "  3. Back up vault-init-keys.json securely!"
         echo ""
     fi
     
-    info "Useful commands:"
+    echo "┌─ Quick Start ──────────────────────────────────────────────────┐"
+    echo "│                                                                │"
+    echo "│  1. Import a key:                                              │"
+    echo "│     ssh ${KEYVAULT_USER}@${KEYVAULT_HOST}"
+    echo "│     sudo ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>"
+    echo "│     sudo docker restart cryfttee-web3signer"
+    echo "│                                                                │"
+    echo "│  2. Configure CryftTEE:                                        │"
+    echo "│     export CRYFTTEE_WEB3SIGNER_URL=http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
+    echo "│                                                                │"
+    echo "│  3. Verify:                                                    │"
+    echo "│     curl http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}/upcheck"
+    echo "│     curl http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}/api/v1/eth2/publicKeys"
+    echo "│                                                                │"
+    echo "└────────────────────────────────────────────────────────────────┘"
+    echo ""
+    
+    info "Useful commands (on keyvault host):"
     echo "  Status:      sudo ${SCRIPTS_DIR}/status.sh"
-    echo "  Import key:  sudo ${SCRIPTS_DIR}/import-key.sh <keystore.json> <password>"
+    echo "  Import key:  sudo ${SCRIPTS_DIR}/import-key.sh <type> <keystore> <password>"
+    echo "  List keys:   sudo ${SCRIPTS_DIR}/import-key.sh list"
     echo "  Logs:        sudo journalctl -u cryfttee-keyvault -f"
     echo "  Restart:     sudo systemctl restart cryfttee-keyvault"
     if [ "${mode}" = "full" ]; then
@@ -919,20 +1129,239 @@ check_status() {
 
 generate_env() {
     cat << EOF
+# ═══════════════════════════════════════════════════════════════════════════════
 # CryftTEE KeyVault Environment Configuration
-# Add to your environment or .env file
+# ═══════════════════════════════════════════════════════════════════════════════
+# Add to your environment, .env file, or systemd service
 
-# Web3Signer
-WEB3SIGNER_URL=http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}
-WEB3SIGNER_TIMEOUT=30
+# ─── Web3Signer Connection (REQUIRED) ──────────────────────────────────────────
+# CryftTEE connects to Web3Signer for all key operations
+CRYFTTEE_WEB3SIGNER_URL=http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}
 
-# Vault (if using full stack)
+# Timeout for Web3Signer requests (seconds)
+CRYFTTEE_WEB3SIGNER_TIMEOUT=30
+
+# ─── Vault Connection (Optional - only if using full stack) ───────────────────
 VAULT_ADDR=http://${KEYVAULT_HOST}:${VAULT_PORT}
 
-# CryftTEE settings
+# ─── Trust & Security Settings ─────────────────────────────────────────────────
+# Enforce module signatures (recommended for production)
 CRYFTTEE_ENFORCE_SIGNATURES=true
+
+# Only allow modules from known publishers
 CRYFTTEE_ENFORCE_KNOWN_PUBLISHERS=true
+
+# ─── Quick Test Commands ───────────────────────────────────────────────────────
+# Check Web3Signer health:
+#   curl -s http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}/upcheck
+#
+# List BLS keys (staking):
+#   curl -s http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}/api/v1/eth2/publicKeys | jq
+#
+# List SECP256k1 keys (TLS):
+#   curl -s http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}/api/v1/eth1/publicKeys | jq
+
 EOF
+}
+
+generate_cryfttee_config() {
+    cat << EOF
+# ═══════════════════════════════════════════════════════════════════════════════
+# CryftTEE Configuration Snippet for Web3Signer Integration
+# ═══════════════════════════════════════════════════════════════════════════════
+# Add this to your cryfttee.toml or set as environment variables
+
+# ─── Add to cryfttee.toml ─────────────────────────────────────────────────────
+
+[web3signer]
+# Web3Signer URL - CryftTEE connects here for BLS and TLS key operations
+url = "http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
+
+# Request timeout in seconds
+timeout = 30
+
+# Retry configuration
+max_retries = 3
+retry_delay_ms = 1000
+
+# Health check interval (seconds)
+health_check_interval = 10
+
+# ─── Or set as environment variables ───────────────────────────────────────────
+
+# Required:
+export CRYFTTEE_WEB3SIGNER_URL="http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
+
+# Optional:
+export CRYFTTEE_WEB3SIGNER_TIMEOUT=30
+
+# ─── Systemd service override ──────────────────────────────────────────────────
+# Create /etc/systemd/system/cryfttee.service.d/web3signer.conf:
+
+[Service]
+Environment="CRYFTTEE_WEB3SIGNER_URL=http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
+
+# ─── Verify integration ────────────────────────────────────────────────────────
+# After CryftTEE starts, check status:
+#   curl -s http://localhost:3232/api/context | jq '.health'
+#
+# Expected:
+#   {
+#     "wasm_runtime": true,
+#     "web3signer": true
+#   }
+
+EOF
+}
+
+test_web3signer() {
+    log "Testing Web3Signer connectivity from ${KEYVAULT_HOST}..."
+    
+    # Test upcheck
+    step "Health check..."
+    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck" 2>/dev/null; then
+        log "Web3Signer is healthy!"
+    else
+        error "Web3Signer not responding"
+    fi
+    
+    # Test key endpoints
+    step "BLS keys endpoint..."
+    BLS_RESULT=$(ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/api/v1/eth2/publicKeys" 2>/dev/null || echo "[]")
+    BLS_COUNT=$(echo "${BLS_RESULT}" | jq '. | length' 2>/dev/null || echo "0")
+    info "BLS keys: ${BLS_COUNT}"
+    
+    step "SECP256k1 keys endpoint..."
+    SECP_RESULT=$(ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/api/v1/eth1/publicKeys" 2>/dev/null || echo "[]")
+    SECP_COUNT=$(echo "${SECP_RESULT}" | jq '. | length' 2>/dev/null || echo "0")
+    info "SECP256k1/TLS keys: ${SECP_COUNT}"
+    
+    # Show connection info for CryftTEE
+    echo ""
+    log "Web3Signer is ready for CryftTEE!"
+    echo ""
+    info "Set this in your CryftTEE environment:"
+    echo ""
+    echo "    export CRYFTTEE_WEB3SIGNER_URL=http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
+    echo ""
+}
+
+# =============================================================================
+# Local Deployment (on current machine)
+# =============================================================================
+
+deploy_local() {
+    local mode="${1:-web3signer}"
+    
+    log "Deploying CryftTEE KeyVault locally..."
+    info "Mode: ${mode}"
+    echo ""
+    
+    # Check if running as root or with sudo
+    if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
+        warn "This script requires sudo access for local deployment"
+    fi
+    
+    # Check Docker
+    step "Checking Docker..."
+    if ! command -v docker &>/dev/null; then
+        error "Docker not installed. Install Docker first: https://docs.docker.com/engine/install/"
+    fi
+    
+    if ! docker info &>/dev/null; then
+        error "Docker daemon not running or not accessible"
+    fi
+    
+    # Create directories
+    step "Creating directories..."
+    sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,web3signer,keys,config,scripts}
+    sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys 2>/dev/null || true
+    
+    # Generate and install configs
+    step "Generating configuration files..."
+    
+    if [ "${mode}" = "full" ]; then
+        generate_docker_compose_full | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
+        generate_vault_config | sudo tee ${CONFIG_DIR}/vault.hcl > /dev/null
+        generate_init_vault_script | sudo tee ${SCRIPTS_DIR}/init-vault.sh > /dev/null
+        generate_unseal_vault_script | sudo tee ${SCRIPTS_DIR}/unseal-vault.sh > /dev/null
+        sudo chmod +x ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh
+    else
+        generate_docker_compose_web3signer | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
+    fi
+    
+    generate_web3signer_config | sudo tee ${CONFIG_DIR}/web3signer.yaml > /dev/null
+    generate_systemd_service | sudo tee /etc/systemd/system/cryfttee-keyvault.service > /dev/null
+    generate_import_key_script | sudo tee ${SCRIPTS_DIR}/import-key.sh > /dev/null
+    generate_status_script | sudo tee ${SCRIPTS_DIR}/status.sh > /dev/null
+    sudo chmod +x ${SCRIPTS_DIR}/*.sh
+    
+    # Pull images
+    step "Pulling Docker images..."
+    if [ "${mode}" = "full" ]; then
+        docker pull hashicorp/vault:${VAULT_VERSION}
+    fi
+    docker pull consensys/web3signer:${WEB3SIGNER_VERSION}
+    
+    # Start services
+    step "Starting services..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable cryfttee-keyvault
+    sudo systemctl restart cryfttee-keyvault
+    
+    # Wait for services
+    info "Waiting for services to start..."
+    sleep 5
+    
+    # Check health
+    if curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck >/dev/null 2>&1; then
+        log "Web3Signer is healthy!"
+    else
+        warn "Web3Signer may still be starting... check with: sudo ${SCRIPTS_DIR}/status.sh"
+    fi
+    
+    # Print summary
+    echo ""
+    log "Local deployment complete!"
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║     CryftTEE KeyVault Ready (localhost)                      ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    info "Services (localhost - no env vars needed!):"
+    if [ "${mode}" = "full" ]; then
+        info "  Vault:            http://localhost:${VAULT_PORT}"
+        info "  Vault UI:         http://localhost:${VAULT_PORT}/ui"
+    fi
+    info "  Web3Signer API:   http://localhost:${WEB3SIGNER_PORT}"
+    info "  Swagger UI:       http://localhost:${WEB3SIGNER_PORT}/swagger-ui"
+    info "  Metrics:          http://localhost:${WEB3SIGNER_METRICS_PORT}/metrics"
+    echo ""
+    
+    echo "┌─ CryftTEE Integration ─────────────────────────────────────────┐"
+    echo "│                                                                │"
+    echo "│  CryftTEE defaults to http://localhost:9000 for Web3Signer    │"
+    echo "│  so NO environment variables are needed!                       │"
+    echo "│                                                                │"
+    echo "│  Just start CryftTEE:                                          │"
+    echo "│    cargo run --release                                         │"
+    echo "│                                                                │"
+    echo "└────────────────────────────────────────────────────────────────┘"
+    echo ""
+    
+    echo "┌─ Import Keys ─────────────────────────────────────────────────┐"
+    echo "│                                                                │"
+    echo "│  sudo ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>   │"
+    echo "│  sudo docker restart cryfttee-web3signer                       │"
+    echo "│                                                                │"
+    echo "└────────────────────────────────────────────────────────────────┘"
+    echo ""
+    
+    info "Useful commands:"
+    echo "  Status:      sudo ${SCRIPTS_DIR}/status.sh"
+    echo "  List keys:   sudo ${SCRIPTS_DIR}/import-key.sh list"
+    echo "  Logs:        sudo journalctl -u cryfttee-keyvault -f"
+    echo "  Restart:     sudo systemctl restart cryfttee-keyvault"
 }
 
 # =============================================================================
@@ -943,7 +1372,13 @@ show_banner
 
 case "${1:-}" in
     --local)
-        error "Local deployment not yet implemented. Use remote deployment."
+        deploy_local "web3signer"
+        ;;
+    --local-full)
+        deploy_local "full"
+        ;;
+    --remote)
+        deploy_remote "full"
         ;;
     --web3signer-only)
         deploy_remote "web3signer"
@@ -957,29 +1392,59 @@ case "${1:-}" in
     --env)
         generate_env
         ;;
+    --cryfttee-config)
+        generate_cryfttee_config
+        ;;
+    --test)
+        test_web3signer
+        ;;
     --help|-h)
         echo "Usage: $0 [options]"
         echo ""
-        echo "Deploy HashiCorp Vault + Web3Signer for CryftTEE key management."
+        echo "Deploy Web3Signer for CryftTEE key management."
+        echo "Uses sane defaults - no environment variables needed for local setup!"
         echo ""
-        echo "Options:"
-        echo "  (none)              Deploy full stack (Vault + Web3Signer)"
-        echo "  --web3signer-only   Deploy only Web3Signer (no Vault)"
+        echo "Local Deployment (recommended for development):"
+        echo "  --local             Deploy Web3Signer on this machine (default port 9000)"
+        echo "  --local-full        Deploy Vault + Web3Signer on this machine"
+        echo ""
+        echo "Remote Deployment:"
+        echo "  --remote            Deploy full stack to remote server"
+        echo "  --web3signer-only   Deploy only Web3Signer to remote server"
         echo "  --install-docker    Install Docker on remote server"
+        echo ""
+        echo "Status & Testing:"
         echo "  --status            Check service status"
-        echo "  --env               Generate environment variables"
+        echo "  --test              Test Web3Signer connectivity"
+        echo ""
+        echo "Configuration:"
+        echo "  --env               Generate environment variables (for remote setups)"
+        echo "  --cryfttee-config   Generate cryfttee.toml snippet"
         echo "  --help              Show this help"
         echo ""
-        echo "Environment variables:"
+        echo "Environment variables (only needed for remote deployments):"
         echo "  KEYVAULT_HOST       Remote host (default: ${KEYVAULT_HOST})"
         echo "  KEYVAULT_USER       SSH user (default: ${KEYVAULT_USER})"
-        echo "  VAULT_PORT          Vault port (default: ${VAULT_PORT})"
         echo "  WEB3SIGNER_PORT     Web3Signer port (default: ${WEB3SIGNER_PORT})"
         echo ""
-        echo "Examples:"
-        echo "  $0                              # Deploy full stack"
-        echo "  $0 --web3signer-only            # Deploy Web3Signer only"
-        echo "  KEYVAULT_HOST=10.0.0.5 $0       # Deploy to custom host"
+        echo "╔══════════════════════════════════════════════════════════════╗"
+        echo "║  Quick Start (Local - Zero Config!)                          ║"
+        echo "╠══════════════════════════════════════════════════════════════╣"
+        echo "║                                                              ║"
+        echo "║  1. Deploy Web3Signer locally:                               ║"
+        echo "║     $0 --local                                               ║"
+        echo "║                                                              ║"
+        echo "║  2. Import a key:                                            ║"
+        echo "║     sudo /opt/cryfttee-keyvault/scripts/import-key.sh \\     ║"
+        echo "║          bls keystore.json password                          ║"
+        echo "║     sudo docker restart cryfttee-web3signer                  ║"
+        echo "║                                                              ║"
+        echo "║  3. Start CryftTEE (no env vars needed!):                    ║"
+        echo "║     cargo run --release                                      ║"
+        echo "║                                                              ║"
+        echo "║  CryftTEE defaults to http://localhost:9000                  ║"
+        echo "║                                                              ║"
+        echo "╚══════════════════════════════════════════════════════════════╝"
         echo ""
         ;;
     *)

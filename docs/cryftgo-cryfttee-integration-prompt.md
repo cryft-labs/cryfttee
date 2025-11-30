@@ -253,89 +253,128 @@ func (c *CryftteeClient) WaitForSignerModule(timeout time.Duration) error {
 }
 ```
 
-### Step 4: Initialize Keys (Generate or Retrieve)
+### Step 4: Initialize Keys (Verify Existing or Generate New)
 
-The key initialization follows a "discover or create" pattern:
+**Key Initialization Rules:**
+- CryftGo maintains a local key store at `/var/lib/cryftgo/staking/`
+- If keys exist locally → use `verify` mode to confirm they exist in Web3Signer
+- If keys don't exist locally → use `generate` mode to create new keys
+- If verify fails → **FATAL ERROR** - node cannot start with missing keys
 
 ```go
-type BLSRegisterRequest struct {
-    Mode        int    `json:"mode"`         // 0=generate, 1=import
-    KeyMaterial []byte `json:"key_material,omitempty"` // For import mode
+// Register Request - same structure for BLS and TLS
+type RegisterRequest struct {
+    Mode      string `json:"mode"`               // "verify", "generate", "ephemeral", "import"
+    PublicKey string `json:"publicKey,omitempty"` // Required for "verify" mode
+    // ... other optional fields
 }
 
-type BLSRegisterResponse struct {
-    Success   bool   `json:"success"`
-    PublicKey string `json:"public_key"` // Hex-encoded BLS public key
-    KeyHandle string `json:"key_handle"` // Reference for signing operations
-    Error     string `json:"error,omitempty"`
-}
-
-type TLSRegisterRequest struct {
-    Mode        int    `json:"mode"`         // 0=generate, 1=import
-    KeyMaterial []byte `json:"key_material,omitempty"`
-    CSR         string `json:"csr_pem,omitempty"` // Optional CSR for cert generation
-}
-
-type TLSRegisterResponse struct {
-    Success     bool   `json:"success"`
-    PublicKey   string `json:"public_key"`   // Hex-encoded SECP256k1 public key
-    KeyHandle   string `json:"key_handle"`
-    Certificate string `json:"certificate,omitempty"` // PEM if CSR provided
-    NodeID      string `json:"node_id"`      // Derived Cryft Node ID
-    Error       string `json:"error,omitempty"`
+// Register Response
+type RegisterResponse struct {
+    KeyHandle     string `json:"keyHandle"`
+    BlsPubKeyB64  string `json:"blsPubKeyB64"`  // Base64-encoded public key
+    ModuleID      string `json:"moduleId"`
+    ModuleVersion string `json:"moduleVersion"`
 }
 
 func (c *CryftteeClient) InitializeNodeIdentity() (*NodeIdentity, error) {
-    // Step 1: Check if keys already exist
-    status, err := c.GetStatus()
-    if err != nil {
-        return nil, fmt.Errorf("failed to get status: %w", err)
-    }
-    
     identity := &NodeIdentity{}
     
-    // Step 2: Initialize BLS key
-    if status.Keys.BLS != nil && status.Keys.BLS.Available {
-        // Key already exists - use it
-        identity.BLSPublicKey = status.Keys.BLS.PublicKey
-        identity.BLSKeyHandle = status.Keys.BLS.KeyHandle
-        log.Info("Using existing BLS key", "pubkey", identity.BLSPublicKey[:16]+"...")
-    } else {
-        // Generate new BLS key
-        blsResp, err := c.RegisterBLSKey(&BLSRegisterRequest{Mode: 0})
+    // Load existing keys from CryftGo's local store
+    savedBLSPubkey := loadSavedPubkey("/var/lib/cryftgo/staking/bls_pubkey")
+    savedTLSPubkey := loadSavedPubkey("/var/lib/cryftgo/staking/tls_pubkey")
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // BLS KEY: Verify existing or generate new
+    // ═══════════════════════════════════════════════════════════════════════
+    if savedBLSPubkey != "" {
+        // Key exists locally - VERIFY it exists in Web3Signer
+        log.Info("Verifying existing BLS key", "pubkey", savedBLSPubkey[:20]+"...")
+        
+        resp, err := c.RegisterKey("/v1/staking/bls/register", &RegisterRequest{
+            Mode:      "verify",
+            PublicKey: savedBLSPubkey,
+        })
         if err != nil {
-            return nil, fmt.Errorf("failed to register BLS key: %w", err)
+            // FATAL: Key in local store but NOT in Web3Signer = key loss
+            return nil, fmt.Errorf(
+                "FATAL: BLS key %s from local store not found in Web3Signer. "+
+                "This may indicate key loss or Web3Signer misconfiguration. "+
+                "Node cannot start safely. Error: %w",
+                savedBLSPubkey[:20], err)
         }
-        identity.BLSPublicKey = blsResp.PublicKey
-        identity.BLSKeyHandle = blsResp.KeyHandle
-        log.Info("Generated new BLS key", "pubkey", identity.BLSPublicKey[:16]+"...")
+        
+        identity.BLSPublicKey = savedBLSPubkey
+        identity.BLSKeyHandle = resp.KeyHandle
+        log.Info("✓ BLS key verified in Web3Signer")
+        
+    } else {
+        // No key locally - generate new one
+        log.Info("No BLS key in local store, generating new key...")
+        
+        resp, err := c.RegisterKey("/v1/staking/bls/register", &RegisterRequest{
+            Mode: "generate",
+        })
+        if err != nil {
+            return nil, fmt.Errorf("BLS key generation failed: %w", err)
+        }
+        
+        identity.BLSPublicKey = resp.PublicKey
+        identity.BLSKeyHandle = resp.KeyHandle
+        
+        // IMPORTANT: Save to local store for future verifications
+        savePubkey("/var/lib/cryftgo/staking/bls_pubkey", resp.PublicKey)
+        log.Info("✓ Generated new BLS key", "pubkey", resp.PublicKey[:20]+"...")
     }
     
-    // Step 3: Initialize TLS key
-    if status.Keys.TLS != nil && status.Keys.TLS.Available {
-        // Key already exists - use it
-        identity.TLSPublicKey = status.Keys.TLS.PublicKey
-        identity.TLSKeyHandle = status.Keys.TLS.KeyHandle
-        log.Info("Using existing TLS key", "pubkey", identity.TLSPublicKey[:16]+"...")
-    } else {
-        // Generate new TLS key
-        tlsResp, err := c.RegisterTLSKey(&TLSRegisterRequest{Mode: 0})
+    // ═══════════════════════════════════════════════════════════════════════
+    // TLS KEY: Same pattern as BLS
+    // ═══════════════════════════════════════════════════════════════════════
+    if savedTLSPubkey != "" {
+        log.Info("Verifying existing TLS key", "pubkey", savedTLSPubkey[:20]+"...")
+        
+        resp, err := c.RegisterKey("/v1/staking/tls/register", &RegisterRequest{
+            Mode:      "verify",
+            PublicKey: savedTLSPubkey,
+        })
         if err != nil {
-            return nil, fmt.Errorf("failed to register TLS key: %w", err)
+            return nil, fmt.Errorf(
+                "FATAL: TLS key %s from local store not found in Web3Signer. "+
+                "Node ID would change if we regenerated - this is not safe. "+
+                "Error: %w",
+                savedTLSPubkey[:20], err)
         }
-        identity.TLSPublicKey = tlsResp.PublicKey
-        identity.TLSKeyHandle = tlsResp.KeyHandle
-        identity.NodeID = tlsResp.NodeID
-        log.Info("Generated new TLS key", "nodeID", identity.NodeID)
+        
+        identity.TLSPublicKey = savedTLSPubkey
+        identity.TLSKeyHandle = resp.KeyHandle
+        identity.NodeID = deriveNodeID(savedTLSPubkey)
+        log.Info("✓ TLS key verified in Web3Signer")
+        
+    } else {
+        log.Info("No TLS key in local store, generating new key...")
+        
+        resp, err := c.RegisterKey("/v1/staking/tls/register", &RegisterRequest{
+            Mode: "generate",
+        })
+        if err != nil {
+            return nil, fmt.Errorf("TLS key generation failed: %w", err)
+        }
+        
+        identity.TLSPublicKey = resp.PublicKey
+        identity.TLSKeyHandle = resp.KeyHandle
+        identity.NodeID = deriveNodeID(resp.PublicKey)
+        
+        savePubkey("/var/lib/cryftgo/staking/tls_pubkey", resp.PublicKey)
+        log.Info("✓ Generated new TLS key", "nodeID", identity.NodeID)
     }
     
     return identity, nil
 }
 
-func (c *CryftteeClient) RegisterBLSKey(req *BLSRegisterRequest) (*BLSRegisterResponse, error) {
+func (c *CryftteeClient) RegisterKey(endpoint string, req *RegisterRequest) (*RegisterResponse, error) {
     body, _ := json.Marshal(req)
     resp, err := c.httpClient.Post(
-        c.baseURL()+"/v1/staking/bls/register",
+        c.baseURL()+endpoint,
         "application/json",
         bytes.NewReader(body),
     )
@@ -344,34 +383,23 @@ func (c *CryftteeClient) RegisterBLSKey(req *BLSRegisterRequest) (*BLSRegisterRe
     }
     defer resp.Body.Close()
     
-    var result BLSRegisterResponse
-    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        return nil, err
+    if resp.StatusCode == http.StatusNotFound {
+        // Key not found in Web3Signer - this is a verification failure
+        var errResp struct {
+            Error   string `json:"error"`
+            Details string `json:"details"`
+        }
+        json.NewDecoder(resp.Body).Decode(&errResp)
+        return nil, fmt.Errorf("%s: %s", errResp.Error, errResp.Details)
     }
-    if !result.Success {
-        return nil, fmt.Errorf("BLS registration failed: %s", result.Error)
-    }
-    return &result, nil
-}
-
-func (c *CryftteeClient) RegisterTLSKey(req *TLSRegisterRequest) (*TLSRegisterResponse, error) {
-    body, _ := json.Marshal(req)
-    resp, err := c.httpClient.Post(
-        c.baseURL()+"/v1/staking/tls/register",
-        "application/json",
-        bytes.NewReader(body),
-    )
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
     
-    var result TLSRegisterResponse
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+    }
+    
+    var result RegisterResponse
     if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
         return nil, err
-    }
-    if !result.Success {
-        return nil, fmt.Errorf("TLS registration failed: %s", result.Error)
     }
     return &result, nil
 }
@@ -1010,55 +1038,208 @@ type ModuleWithPanel struct {
 
 ## Key Persistence Model
 
+**CRITICAL: CryftGo's local key store is the source of truth for key existence.**
+
+CryftGo maintains a local store of public keys at `/var/lib/cryftgo/staking/`:
+- `bls_pubkey` - The BLS public key (hex-encoded)
+- `tls_pubkey` - The TLS public key (hex-encoded)
+
+The initialization flow follows these rules:
+
+1. **If CryftGo has keys in local store** → Use `verify` mode to confirm they exist in Web3Signer
+2. **If CryftGo has no keys** → Use `generate` mode to create new keys
+3. **If verify fails (key not in Web3Signer)** → FATAL ERROR, node cannot start
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        KEY PERSISTENCE FLOW                              │
+│                    KEY INITIALIZATION FLOW                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   CryftGo                  CryftTEE                    Web3Signer       │
 │      │                        │                            │            │
-│      │  POST /bls/register    │                            │            │
-│      │───────────────────────>│                            │            │
-│      │     {mode: 0}          │                            │            │
-│      │                        │   POST /eth2/sign          │            │
-│      │                        │   (key generation)         │            │
-│      │                        │───────────────────────────>│            │
+│      │  1. Check local store  │                            │            │
+│      │  (/var/lib/cryftgo/    │                            │            │
+│      │   staking/bls_pubkey)  │                            │            │
 │      │                        │                            │            │
-│      │                        │   {publicKey, keyHandle}   │            │
+│   ┌──┴──────────────────────┐ │                            │            │
+│   │ IF keys exist locally:  │ │                            │            │
+│   └──┬──────────────────────┘ │                            │            │
+│      │                        │                            │            │
+│      │  POST /bls/register    │                            │            │
+│      │  {mode: "verify",      │                            │            │
+│      │   publicKey: "0x..."}  │                            │            │
+│      │───────────────────────>│  GET /api/v1/eth2/pubkeys  │            │
+│      │                        │───────────────────────────>│            │
+│      │                        │    [list of pubkeys]       │            │
 │      │                        │<───────────────────────────│            │
 │      │                        │                            │            │
-│      │   {publicKey,          │        ┌──────────────┐    │            │
-│      │    keyHandle}          │        │   PERSISTED  │    │            │
-│      │<───────────────────────│        │   in Vault/  │    │            │
-│      │                        │        │   Keystore   │    │            │
-│      │                        │        └──────────────┘    │            │
+│      │                        │  ┌───────────────────────┐ │            │
+│      │                        │  │ Check if submitted    │ │            │
+│      │                        │  │ pubkey exists in list │ │            │
+│      │                        │  └───────────────────────┘ │            │
+│      │                        │                            │            │
+│      │   IF FOUND: 200 OK     │                            │            │
+│      │<───────────────────────│                            │            │
+│      │                        │                            │            │
+│      │   IF NOT FOUND: 404    │                            │            │
+│      │   "Key not found in    │                            │            │
+│      │    Web3Signer - key    │                            │            │
+│      │    loss detected"      │                            │            │
+│      │<───────────────────────│                            │            │
+│      │                        │                            │            │
+│      │   *** FATAL ERROR ***  │                            │            │
+│      │   Node MUST NOT start  │                            │            │
+│      │   with missing keys    │                            │            │
+│      │                        │                            │            │
+│   ┌──┴──────────────────────┐ │                            │            │
+│   │ IF no keys locally:     │ │                            │            │
+│   └──┬──────────────────────┘ │                            │            │
+│      │                        │                            │            │
+│      │  POST /bls/register    │                            │            │
+│      │  {mode: "generate"}    │                            │            │
+│      │───────────────────────>│  POST /eth2/keystores     │            │
+│      │                        │───────────────────────────>│            │
+│      │                        │    {new key generated}     │            │
+│      │                        │<───────────────────────────│            │
+│      │                        │                            │            │
+│      │   {publicKey: "0x.."   │                            │            │
+│      │    keyHandle: "..."}   │                            │            │
+│      │<───────────────────────│                            │            │
 │      │                        │                            │            │
 │   ┌──┴──┐                     │                            │            │
-│   │STORE│ keyHandle in        │                            │            │
-│   │local│ node config         │                            │            │
-│   └──┬──┘                     │                            │            │
-│      │                        │                            │            │
-│      │  [RESTART]             │                            │            │
-│      │                        │                            │            │
-│      │  GET /status           │                            │            │
-│      │───────────────────────>│   GET keys                 │            │
-│      │                        │───────────────────────────>│            │
-│      │   {keys: {bls: {...}}} │   {keys available}         │            │
-│      │<───────────────────────│<───────────────────────────│            │
-│      │                        │                            │            │
-│      │  Keys already exist!   │                            │            │
-│      │  Skip registration     │                            │            │
+│   │SAVE │ pubkey to           │                            │            │
+│   │local│ /var/lib/cryftgo/   │                            │            │
+│   └──┬──┘ staking/bls_pubkey  │                            │            │
 │      │                        │                            │            │
 └──────┴────────────────────────┴────────────────────────────┴────────────┘
 ```
 
+### Request/Response Types
+
+```go
+// BLS/TLS Register Request
+type RegisterRequest struct {
+    // Mode: "verify", "generate", "ephemeral", "persistent", "import"
+    Mode      string `json:"mode"`
+    
+    // Required for "verify" mode - the pubkey from CryftGo's local store
+    PublicKey string `json:"publicKey,omitempty"`
+    
+    // For "import" mode only
+    EphemeralKeyB64 string `json:"ephemeralKeyB64,omitempty"`
+    
+    // Optional
+    NetworkID uint64 `json:"networkID,omitempty"`
+    NodeLabel string `json:"nodeLabel,omitempty"`
+    ModuleID  string `json:"moduleId,omitempty"`
+}
+
+// Register Response
+type RegisterResponse struct {
+    KeyHandle     string `json:"keyHandle"`
+    BlsPubKeyB64  string `json:"blsPubKeyB64"`  // or certChainPEM for TLS
+    ModuleID      string `json:"moduleId"`
+    ModuleVersion string `json:"moduleVersion"`
+}
+```
+
+### CryftGo Implementation
+
+```go
+func (m *CryftteeManager) InitKeys() (*BLSKeyInfo, *TLSKeyInfo, error) {
+    // Load any previously saved pubkeys from local store
+    savedBLSPubkey := m.loadSavedBLSPubkey()
+    savedTLSPubkey := m.loadSavedTLSPubkey()
+    
+    var blsKey *BLSKeyInfo
+    var tlsKey *TLSKeyInfo
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // BLS KEY LOGIC
+    // ═══════════════════════════════════════════════════════════════════════
+    if savedBLSPubkey != "" {
+        // We have a key locally - VERIFY it exists in Web3Signer
+        log.Printf("Verifying existing BLS key: %s...", savedBLSPubkey[:20])
+        
+        resp, err := m.callAPI("POST", "/v1/staking/bls/register", map[string]interface{}{
+            "mode":      "verify",
+            "publicKey": savedBLSPubkey,
+        })
+        if err != nil {
+            return nil, nil, fmt.Errorf(
+                "FATAL: BLS key %s from local store not found in Web3Signer. "+
+                "This indicates key loss - the node cannot start safely. "+
+                "Error: %w", savedBLSPubkey, err)
+        }
+        
+        blsKey = &BLSKeyInfo{PublicKey: savedBLSPubkey}
+        log.Printf("✓ BLS key verified in Web3Signer")
+        
+    } else {
+        // No key locally - generate new one
+        log.Println("No BLS key in local store, generating new key...")
+        
+        resp, err := m.callAPI("POST", "/v1/staking/bls/register", map[string]interface{}{
+            "mode": "generate",
+        })
+        if err != nil {
+            return nil, nil, fmt.Errorf("BLS key generation failed: %w", err)
+        }
+        
+        blsKey = &BLSKeyInfo{PublicKey: resp.PublicKey}
+        m.saveBLSPubkey(resp.PublicKey) // Persist to local store
+        log.Printf("✓ Generated new BLS key: %s", resp.PublicKey[:20])
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // TLS KEY LOGIC (same pattern)
+    // ═══════════════════════════════════════════════════════════════════════
+    if savedTLSPubkey != "" {
+        log.Printf("Verifying existing TLS key: %s...", savedTLSPubkey[:20])
+        
+        resp, err := m.callAPI("POST", "/v1/staking/tls/register", map[string]interface{}{
+            "mode":      "verify",
+            "publicKey": savedTLSPubkey,
+        })
+        if err != nil {
+            return nil, nil, fmt.Errorf(
+                "FATAL: TLS key %s from local store not found in Web3Signer. "+
+                "Node ID would change if we generated a new key - this is not safe. "+
+                "Error: %w", savedTLSPubkey, err)
+        }
+        
+        tlsKey = &TLSKeyInfo{PublicKey: savedTLSPubkey}
+        log.Printf("✓ TLS key verified in Web3Signer")
+        
+    } else {
+        log.Println("No TLS key in local store, generating new key...")
+        
+        resp, err := m.callAPI("POST", "/v1/staking/tls/register", map[string]interface{}{
+            "mode": "generate",
+        })
+        if err != nil {
+            return nil, nil, fmt.Errorf("TLS key generation failed: %w", err)
+        }
+        
+        tlsKey = &TLSKeyInfo{
+            PublicKey: resp.PublicKey,
+            NodeID:    deriveNodeID(resp.PublicKey),
+        }
+        m.saveTLSPubkey(resp.PublicKey)
+        log.Printf("✓ Generated new TLS key, NodeID: %s", tlsKey.NodeID)
+    }
+    
+    return blsKey, tlsKey, nil
+}
+```
+
 ### Key Points:
 
-1. **CryftGo does NOT store private keys** - only the key handle and public key
-2. **CryftTEE does NOT store keys persistently** - it delegates to Web3Signer
-3. **Web3Signer persists keys** - in HashiCorp Vault, filesystem, or cloud KMS
-4. **Key handles are stable** - same handle returns same key across restarts
-5. **Status endpoint reveals key availability** - check before generating new keys
+1. **CryftGo's local store is authoritative** - if a key exists there, it MUST exist in Web3Signer
+2. **CryftTEE never auto-generates** - it only generates when explicitly asked with mode="generate"
+3. **Verify failures are FATAL** - the node cannot start if keys are missing from Web3Signer
+4. **No silent key regeneration** - this would change Node ID and break staking
+5. **Web3Signer persists keys** - in HashiCorp Vault, filesystem, or cloud KMS
 
 ---
 

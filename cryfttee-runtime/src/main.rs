@@ -66,6 +66,30 @@ async fn main() -> Result<()> {
         runtime_state: runtime_state.clone(),
     };
 
+    // Initial Web3Signer health check
+    {
+        let mut state = runtime_state.write().await;
+        state.check_web3signer_health(&config.web3signer_url).await;
+        if state.web3signer_reachable {
+            info!("Web3Signer connected at {}", config.web3signer_url);
+        } else {
+            warn!("Web3Signer not reachable at {} - signing operations will fail", config.web3signer_url);
+        }
+    }
+
+    // Start background Web3Signer health checker
+    let health_check_state = runtime_state.clone();
+    let health_check_url = config.web3signer_url.clone();
+    let health_check_interval = config.web3signer_health_check_interval;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(health_check_interval));
+        loop {
+            interval.tick().await;
+            let mut state = health_check_state.write().await;
+            state.check_web3signer_health(&health_check_url).await;
+        }
+    });
+
     // Start servers based on transport configuration
     let ui_addr: SocketAddr = config.ui_addr.parse()?;
     let api_addr: SocketAddr = config.http_addr.parse()?;

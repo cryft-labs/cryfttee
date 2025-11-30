@@ -219,6 +219,154 @@ impl RuntimeState {
         let binary = std::fs::read(&exe_path)?;
         Ok(format!("sha256:{}", hex::encode(Sha256::digest(&binary))))
     }
+
+    /// Check Web3Signer health and update state
+    pub async fn check_web3signer_health(&mut self, url: &str) {
+        let upcheck_url = format!("{}/upcheck", url.trim_end_matches('/'));
+        
+        match reqwest::Client::new()
+            .get(&upcheck_url)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    self.web3signer_reachable = true;
+                    self.web3signer_last_error = None;
+                    tracing::debug!("Web3Signer health check passed");
+                } else {
+                    self.web3signer_reachable = false;
+                    self.web3signer_last_error = Some(format!("HTTP {}", response.status()));
+                    tracing::warn!("Web3Signer returned error: {}", response.status());
+                }
+            }
+            Err(e) => {
+                self.web3signer_reachable = false;
+                self.web3signer_last_error = Some(e.to_string());
+                tracing::debug!("Web3Signer health check failed: {}", e);
+            }
+        }
+    }
+
+    /// Fetch list of BLS public keys from Web3Signer
+    /// Web3Signer returns list at GET /api/v1/eth2/publicKeys
+    pub async fn fetch_bls_pubkeys(&self, url: &str) -> Result<Vec<String>> {
+        let pubkeys_url = format!("{}/api/v1/eth2/publicKeys", url.trim_end_matches('/'));
+        
+        let response = reqwest::Client::new()
+            .get(&pubkeys_url)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("Web3Signer returned HTTP {}", response.status());
+        }
+
+        let pubkeys: Vec<String> = response.json().await?;
+        Ok(pubkeys)
+    }
+
+    /// Verify a BLS public key exists in Web3Signer
+    /// Returns Ok(()) if key exists, Err if not found or unreachable
+    pub async fn verify_bls_pubkey_exists(&self, url: &str, pubkey: &str) -> Result<()> {
+        let pubkeys = self.fetch_bls_pubkeys(url).await?;
+        
+        // Normalize the pubkey for comparison (lowercase, ensure 0x prefix)
+        let normalized = normalize_pubkey(pubkey);
+        
+        for pk in &pubkeys {
+            if normalize_pubkey(pk) == normalized {
+                return Ok(());
+            }
+        }
+        
+        anyhow::bail!(
+            "BLS public key {} not found in Web3Signer. Available keys: {}. \
+             The key in CryftGo's local store does not exist in Web3Signer - \
+             this may indicate key loss or misconfiguration.",
+            pubkey,
+            if pubkeys.is_empty() { 
+                "none".to_string() 
+            } else { 
+                pubkeys.iter().map(|k| truncate_key(k)).collect::<Vec<_>>().join(", ")
+            }
+        )
+    }
+
+    /// Fetch list of TLS/SECP256K1 public keys from Web3Signer
+    /// Note: Web3Signer's exact endpoint for non-BLS keys may vary
+    pub async fn fetch_tls_pubkeys(&self, url: &str) -> Result<Vec<String>> {
+        // Web3Signer SECP256K1 keys endpoint
+        let pubkeys_url = format!("{}/api/v1/eth1/publicKeys", url.trim_end_matches('/'));
+        
+        let response = reqwest::Client::new()
+            .get(&pubkeys_url)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                let pubkeys: Vec<String> = resp.json().await?;
+                Ok(pubkeys)
+            }
+            Ok(resp) => {
+                // Some Web3Signer versions don't support eth1 keys - return empty
+                tracing::debug!("Web3Signer TLS keys endpoint returned {}", resp.status());
+                Ok(vec![])
+            }
+            Err(e) => {
+                tracing::debug!("Failed to fetch TLS keys from Web3Signer: {}", e);
+                Ok(vec![])
+            }
+        }
+    }
+
+    /// Verify a TLS public key exists in Web3Signer
+    pub async fn verify_tls_pubkey_exists(&self, url: &str, pubkey: &str) -> Result<()> {
+        let pubkeys = self.fetch_tls_pubkeys(url).await?;
+        
+        let normalized = normalize_pubkey(pubkey);
+        
+        for pk in &pubkeys {
+            if normalize_pubkey(pk) == normalized {
+                return Ok(());
+            }
+        }
+        
+        anyhow::bail!(
+            "TLS public key {} not found in Web3Signer. Available keys: {}. \
+             The key in CryftGo's local store does not exist in Web3Signer - \
+             this may indicate key loss or misconfiguration.",
+            pubkey,
+            if pubkeys.is_empty() { 
+                "none".to_string() 
+            } else { 
+                pubkeys.iter().map(|k| truncate_key(k)).collect::<Vec<_>>().join(", ")
+            }
+        )
+    }
+}
+
+/// Normalize a public key for comparison (lowercase, ensure 0x prefix)
+fn normalize_pubkey(key: &str) -> String {
+    let key = key.trim().to_lowercase();
+    if key.starts_with("0x") {
+        key
+    } else {
+        format!("0x{}", key)
+    }
+}
+
+/// Truncate a key for display (first 10 chars...last 6 chars)
+fn truncate_key(key: &str) -> String {
+    if key.len() > 20 {
+        format!("{}...{}", &key[..10], &key[key.len()-6..])
+    } else {
+        key.to_string()
+    }
 }
 
 impl Default for RuntimeState {

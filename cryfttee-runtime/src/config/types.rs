@@ -232,6 +232,32 @@ impl Default for LoggingConfig {
     }
 }
 
+/// [web3signer] section
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Web3SignerConfig {
+    /// Web3Signer URL (e.g., http://localhost:9000)
+    #[serde(default = "default_web3signer_url")]
+    pub url: String,
+
+    /// Request timeout in seconds
+    #[serde(default = "default_web3signer_timeout")]
+    pub timeout: u64,
+
+    /// Health check interval in seconds
+    #[serde(default = "default_health_check_interval")]
+    pub health_check_interval: u64,
+}
+
+impl Default for Web3SignerConfig {
+    fn default() -> Self {
+        Self {
+            url: default_web3signer_url(),
+            timeout: default_web3signer_timeout(),
+            health_check_interval: default_health_check_interval(),
+        }
+    }
+}
+
 /// Full cryfttee.toml file structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CryftteeConfigFile {
@@ -252,6 +278,9 @@ pub struct CryftteeConfigFile {
 
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    #[serde(default)]
+    pub web3signer: Web3SignerConfig,
 }
 
 // =============================================================================
@@ -313,6 +342,15 @@ pub struct CryftteeConfig {
 
     /// Loaded trust configuration
     pub trust: TrustConfigFile,
+
+    /// Web3Signer URL
+    pub web3signer_url: String,
+
+    /// Web3Signer request timeout (seconds)
+    pub web3signer_timeout: u64,
+
+    /// Web3Signer health check interval (seconds)
+    pub web3signer_health_check_interval: u64,
 }
 
 // Default value functions
@@ -330,6 +368,9 @@ fn default_base_path() -> String { "/v1".to_string() }
 fn default_ui_addr() -> String { "0.0.0.0:3232".to_string() }
 fn default_static_dir() -> String { "ui".to_string() }
 fn default_log_level() -> String { "info".to_string() }
+fn default_web3signer_url() -> String { "http://localhost:9000".to_string() }
+fn default_web3signer_timeout() -> u64 { 30 }
+fn default_health_check_interval() -> u64 { 10 }
 
 impl Default for CryftteeConfig {
     fn default() -> Self {
@@ -351,6 +392,9 @@ impl Default for CryftteeConfig {
             log_level: default_log_level(),
             log_json: false,
             trust: TrustConfigFile::default(),
+            web3signer_url: default_web3signer_url(),
+            web3signer_timeout: default_web3signer_timeout(),
+            web3signer_health_check_interval: default_health_check_interval(),
         }
     }
 }
@@ -395,5 +439,15 @@ impl CryftteeConfig {
     /// Check if attestation signing is enabled
     pub fn attestation_enabled(&self) -> bool {
         self.trust.attestation.enabled
+    }
+
+    /// Get Web3Signer URL
+    pub fn get_web3signer_url(&self) -> &str {
+        &self.web3signer_url
+    }
+
+    /// Get Web3Signer timeout in seconds
+    pub fn get_web3signer_timeout(&self) -> u64 {
+        self.web3signer_timeout
     }
 }
