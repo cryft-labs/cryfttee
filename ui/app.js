@@ -14,6 +14,7 @@ const state = {
     attestation: null,
     schema: null,
     manifest: null,
+    context: null,  // Runtime context including health status
     activeTab: 'dashboard',
     moduleGuiTabs: new Map(),      // Tab-type module GUIs
     llmModules: [],                 // LLM-type modules (use pill popup)
@@ -908,6 +909,9 @@ async function fetchModuleStatusPanels() {
     const container = $('#dynamic-module-panels');
     if (!container) return;
     
+    // Refresh context to get latest Web3Signer status
+    await loadContext();
+    
     // Find all active modules that might have status panels
     const activeModules = state.modules.filter(m => 
         m.loaded && m.enabled !== false
@@ -985,27 +989,36 @@ function createBasicSignerPanel(module) {
     const hasTls = module.capabilities?.includes('tls_sign');
     const hasKeyGen = module.capabilities?.includes('key_gen');
     
+    // Get Web3Signer status from context
+    const web3signerConnected = state.context?.health?.web3signer ?? null;
+    
+    const sections = [
+        {
+            heading: 'Capabilities',
+            items: [
+                { type: 'status_indicator', status: hasBls ? 'ok' : 'pending', message: `BLS Signing: ${hasBls ? 'Available' : 'Not available'}` },
+                { type: 'status_indicator', status: hasTls ? 'ok' : 'pending', message: `TLS Signing: ${hasTls ? 'Available' : 'Not available'}` }
+            ].filter(item => item.status === 'ok' || module.capabilities?.length <= 3)
+        },
+        {
+            heading: 'Status',
+            items: [
+                { type: 'key_value', key: 'Module Version', value: module.version },
+                { 
+                    type: 'status_indicator', 
+                    status: web3signerConnected === true ? 'ok' : web3signerConnected === false ? 'error' : 'pending', 
+                    message: `Web3Signer: ${web3signerConnected === true ? 'Connected' : web3signerConnected === false ? 'Disconnected' : 'Unknown'}`
+                },
+                { type: 'status_indicator', status: 'pending', message: 'Status panel not implemented' }
+            ]
+        }
+    ];
+    
     return {
         module_id: module.id,
         module_version: module.version,
         title: module.id.replace(/_/g, ' ').replace(/v\d+$/, '').trim(),
-        sections: [
-            {
-                heading: 'Capabilities',
-                items: [
-                    { type: 'status_indicator', status: hasBls ? 'ok' : 'pending', message: `BLS Signing: ${hasBls ? 'Available' : 'Not available'}` },
-                    { type: 'status_indicator', status: hasTls ? 'ok' : 'pending', message: `TLS Signing: ${hasTls ? 'Available' : 'Not available'}` },
-                    { type: 'status_indicator', status: hasKeyGen ? 'ok' : 'pending', message: `Key Generation: ${hasKeyGen ? 'Available' : 'Not available'}` }
-                ].filter(item => item.status === 'ok' || module.capabilities?.length <= 3)
-            },
-            {
-                heading: 'Status',
-                items: [
-                    { type: 'key_value', key: 'Module Version', value: module.version },
-                    { type: 'status_indicator', status: 'pending', message: 'Status panel not implemented' }
-                ]
-            }
-        ]
+        sections: sections
     };
 }
 
@@ -1499,6 +1512,15 @@ async function loadManifest() {
     }
 }
 
+async function loadContext() {
+    try {
+        state.context = await fetchJson('/api/context');
+    } catch (error) {
+        console.error('Failed to load context:', error);
+        state.context = null;
+    }
+}
+
 async function reloadModules() {
     const btn = $('#reload-btn');
     if (btn) {
@@ -1703,14 +1725,16 @@ class CryftteeKiosk {
             
             // Load data - don't let failures break the app
             await Promise.allSettled([
+                loadContext(),
                 loadModules(),
                 loadAttestation(),
                 loadSchema(),
                 loadManifest()
             ]);
             
-            // Periodic refresh (modules + connection check)
+            // Periodic refresh (modules + connection check + context)
             setInterval(() => {
+                loadContext().catch(console.error);
                 loadModules().catch(console.error);
                 checkConnection().catch(console.error);
             }, 30000);
