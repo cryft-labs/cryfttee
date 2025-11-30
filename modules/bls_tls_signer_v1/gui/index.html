@@ -400,10 +400,45 @@
           <option value="tls">TLS</option>
         </select>
 
-        <div class="btn-row" style="margin-bottom: var(--pad-md);">
-          <button id="signer-registerKeyBtn" class="btn btn-accent">Register New Key</button>
+        <label for="signer-keyAction">Action</label>
+        <select id="signer-keyAction">
+          <option value="verify">Verify Existing Key</option>
+          <option value="list">List Web3Signer Keys</option>
+          <option value="generate-instructions">Generate New Key (Instructions)</option>
+        </select>
+
+        <div id="signer-verifyKeySection" style="display:none;">
+          <label for="signer-verifyPubkey">Public Key (0x...)</label>
+          <input type="text" id="signer-verifyPubkey" placeholder="0x..." />
         </div>
-        <div id="signer-keyOutput" class="output">No keys registered in this session.</div>
+
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="signer-keyActionBtn" class="btn btn-accent">Execute</button>
+        </div>
+        <div id="signer-keyOutput" class="output">Select an action and click Execute.</div>
+      </div>
+    </div>
+
+    <!-- Key Generation Guide Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Key Generation Guide</span>
+        <span class="badge"><span class="dot pending"></span>Manual</span>
+      </div>
+      <div class="card-body">
+        <div class="section-label">Storage Backend</div>
+        <select id="signer-storageBackend" style="margin-bottom: var(--pad-md);">
+          <option value="file">File-based (Web3Signer default)</option>
+          <option value="vault">HashiCorp Vault</option>
+        </select>
+
+        <div id="signer-guideContent">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div style="margin-top: var(--pad-lg);">
+          <button id="signer-copyGuideBtn" class="btn">Copy Commands</button>
+        </div>
       </div>
     </div>
 
@@ -568,22 +603,255 @@
         output.textContent += '\n✓ Transaction submitted.';
       });
 
-      $('registerKeyBtn').addEventListener('click', async () => {
+      // Key action selector
+      $('keyAction').addEventListener('change', () => {
+        const action = $('keyAction').value;
+        $('verifyKeySection').style.display = action === 'verify' ? 'block' : 'none';
+      });
+
+      // Key action button
+      $('keyActionBtn').addEventListener('click', async () => {
         const output = $('keyOutput');
         const mode = $('keyMode').value;
-        output.className = 'output';
-        output.textContent = 'Registering ' + mode.toUpperCase() + ' key...\n';
+        const action = $('keyAction').value;
         
-        try {
-          await new Promise(r => setTimeout(r, 500));
-          const pubkey = '0x' + Array.from(crypto.getRandomValues(new Uint8Array(48))).map(b => b.toString(16).padStart(2, '0')).join('');
-          output.className = 'output success';
-          output.textContent += '\n✓ ' + mode.toUpperCase() + ' key registered.\n\nPublic Key:\n' + pubkey;
-        } catch (e) {
-          output.className = 'output error';
-          output.textContent += '\n✗ Failed: ' + e.message;
+        output.className = 'output';
+
+        if (action === 'verify') {
+          const pubkey = $('verifyPubkey').value.trim();
+          if (!pubkey) {
+            output.className = 'output error';
+            output.textContent = '✗ Please enter a public key to verify.';
+            return;
+          }
+          output.textContent = 'Verifying ' + mode.toUpperCase() + ' key exists in Web3Signer...\n';
+          
+          try {
+            const endpoint = mode === 'bls' ? '/v1/staking/bls/register' : '/v1/staking/tls/register';
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: 'verify', publicKey: pubkey })
+            });
+            
+            if (res.status === 404) {
+              output.className = 'output error';
+              output.textContent += '\n✗ Key NOT FOUND in Web3Signer.\n\nYou need to generate and import this key first.\nSee the "Key Generation Guide" card below.';
+            } else if (res.ok) {
+              const data = await res.json();
+              output.className = 'output success';
+              output.textContent += '\n✓ Key VERIFIED in Web3Signer.\n\nKey Handle: ' + (data.key_handle || data.keyHandle || pubkey);
+            } else {
+              const err = await res.text();
+              output.className = 'output error';
+              output.textContent += '\n✗ Error: ' + err;
+            }
+          } catch (e) {
+            output.className = 'output error';
+            output.textContent += '\n✗ Request failed: ' + e.message;
+          }
+
+        } else if (action === 'list') {
+          output.textContent = 'Fetching ' + mode.toUpperCase() + ' keys from Web3Signer...\n';
+          
+          try {
+            const endpoint = mode === 'bls' ? '/v1/staking/bls/register' : '/v1/staking/tls/register';
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: 'persistent' })
+            });
+            
+            if (res.ok) {
+              const data = await res.json();
+              output.className = 'output success';
+              output.textContent += '\n✓ Found key:\n\nPublic Key: ' + (data.public_key || data.publicKey || data.key_handle || '—');
+            } else if (res.status === 404) {
+              output.className = 'output warn';
+              output.textContent += '\n⚠ No keys found in Web3Signer.\n\nGenerate and import keys first.';
+            } else {
+              const err = await res.text();
+              output.className = 'output error';
+              output.textContent += '\n✗ Error: ' + err;
+            }
+          } catch (e) {
+            output.className = 'output error';
+            output.textContent += '\n✗ Request failed: ' + e.message;
+          }
+
+        } else if (action === 'generate-instructions') {
+          output.className = 'output';
+          if (mode === 'bls') {
+            output.textContent = 'BLS Key Generation Options:\n\n' +
+              '1. eth2.0-deposit-cli:\n' +
+              '   pip install eth2-deposit-cli\n' +
+              '   eth2_deposit_cli new-mnemonic --num_validators 1\n\n' +
+              '2. Teku (Docker):\n' +
+              '   docker run --rm -v $(pwd)/keys:/keys \\\n' +
+              '     consensys/teku:latest validator generate-keys \\\n' +
+              '     --output-path=/keys --keys-count=1\n\n' +
+              'Then import keystore to Web3Signer.\nSee README.md for full instructions.';
+          } else {
+            output.textContent = 'TLS Key Generation (OpenSSL):\n\n' +
+              '# Generate ECDSA P-256 key\n' +
+              'openssl ecparam -name prime256v1 -genkey -noout \\\n' +
+              '  -out tls-private.pem\n\n' +
+              '# Export public key\n' +
+              'openssl ec -in tls-private.pem -pubout \\\n' +
+              '  -out tls-public.pem\n\n' +
+              '# Convert to PKCS#8 for Web3Signer\n' +
+              'openssl pkcs8 -topk8 -nocrypt \\\n' +
+              '  -in tls-private.pem -out tls-private.pkcs8.pem\n\n' +
+              'Then import to Web3Signer keys directory.';
+          }
         }
       });
+
+      // Key generation guide
+      const guides = {
+        bls: {
+          file: `# BLS Key Generation & Import (File-based)
+
+## Step 1: Generate BLS Keys
+# Option A: Using eth2.0-deposit-cli
+pip install eth2-deposit-cli
+eth2_deposit_cli new-mnemonic --num_validators 1 --chain mainnet
+
+# Option B: Using Teku (Docker)
+echo "your-password" > password.txt
+docker run --rm -v $(pwd):/keys consensys/teku:latest \\
+  validator generate-keys \\
+  --output-path=/keys --keys-count=1 \\
+  --encrypted-keystore-enabled=true \\
+  --keystore-password-file=/keys/password.txt
+
+## Step 2: Import to Web3Signer
+# Copy keystore to Web3Signer directory
+cp keystore-*.json /opt/web3signer/keys/
+
+# Create password file (same name with .txt)
+cp password.txt /opt/web3signer/keys/keystore-m_XXX.txt
+
+# Restart Web3Signer
+sudo systemctl restart web3signer
+
+## Step 3: Verify in CryftTEE
+# Use "Verify Existing Key" with your public key`,
+          vault: `# BLS Key Generation & Import (HashiCorp Vault)
+
+## Step 1: Generate BLS Keys (same as file-based)
+pip install eth2-deposit-cli
+eth2_deposit_cli new-mnemonic --num_validators 1 --chain mainnet
+
+## Step 2: Store in HashiCorp Vault
+# Enable KV secrets engine
+vault secrets enable -path=web3signer kv-v2
+
+# Store the private key (extract from keystore first)
+vault kv put web3signer/bls/validator-1 \\
+  private_key="0xYOUR_PRIVATE_KEY_HEX" \\
+  public_key="0xYOUR_PUBLIC_KEY_HEX"
+
+## Step 3: Configure Web3Signer for Vault
+# Create vault key config: /etc/web3signer/keys/validator-1.yaml
+cat > validator-1.yaml << EOF
+type: hashicorp
+keyType: BLS
+tlsEnabled: true
+keyPath: /v1/secret/data/web3signer/bls/validator-1
+token: \${VAULT_TOKEN}
+serverHost: vault.example.com
+serverPort: 8200
+EOF
+
+## Step 4: Start Web3Signer
+export VAULT_TOKEN="hvs.xxxxx"
+web3signer --http-listen-port=9000 eth2 \\
+  --network=mainnet --key-config-path=/etc/web3signer/keys/`
+        },
+        tls: {
+          file: `# TLS Key Generation & Import (File-based)
+
+## Step 1: Generate ECDSA P-256 Key
+openssl ecparam -name prime256v1 -genkey -noout \\
+  -out tls-private.pem
+
+## Step 2: Export Public Key
+openssl ec -in tls-private.pem -pubout -out tls-public.pem
+
+## Step 3: Convert to PKCS#8 (Web3Signer format)
+openssl pkcs8 -topk8 -nocrypt \\
+  -in tls-private.pem -out tls-private.pkcs8.pem
+
+## Step 4: Generate Certificate (optional)
+openssl req -new -x509 -key tls-private.pem \\
+  -out tls-cert.pem -days 365 \\
+  -subj "/CN=cryfttee-node/O=CryftLabs"
+
+## Step 5: Import to Web3Signer
+# Create key config: /opt/web3signer/keys/tls-node-1.yaml
+cat > tls-node-1.yaml << EOF
+type: file-raw
+keyType: SECP256K1
+privateKeyFile: /opt/web3signer/keys/tls-private.pkcs8.pem
+EOF
+
+# Copy files and restart
+cp tls-private.pkcs8.pem /opt/web3signer/keys/
+sudo systemctl restart web3signer`,
+          vault: `# TLS Key Generation & Import (HashiCorp Vault)
+
+## Step 1: Generate ECDSA Key
+openssl ecparam -name prime256v1 -genkey -noout \\
+  -out tls-private.pem
+openssl ec -in tls-private.pem -pubout -out tls-public.pem
+
+## Step 2: Store in HashiCorp Vault
+vault kv put web3signer/tls/node-1 \\
+  private_key="$(cat tls-private.pem)" \\
+  public_key="$(cat tls-public.pem)"
+
+## Step 3: Configure Web3Signer for Vault
+cat > tls-node-1.yaml << EOF
+type: hashicorp
+keyType: SECP256K1
+tlsEnabled: true
+keyPath: /v1/secret/data/web3signer/tls/node-1
+token: \${VAULT_TOKEN}
+serverHost: vault.example.com
+serverPort: 8200
+EOF
+
+## Step 4: Start Web3Signer
+export VAULT_TOKEN="hvs.xxxxx"
+web3signer --http-listen-port=9000 eth1 \\
+  --key-config-path=/etc/web3signer/keys/`
+        }
+      };
+
+      function updateGuide() {
+        const keyType = $('keyMode').value;
+        const backend = $('storageBackend').value;
+        const guide = guides[keyType][backend];
+        
+        $('guideContent').innerHTML = '<pre class="output" style="max-height: 280px; white-space: pre-wrap;">' + guide + '</pre>';
+      }
+
+      $('keyMode').addEventListener('change', updateGuide);
+      $('storageBackend').addEventListener('change', updateGuide);
+      
+      $('copyGuideBtn').addEventListener('click', () => {
+        const keyType = $('keyMode').value;
+        const backend = $('storageBackend').value;
+        const guide = guides[keyType][backend];
+        navigator.clipboard.writeText(guide).then(() => {
+          $('copyGuideBtn').textContent = '✓ Copied!';
+          setTimeout(() => { $('copyGuideBtn').textContent = 'Copy Commands'; }, 2000);
+        });
+      });
+
+      // Initialize guide
+      updateGuide();
 
       $('refreshTrustBtn').addEventListener('click', fetchTrustState);
 

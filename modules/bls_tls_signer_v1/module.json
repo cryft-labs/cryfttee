@@ -1,16 +1,33 @@
 {
   "id": "bls_tls_signer_v1",
-  "version": "1.0.0",
-  "description": "Baseline BLS + TLS staking module for CryftTEE, implementing the signing ABI.",
+  "version": "1.1.0",
+  "description": "BLS + TLS staking module with Web3Signer integration. Supports file-based and HashiCorp Vault key storage backends.",
   "capabilities": [
     "bls_register",
     "bls_sign",
+    "bls_verify",
     "tls_register",
-    "tls_sign"
+    "tls_sign",
+    "tls_verify",
+    "key_management"
   ],
+  "keyManagement": {
+    "backends": ["web3signer-file", "web3signer-vault"],
+    "modes": {
+      "persistent": "Use existing key from Web3Signer",
+      "verify": "Check if public key exists in Web3Signer",
+      "generate": "Manual generation required (see GUI guide)"
+    },
+    "supportedKeyTypes": {
+      "bls": "BLS12-381 (Ethereum 2.0 validator keys)",
+      "tls": "ECDSA P-256 / secp256k1 (TLS/ETH1 signing)"
+    }
+  },
+  "hasGui": true,
+  "guiPath": "gui",
   "abi": {
     "type": "signing",
-    "schemaVersion": "1.0.0",
+    "schemaVersion": "1.1.0",
     "exports": [
       "bls_register",
       "bls_sign",
@@ -21,6 +38,6 @@
   "build": {
     "toolchain": "rust-1.80.0+wasm32-unknown-unknown",
     "wasmOptimization": "z",
-    "timestamp": "2025-11-27T00:00:00Z"
+    "timestamp": "2025-11-30T00:00:00Z"
   }
 }

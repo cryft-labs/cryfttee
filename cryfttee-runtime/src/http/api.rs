@@ -128,9 +128,10 @@ pub async fn bls_register(
         }
     }
 
-    // Proceed with key registration through the WASM module
+    // Proceed with key registration through Web3Signer
     let registry = state.registry.read().await;
-    let dispatcher = Dispatcher::new(&registry);
+    let web3signer_url = state.config.get_web3signer_url();
+    let dispatcher = Dispatcher::with_web3signer(&registry, &web3signer_url, state.config.web3signer_timeout);
 
     let key_material = request.ephemeral_key_b64.as_ref()
         .map(|b64| BASE64.decode(b64))
@@ -169,7 +170,8 @@ pub async fn bls_sign(
     info!("BLS sign request: handle={}", request.key_handle);
 
     let registry = state.registry.read().await;
-    let dispatcher = Dispatcher::new(&registry);
+    let web3signer_url = state.config.get_web3signer_url();
+    let dispatcher = Dispatcher::with_web3signer(&registry, &web3signer_url, state.config.web3signer_timeout);
 
     let message = BASE64.decode(&request.message)
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
@@ -290,9 +292,10 @@ pub async fn tls_register(
         }
     }
 
-    // Proceed with key registration through the WASM module
+    // Proceed with key registration through Web3Signer
     let registry = state.registry.read().await;
-    let dispatcher = Dispatcher::new(&registry);
+    let web3signer_url = state.config.get_web3signer_url();
+    let dispatcher = Dispatcher::with_web3signer(&registry, &web3signer_url, state.config.web3signer_timeout);
 
     let key_material = request.ephemeral_key_pem.as_ref()
         .map(|pem| pem.as_bytes().to_vec());
@@ -327,7 +330,8 @@ pub async fn tls_sign(
     info!("TLS sign request: handle={}", request.key_handle);
 
     let registry = state.registry.read().await;
-    let dispatcher = Dispatcher::new(&registry);
+    let web3signer_url = state.config.get_web3signer_url();
+    let dispatcher = Dispatcher::with_web3signer(&registry, &web3signer_url, state.config.web3signer_timeout);
 
     let digest = BASE64.decode(&request.digest)
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {

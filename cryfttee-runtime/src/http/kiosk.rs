@@ -609,7 +609,8 @@ pub async fn sign_module(
     // For now, we'll use the BLS signing capability through the dispatcher
     // The actual signing happens via Web3Signer through the bls_tls_signer module
     let registry = state.registry.read().await;
-    let dispatcher = crate::runtime::Dispatcher::new(&registry);
+    let web3signer_url = state.config.get_web3signer_url();
+    let dispatcher = crate::runtime::Dispatcher::with_web3signer(&registry, &web3signer_url, state.config.web3signer_timeout);
     
     // Decode the signing hash (remove "sha256:" prefix and convert to bytes)
     let hash_bytes = hex::decode(signing_hash.strip_prefix("sha256:").unwrap_or(&signing_hash))

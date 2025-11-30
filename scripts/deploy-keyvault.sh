@@ -715,15 +715,97 @@ case "${KEY_TYPE}" in
         ;;
         
     generate-bls)
-        echo "[!] BLS key generation requires external tooling."
-        echo "[i] Use eth2-deposit-cli or similar:"
-        echo "    https://github.com/ethereum/staking-deposit-cli"
+        echo "=== CryftTEE BLS Key Generator ==="
         echo ""
-        echo "    pip install eth2-deposit-cli"
-        echo "    eth2-deposit-cli generate-keys --num_validators 1"
+        
+        # Generate a random password if not provided
+        PASSWORD="${KEYSTORE_FILE:-$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)}"
+        
+        # Create output directory
+        OUTPUT_DIR="${KEYS_DIR}"
+        sudo mkdir -p "${OUTPUT_DIR}"
+        
+        echo "[+] Generating BLS key using eth2-val-tools..."
+        echo "[i] Password: ${PASSWORD}"
         echo ""
-        echo "[i] Then import the generated keystore:"
-        echo "    $0 bls ./validator_keys/keystore-*.json <password>"
+        
+        # Use eth2-val-tools Docker image for key generation
+        # This is the most reliable cross-platform approach
+        if command -v docker &> /dev/null; then
+            TEMP_DIR=$(mktemp -d)
+            
+            # Generate a single validator key using eth2-val-tools
+            docker run --rm -v "${TEMP_DIR}:/output" \
+                protolambda/eth2-val-tools:latest \
+                keystores \
+                --insecure \
+                --prysm-pass="${PASSWORD}" \
+                --out-loc=/output \
+                --source-min=0 \
+                --source-max=1 \
+                --source-mnemonic="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" \
+                2>/dev/null
+            
+            # Check if keystore was generated
+            KEYSTORE=$(find "${TEMP_DIR}" -name "*.json" -type f 2>/dev/null | head -1)
+            
+            if [ -n "${KEYSTORE}" ] && [ -f "${KEYSTORE}" ]; then
+                PUBKEY=$(jq -r '.pubkey // .public_key' "${KEYSTORE}" 2>/dev/null)
+                PUBKEY="${PUBKEY#0x}"
+                
+                if [ -n "${PUBKEY}" ]; then
+                    # Copy to keys directory
+                    sudo cp "${KEYSTORE}" "${OUTPUT_DIR}/${PUBKEY}.json"
+                    echo -n "${PASSWORD}" | sudo tee "${OUTPUT_DIR}/${PUBKEY}.txt" > /dev/null
+                    sudo chmod 600 "${OUTPUT_DIR}/${PUBKEY}.json" "${OUTPUT_DIR}/${PUBKEY}.txt"
+                    
+                    echo ""
+                    echo "[+] Generated BLS key: 0x${PUBKEY:0:16}...${PUBKEY: -8}"
+                    echo "[+] Keystore: ${OUTPUT_DIR}/${PUBKEY}.json"
+                    echo "[+] Password: ${OUTPUT_DIR}/${PUBKEY}.txt"
+                    echo ""
+                    echo "[!] Restart Web3Signer to load the new key:"
+                    echo "    sudo docker restart cryfttee-web3signer"
+                    echo ""
+                    echo "[i] CryftGo will detect this key via: GET /api/v1/eth2/publicKeys"
+                else
+                    echo "[x] Failed to extract pubkey from generated keystore"
+                fi
+            else
+                echo "[x] Docker key generation failed. Trying alternative method..."
+                echo ""
+                # Fallback: use Web3Signer's key manager API if available
+                echo "[i] Alternative: Use eth2-deposit-cli directly:"
+                echo ""
+                echo "    # Install"
+                echo "    pip3 install eth-staking-deposit-cli"
+                echo ""
+                echo "    # Generate (follow prompts)"
+                echo "    eth-staking-deposit-cli generate-keys --num_validators 1 --chain mainnet"
+                echo ""
+                echo "    # Import to Web3Signer"
+                echo "    $0 bls ./validator_keys/keystore-*.json <your-password>"
+            fi
+            
+            # Cleanup temp directory
+            rm -rf "${TEMP_DIR}"
+        else
+            echo "[x] Docker not available"
+            echo ""
+            echo "[i] Manual BLS key generation options:"
+            echo ""
+            echo "    Option 1: eth2-deposit-cli (recommended)"
+            echo "    ----------------------------------------"
+            echo "    pip3 install eth-staking-deposit-cli"
+            echo "    eth-staking-deposit-cli generate-keys --num_validators 1 --chain mainnet"
+            echo "    $0 bls ./validator_keys/keystore-*.json <password>"
+            echo ""
+            echo "    Option 2: ethdo"
+            echo "    ----------------------------------------"
+            echo "    # Install: https://github.com/wealdtech/ethdo"
+            echo "    ethdo account create --account=cryfttee/validator --passphrase=<password>"
+            echo ""
+        fi
         ;;
         
     bls)
