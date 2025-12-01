@@ -111,6 +111,48 @@
       "publisherId": "cryft-labs",
       "signature": "PLACEHOLDER_IPFS_SIGNATURE",
       "version": "2.0.0"
+    },
+    {
+      "capabilities": [
+        "code_generate",
+        "code_generate_batch",
+        "code_redeem",
+        "code_status",
+        "code_freeze",
+        "code_unfreeze",
+        "code_revoke",
+        "code_report_lost",
+        "code_assign_content",
+        "code_transfer_management",
+        "batch_freeze",
+        "batch_activate",
+        "batch_revoke",
+        "validator_code_generate",
+        "validator_code_redeem",
+        "content_wallet_access",
+        "content_private_key",
+        "content_token_transfer",
+        "content_experience_trigger",
+        "content_custom",
+        "public_contract_query",
+        "private_contract_validate"
+      ],
+      "defaultFor": {
+        "redeemable_codes": true
+      },
+      "description": "On-chain managed redeemable gift codes per US Patent App 20250139608. Dual smart contract architecture with public status and private TEE validation.",
+      "dir": "redeemable_codes_v1",
+      "file": "module.wasm",
+      "guiPath": "gui",
+      "hasGui": true,
+      "hash": "sha256:PLACEHOLDER_REDEEMABLE_CODES_HASH",
+      "id": "redeemable_codes_v1",
+      "minCryftteeVersion": "0.4.0",
+      "moduleType": "redeemable_codes",
+      "publisherId": "cryft-labs",
+      "signature": "PLACEHOLDER_REDEEMABLE_CODES_SIGNATURE",
+      "version": "1.0.0",
+      "patent": "US 20250139608"
     }
   ],
   "version": 1

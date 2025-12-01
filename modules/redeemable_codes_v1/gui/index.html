@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redeemable Codes - On-Chain Gift Code Management</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🎁</span>
+                    <span class="logo-text">Redeemable</span>
+                </div>
+                <div class="connection-status" id="connection-status">
+                    <span class="status-dot offline"></span>
+                    <span class="status-text">Disconnected</span>
+                </div>
+            </div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active" data-page="dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Dashboard</span>
+                </li>
+                <li class="nav-item" data-page="generate">
+                    <span class="nav-icon">✨</span>
+                    <span class="nav-label">Generate</span>
+                </li>
+                <li class="nav-item" data-page="redeem">
+                    <span class="nav-icon">🎫</span>
+                    <span class="nav-label">Redeem</span>
+                </li>
+                <li class="nav-item" data-page="manage">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-label">Manage Codes</span>
+                </li>
+                <li class="nav-item" data-page="validator">
+                    <span class="nav-icon">🔐</span>
+                    <span class="nav-label">Validator</span>
+                </li>
+                <li class="nav-item" data-page="history">
+                    <span class="nav-icon">📜</span>
+                    <span class="nav-label">History</span>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">Settings</span>
+                </li>
+            </ul>
+            
+            <div class="sidebar-footer">
+                <div class="stats-mini">
+                    <div class="stat-row">
+                        <span class="stat-label">Total Codes</span>
+                        <span class="stat-value" id="stat-total">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Active</span>
+                        <span class="stat-value" id="stat-active">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Redeemed</span>
+                        <span class="stat-value" id="stat-redeemed">0</span>
+                    </div>
+                </div>
+                <div class="patent-badge">
+                    <small>US Patent App 20250139608</small>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <div class="page active" id="page-dashboard">
+                <div class="page-header">
+                    <h1>📊 Dashboard</h1>
+                    <p class="subtitle">On-Chain Managed Redeemable Codes Overview</p>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🎁</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="dash-total">0</div>
+                            <div class="stat-label">Total Codes</div>
+                        </div>
+                    </div>
+                    <div class="stat-card accent">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="dash-active">0</div>
+                            <div class="stat-label">Active Codes</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🎫</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="dash-redeemed">0</div>
+                            <div class="stat-label">Redeemed</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">❄️</div>
+                        <div class="stat-content">
+                            <div class="stat-value" id="dash-frozen">0</div>
+                            <div class="stat-label">Frozen</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Recent Activity</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-list" id="recent-activity">
+                            <div class="empty-state">
+                                <span class="empty-icon">📋</span>
+                                <p>No recent activity</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Quick Actions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-actions">
+                            <button class="action-btn" onclick="App.navigate('generate')">
+                                <span class="action-icon">✨</span>
+                                <span class="action-text">Generate Code</span>
+                            </button>
+                            <button class="action-btn" onclick="App.navigate('redeem')">
+                                <span class="action-icon">🎫</span>
+                                <span class="action-text">Redeem Code</span>
+                            </button>
+                            <button class="action-btn" onclick="App.navigate('manage')">
+                                <span class="action-icon">📋</span>
+                                <span class="action-text">Manage Codes</span>
+                            </button>
+                            <button class="action-btn" onclick="App.navigate('validator')">
+                                <span class="action-icon">🔐</span>
+                                <span class="action-text">Validator Setup</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Generate Page -->
+            <div class="page" id="page-generate">
+                <div class="page-header">
+                    <h1>✨ Generate Codes</h1>
+                    <p class="subtitle">Create new redeemable codes with assigned content</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Code Generation</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="generate-form">
+                            <div class="form-group">
+                                <label>Manager Address</label>
+                                <input type="text" id="gen-manager" placeholder="0x..." class="form-input">
+                                <span class="help-text">Wallet address with management permissions</span>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Content Type</label>
+                                <select id="gen-content-type" class="form-select">
+                                    <option value="token">Token/NFT Transfer</option>
+                                    <option value="wallet_access">Wallet Access</option>
+                                    <option value="validator_registration">Validator Registration</option>
+                                    <option value="experience">Experience/API Trigger</option>
+                                    <option value="custom">Custom Content</option>
+                                </select>
+                            </div>
+                            
+                            <div id="content-fields">
+                                <!-- Dynamic fields based on content type -->
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Number of Codes</label>
+                                    <input type="number" id="gen-count" value="1" min="1" max="1000" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Initial Status</label>
+                                    <select id="gen-status" class="form-select">
+                                        <option value="frozen" selected>Frozen (Default)</option>
+                                        <option value="active">Active</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Metadata (Optional)</label>
+                                <textarea id="gen-metadata" placeholder='{"description": "...", "artwork": "ipfs://..."}' class="form-textarea"></textarea>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    ✨ Generate Codes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card" id="generated-codes-card" style="display: none;">
+                    <div class="card-header">
+                        <h2>Generated Codes</h2>
+                        <button class="btn btn-sm" onclick="downloadCodes()">📥 Download CSV</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="codes-list" id="generated-codes-list"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Redeem Page -->
+            <div class="page" id="page-redeem">
+                <div class="page-header">
+                    <h1>🎫 Redeem Code</h1>
+                    <p class="subtitle">Enter a code to redeem its assigned content</p>
+                </div>
+                
+                <div class="card redeem-card">
+                    <div class="card-body">
+                        <div class="redeem-input-container">
+                            <label>Enter Redeemable Code</label>
+                            <div class="code-input-group">
+                                <input type="text" id="redeem-code" 
+                                       placeholder="XXXX-XXXX-XXXX-XXXX" 
+                                       class="code-input"
+                                       maxlength="19"
+                                       autocomplete="off">
+                                <button class="btn btn-primary" id="btn-redeem">
+                                    🎫 Redeem
+                                </button>
+                            </div>
+                            <span class="help-text">Enter the code from your physical or digital card</span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Your Wallet Address</label>
+                            <input type="text" id="redeem-wallet" placeholder="0x..." class="form-input">
+                            <span class="help-text">Content will be delivered to this address</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card" id="redeem-result-card" style="display: none;">
+                    <div class="card-header">
+                        <h2>Redemption Result</h2>
+                    </div>
+                    <div class="card-body" id="redeem-result">
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Verify Code Status</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>You can verify a code's status before redeeming:</p>
+                        <div class="verify-input-group">
+                            <input type="text" id="verify-uid" placeholder="UID (0x...-0001)" class="form-input">
+                            <button class="btn" id="btn-verify">🔍 Check Status</button>
+                        </div>
+                        <div id="verify-result"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Manage Page -->
+            <div class="page" id="page-manage">
+                <div class="page-header">
+                    <h1>📋 Manage Codes</h1>
+                    <p class="subtitle">View and manage your redeemable codes</p>
+                </div>
+                
+                <div class="filters-bar">
+                    <div class="filter-group">
+                        <select id="filter-status" class="form-select">
+                            <option value="">All Statuses</option>
+                            <option value="frozen">Frozen</option>
+                            <option value="active">Active</option>
+                            <option value="redeemed">Redeemed</option>
+                            <option value="revoked">Revoked</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <input type="text" id="filter-manager" placeholder="Manager Address" class="form-input">
+                    </div>
+                    <button class="btn" id="btn-filter">🔍 Filter</button>
+                    <button class="btn btn-secondary" id="btn-refresh">🔄 Refresh</button>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Code List</h2>
+                        <div class="batch-actions">
+                            <button class="btn btn-sm" id="btn-batch-freeze">❄️ Freeze Selected</button>
+                            <button class="btn btn-sm" id="btn-batch-activate">✅ Activate Selected</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="codes-table-container">
+                            <table class="codes-table" id="codes-table">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="select-all"></th>
+                                        <th>UID</th>
+                                        <th>Status</th>
+                                        <th>Content Type</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="codes-tbody">
+                                    <tr>
+                                        <td colspan="6" class="empty-cell">No codes found</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Validator Page -->
+            <div class="page" id="page-validator">
+                <div class="page-header">
+                    <h1>🔐 Validator Registration</h1>
+                    <p class="subtitle">Redeem codes for Cryft network validator setup</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Validator Code Redemption</h2>
+                    </div>
+                    <div class="card-body">
+                        <p class="info-text">
+                            Use a validator registration code to quickly set up your Cryft network validator.
+                            These codes may include pre-configured stake amounts and delegation fees.
+                        </p>
+                        
+                        <form id="validator-form">
+                            <div class="form-group">
+                                <label>Redemption Code</label>
+                                <input type="text" id="val-code" placeholder="XXXX-XXXX-XXXX-XXXX" class="form-input code-input">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Node ID</label>
+                                <input type="text" id="val-node-id" placeholder="NodeID-..." class="form-input">
+                                <span class="help-text">Your validator node ID</span>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Wallet Address</label>
+                                <input type="text" id="val-wallet" placeholder="0x..." class="form-input">
+                                <span class="help-text">Wallet to receive staking rewards</span>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    🔐 Register Validator
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Generate Validator Codes</h2>
+                    </div>
+                    <div class="card-body">
+                        <p class="info-text">
+                            Create validator registration codes for distribution.
+                        </p>
+                        
+                        <form id="gen-validator-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Stake Amount (CRYFT)</label>
+                                    <input type="number" id="gen-val-stake" placeholder="2000" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Delegation Fee (%)</label>
+                                    <input type="number" id="gen-val-fee" placeholder="2" min="0" max="100" class="form-input">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Number of Codes</label>
+                                <input type="number" id="gen-val-count" value="1" min="1" max="100" class="form-input">
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button type="submit" class="btn">
+                                    ✨ Generate Validator Codes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- History Page -->
+            <div class="page" id="page-history">
+                <div class="page-header">
+                    <h1>📜 Redemption History</h1>
+                    <p class="subtitle">View past redemptions and transactions</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-body">
+                        <div class="history-list" id="history-list">
+                            <div class="empty-state">
+                                <span class="empty-icon">📜</span>
+                                <p>No redemption history</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Settings Page -->
+            <div class="page" id="page-settings">
+                <div class="page-header">
+                    <h1>⚙️ Settings</h1>
+                    <p class="subtitle">Configure module settings</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Connection</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>RPC URL</label>
+                            <input type="text" id="setting-rpc" placeholder="http://127.0.0.1:9650" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label>Default Manager Address</label>
+                            <input type="text" id="setting-manager" placeholder="0x..." class="form-input">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Code Format</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Index Length</label>
+                                <input type="number" id="setting-index-len" value="4" min="2" max="8" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label>Code Length</label>
+                                <input type="number" id="setting-code-len" value="12" min="8" max="32" class="form-input">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Group Size (for display)</label>
+                            <input type="number" id="setting-group" value="4" min="2" max="8" class="form-input">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>About</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="about-info">
+                            <p><strong>Module:</strong> Redeemable Codes v1.0.0</p>
+                            <p><strong>Patent:</strong> US Application 20250139608</p>
+                            <p><strong>Title:</strong> Card System Utilizing On-Chain Managed Redeemable Gift Code</p>
+                            <p><strong>Architecture:</strong> Dual Smart Contract (Public + Private/TEE)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <!-- Modal Container -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-title">Modal</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-footer" id="modal-footer"></div>
+        </div>
+    </div>
+    
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+{
+  "id": "redeemable_codes",
+  "name": "Redeemable Codes - On-Chain Gift Code Management",
+  "version": "1.0.0",
+  "description": "Dual smart contract system for managing blockchain-integrated redeemable codes. Implements US Patent App 20250139608 for secure, transparent gift code management with public status tracking and private code validation in TEE.",
+  "author": "Cryft Labs",
+  "patent": {
+    "number": "US 20250139608",
+    "title": "Card System Utilizing On-Chain Managed Redeemable Gift Code",
+    "filed": "2024-10-29",
+    "publication": "2025-05-01"
+  },
+  "capabilities": [
+    "generate_code",
+    "generate_batch",
+    "redeem_code",
+    "validate_code",
+    "freeze_code",
+    "unfreeze_code",
+    "revoke_code",
+    "get_status",
+    "update_status",
+    "assign_content",
+    "update_content",
+    "list_codes",
+    "search_codes",
+    "get_code_details",
+    "report_lost",
+    "transfer_ownership",
+    "batch_freeze",
+    "batch_unfreeze",
+    "batch_assign",
+    "redeem_for_validator",
+    "get_stats",
+    "get_redemption_history"
+  ],
+  "defaultFor": {
+    "generate_code": true,
+    "redeem_code": true,
+    "validate_code": true,
+    "freeze_code": true,
+    "unfreeze_code": true
+  },
+  "hasGui": true,
+  "guiPath": "gui",
+  "architecture": {
+    "description": "Dual smart contract system with TEE (CryftTEE) for private contract execution",
+    "public_contract": {
+      "purpose": "Status management, transparency, policy enforcement",
+      "stores": ["uid", "status", "content_assignment", "metadata"],
+      "accessible_by": "anyone"
+    },
+    "private_contract": {
+      "purpose": "Secure code storage and validation",
+      "stores": ["storage_index", "code_hash", "salt", "redemption_data"],
+      "accessible_by": "TEE only"
+    }
+  },
+  "content_types": [
+    {
+      "type": "wallet_access",
+      "description": "Access to smart contract wallet (FIG. 9)"
+    },
+    {
+      "type": "private_key",
+      "description": "Private key for externally owned account (FIG. 10)"
+    },
+    {
+      "type": "token",
+      "description": "NFT or token transfer (FIG. 11)"
+    },
+    {
+      "type": "experience",
+      "description": "External API trigger for experiences (FIG. 12)"
+    },
+    {
+      "type": "validator_registration",
+      "description": "Cryft network validator registration"
+    },
+    {
+      "type": "custom",
+      "description": "Generic content with custom payload"
+    }
+  ],
+  "code_statuses": [
+    {
+      "status": "frozen",
+      "description": "Default state - code cannot be redeemed"
+    },
+    {
+      "status": "active",
+      "description": "Code can be redeemed"
+    },
+    {
+      "status": "redeemed",
+      "description": "Code has been successfully redeemed"
+    },
+    {
+      "status": "revoked",
+      "description": "Code permanently cancelled"
+    }
+  ],
+  "config": {
+    "rpc_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:9650",
+      "description": "Cryft blockchain RPC URL"
+    },
+    "public_contract_address": {
+      "type": "string",
+      "default": null,
+      "description": "Address of public smart contract"
+    },
+    "qrng_endpoint": {
+      "type": "string",
+      "default": null,
+      "description": "Quantum Random Number Generator API endpoint"
+    },
+    "default_manager": {
+      "type": "string",
+      "default": null,
+      "description": "Default manager address for generated codes"
+    },
+    "code_format": {
+      "type": "object",
+      "default": {
+        "index_length": 4,
+        "code_length": 12,
+        "separator": "-",
+        "group_size": 4
+      },
+      "description": "Code formatting options"
+    }
+  },
+  "dependencies": {
+    "runtime": ">=0.4.0"
+  }
+}
