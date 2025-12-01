@@ -1,12 +1,34 @@
 {
   "id": "debug_v1",
   "name": "Debug Module",
-  "version": "1.0.0",
-  "description": "Debugging and diagnostics module for runtime inspection and testing.",
+  "version": "2.0.0",
+  "description": "Self-contained debugging and diagnostics module. All state and operations happen within WASM - no external dependencies.",
   "minCryftteeVersion": "0.4.0",
   "publisherId": "cryft-labs",
-  "capabilities": ["debug_echo", "debug_info", "debug_panic"],
+  "selfContained": true,
+  "hostCallsRequired": [],
+  "capabilities": [
+    "echo",
+    "info",
+    "log",
+    "getLogs",
+    "perfStart",
+    "perfEnd",
+    "storeSet",
+    "storeGet",
+    "memoryTest",
+    "reset"
+  ],
   "defaultFor": [],
   "hasGui": true,
-  "guiPath": "gui"
+  "guiPath": "gui",
+  "abi": {
+    "schemaVersion": "2.0.0",
+    "entrypoint": "invoke",
+    "memoryExports": ["alloc", "dealloc", "get_output_ptr"]
+  },
+  "build": {
+    "toolchain": "rust-1.80.0+wasm32-unknown-unknown",
+    "dependencies": "none"
+  }
 }

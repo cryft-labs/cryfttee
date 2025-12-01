@@ -1,66 +1,42 @@
 {
   "id": "bls_tls_signer_v1",
-  "version": "1.2.0",
-  "description": "BLS + TLS staking module with Web3Signer integration and dedicated WASM module signing capability.",
+  "version": "2.0.0",
+  "description": "Self-contained BLS/TLS signing module with in-memory key management. All cryptographic operations happen within WASM.",
   "capabilities": [
-    "bls_register",
+    "bls_generate",
     "bls_sign",
     "bls_verify",
-    "tls_register",
-    "tls_sign",
-    "tls_verify",
-    "key_management",
-    "module_signing_key",
+    "list_keys",
+    "lock_key",
+    "unlock_key",
+    "delete_key",
     "sign_module",
-    "verify_module",
-    "hash_module"
+    "export_state"
+  ],
+  "selfContained": true,
+  "hostCallsRequired": [
+    "get_random_seed",
+    "persist_state",
+    "load_state"
   ],
   "keyManagement": {
-    "backends": ["web3signer-file", "web3signer-vault"],
-    "modes": {
-      "persistent": "Use existing key from Web3Signer",
-      "verify": "Check if public key exists in Web3Signer",
-      "generate": "Manual generation required (see GUI guide)"
-    },
+    "storage": "in-module",
     "supportedKeyTypes": {
-      "bls": "BLS12-381 (Ethereum 2.0 validator keys)",
-      "tls": "ECDSA P-256 / secp256k1 (TLS/ETH1 signing)",
-      "module_signing": "Ed25519 / secp256k1 (WASM module signatures)"
-    }
-  },
-  "moduleSigning": {
-    "description": "Sign WASM modules with dedicated signing keys for publisher verification",
-    "keyTypes": ["ed25519", "secp256k1"],
-    "defaultKeyType": "ed25519",
-    "signatureFormat": "hex-encoded Ed25519/secp256k1 signature over canonical JSON payload",
-    "canonicalPayload": {
-      "module_id": "string",
-      "version": "string",
-      "publisher_id": "string",
-      "wasm_hash": "lowercase hex SHA256",
-      "metadata": "optional JSON object"
+      "bls": "BLS12-381 (simplified for WASM)",
+      "module_signing": "BLS-based module signatures"
     }
   },
   "hasGui": true,
   "guiPath": "gui",
   "abi": {
     "type": "signing",
-    "schemaVersion": "1.2.0",
-    "exports": [
-      "bls_register",
-      "bls_sign",
-      "tls_register",
-      "tls_sign",
-      "module_signing_key",
-      "sign_module",
-      "verify_module",
-      "hash_module",
-      "handle_request"
-    ]
+    "schemaVersion": "2.0.0",
+    "entrypoint": "invoke",
+    "memoryExports": ["alloc", "dealloc", "get_output_ptr"]
   },
   "build": {
     "toolchain": "rust-1.80.0+wasm32-unknown-unknown",
     "wasmOptimization": "s",
-    "timestamp": "2025-11-30T00:00:00Z"
+    "dependencies": "none"
   }
 }

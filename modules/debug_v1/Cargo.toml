@@ -1,13 +1,18 @@
 [package]
 name = "debug_module"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
+authors = ["Cryft Labs"]
+description = "Self-contained debug and diagnostics WASM module for CryftTEE"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
+# No external dependencies - self-contained module
 
 [profile.release]
 opt-level = "s"
 lto = true
+strip = true
+panic = "abort"

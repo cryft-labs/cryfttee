@@ -1,1050 +1,1053 @@
-//! Redeemable Codes Module - On-Chain Managed Gift Code System
+//! Redeemable Codes Module - Self-Contained Gift Code System
 //!
-//! Implementation of US Patent Application 20250139608:
+//! Implementation aligned with US Patent Application 20250139608:
 //! "Card System Utilizing On-Chain Managed Redeemable Gift Code"
 //!
-//! Architecture:
-//! - Dual smart contract system (public + private)
-//! - Public contract: Status management, transparency, policy enforcement
-//! - Private contract: Secure code storage (hash+salt), validation in TEE
-//! - CryftTEE acts as the Trusted Execution Environment (TEE)
+//! This module is SELF-CONTAINED - all code storage, hashing, validation,
+//! and state management happens in-module. Host calls are used ONLY for:
+//! - Random number generation (initial seeding)
+//! - Blockchain writes (actual on-chain transactions)
+//! - State persistence (save/load encrypted state)
 //!
-//! Key Features:
-//! - Generate cryptographically secure redeemable codes
-//! - Store encrypted representations (hash+salt) in private contract
-//! - Public status management (frozen/unfrozen, content assignment)
-//! - Blockchain-verified redemption process
-//! - Support for validator registrations, NFTs, tokens, and experiences
+//! In-module storage simulates the dual-contract architecture:
+//! - Public registry: status, content assignments, metadata
+//! - Private registry: code hashes, salts, redemption tracking
 
 #![no_std]
 
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::vec;
 use alloc::format;
-use alloc::collections::BTreeMap;
-use core::slice;
-use serde::{Deserialize, Serialize};
+use core::cell::UnsafeCell;
 
 // ============================================================================
-// Global Allocator for no_std WASM
+// WASM Memory Management
 // ============================================================================
-
-use core::alloc::{GlobalAlloc, Layout};
 
 struct WasmAllocator;
 
-unsafe impl GlobalAlloc for WasmAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+unsafe impl core::alloc::GlobalAlloc for WasmAllocator {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
         let size = layout.size();
         let align = layout.align();
         let total = size + align;
-        let mut buf: Vec<u8> = Vec::with_capacity(total);
-        let ptr = buf.as_mut_ptr();
-        let aligned = ((ptr as usize + align - 1) & !(align - 1)) as *mut u8;
-        core::mem::forget(buf);
-        aligned
+        let ptr = alloc_raw(total);
+        if ptr.is_null() {
+            return core::ptr::null_mut();
+        }
+        let offset = align - (ptr as usize % align);
+        ptr.add(offset)
     }
 
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        // Memory freed when module unloads
-    }
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {}
 }
 
 #[global_allocator]
 static ALLOCATOR: WasmAllocator = WasmAllocator;
+
+static mut HEAP: [u8; 2 * 1024 * 1024] = [0; 2 * 1024 * 1024]; // 2MB heap
+static mut HEAP_POS: usize = 0;
+
+fn alloc_raw(size: usize) -> *mut u8 {
+    unsafe {
+        if HEAP_POS + size > HEAP.len() {
+            return core::ptr::null_mut();
+        }
+        let ptr = HEAP.as_mut_ptr().add(HEAP_POS);
+        HEAP_POS += size;
+        ptr
+    }
+}
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// ============================================================================
-// WASM Memory Management
-// ============================================================================
-
-static mut OUTPUT_BUFFER: Vec<u8> = Vec::new();
+static mut OUTPUT_BUFFER: [u8; 65536] = [0; 65536];
 
 #[no_mangle]
-pub extern "C" fn alloc(size: i32) -> i32 {
-    let mut buf: Vec<u8> = Vec::with_capacity(size as usize);
-    buf.resize(size as usize, 0);
-    let ptr = buf.as_mut_ptr() as usize;
-    core::mem::forget(buf);
-    ptr as i32
+pub extern "C" fn alloc(len: usize) -> *mut u8 {
+    alloc_raw(len)
 }
 
 #[no_mangle]
-pub extern "C" fn dealloc(ptr: i32, size: i32) {
-    unsafe {
-        let _ = Vec::from_raw_parts(ptr as *mut u8, size as usize, size as usize);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn get_output_ptr() -> i32 {
-    unsafe { OUTPUT_BUFFER.as_ptr() as i32 }
-}
-
-#[no_mangle]
-pub extern "C" fn get_output_len() -> i32 {
-    unsafe { OUTPUT_BUFFER.len() as i32 }
-}
-
-fn set_output(data: &[u8]) {
-    unsafe {
-        OUTPUT_BUFFER = data.to_vec();
-    }
-}
-
-fn read_input(ptr: i32, len: i32) -> Vec<u8> {
-    unsafe {
-        slice::from_raw_parts(ptr as *const u8, len as usize).to_vec()
-    }
-}
+pub extern "C" fn dealloc(_ptr: *mut u8, _len: usize) {}
 
 // ============================================================================
-// Patent-Compliant Type Definitions
+// Data Types (Patent-Compliant)
 // ============================================================================
 
-/// Code status in public smart contract (FIG. 15)
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CodeStatus {
-    /// Code is frozen - cannot be redeemed (default state)
+#[derive(Clone, Copy, PartialEq)]
+enum CodeStatus {
     Frozen,
-    /// Code is active - can be redeemed
     Active,
-    /// Code has been redeemed
     Redeemed,
-    /// Code has been revoked/cancelled
     Revoked,
 }
 
-impl Default for CodeStatus {
-    fn default() -> Self {
-        CodeStatus::Frozen
+impl CodeStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            CodeStatus::Frozen => "frozen",
+            CodeStatus::Active => "active",
+            CodeStatus::Redeemed => "redeemed",
+            CodeStatus::Revoked => "revoked",
+        }
+    }
+    
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "frozen" => Some(CodeStatus::Frozen),
+            "active" => Some(CodeStatus::Active),
+            "redeemed" => Some(CodeStatus::Redeemed),
+            "revoked" => Some(CodeStatus::Revoked),
+            _ => None,
+        }
     }
 }
 
-/// Content type that code redeems to (FIG. 16)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RedeemableContent {
-    /// Access to smart contract wallet (FIG. 9)
+#[derive(Clone)]
+enum RedeemableContent {
     WalletAccess { wallet_address: String },
-    /// Private key for externally owned account (FIG. 10)
-    PrivateKey { encrypted_key: String },
-    /// NFT or token transfer (FIG. 11)
-    Token { 
-        token_type: String, // "nft", "erc20", "native"
-        contract_address: Option<String>,
-        token_id: Option<String>,
-        amount: Option<String>,
-    },
-    /// External API trigger for experiences (FIG. 12)
-    Experience {
-        api_endpoint: String,
-        experience_type: String,
-        metadata: BTreeMap<String, String>,
-    },
-    /// Validator registration on Cryft network
-    ValidatorRegistration {
-        node_id: Option<String>,
-        stake_amount: Option<String>,
-        delegation_fee: Option<u32>,
-    },
-    /// Generic content with custom payload
-    Custom {
-        content_type: String,
-        payload: String,
-    },
+    Token { token_type: String, contract_address: String, amount: String },
+    ValidatorRegistration { node_id: Option<String>, stake_amount: String },
+    Experience { api_endpoint: String, experience_type: String },
+    Custom { content_type: String, payload: String },
 }
 
-/// Unique Identifier structure (FIG. 18)
-/// Format: <manager_address>-<index>
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UniqueId {
-    /// Manager address (wallet/contract) with permission to manage this code
-    pub manager_address: String,
-    /// Index within manager's codes
-    pub index: String,
+/// Public registry entry (simulates public smart contract)
+#[derive(Clone)]
+struct PublicEntry {
+    uid: String,
+    status: CodeStatus,
+    content: Option<RedeemableContent>,
+    manager_address: String,
+    created_at: u64,
+    updated_at: u64,
+    metadata: BTreeMap<String, String>,
 }
 
-impl UniqueId {
-    pub fn to_string(&self) -> String {
-        format!("{}-{}", self.manager_address, self.index)
-    }
-    
-    pub fn from_string(s: &str) -> Option<Self> {
-        let parts: Vec<&str> = s.splitn(2, '-').collect();
-        if parts.len() == 2 {
-            Some(UniqueId {
-                manager_address: parts[0].to_string(),
-                index: parts[1].to_string(),
-            })
-        } else {
-            None
+/// Private registry entry (simulates private/TEE storage)
+#[derive(Clone)]
+struct PrivateEntry {
+    storage_index: String,
+    code_hash: Vec<u8>,
+    salt: Vec<u8>,
+    uid: String,
+    redemption_count: u32,
+    max_redemptions: u32,
+    redeemer: Option<String>,
+    redeemed_at: Option<u64>,
+}
+
+/// Module state container
+struct ModuleState {
+    /// Public registry (simulates public smart contract)
+    public_registry: BTreeMap<String, PublicEntry>,
+    /// Private registry indexed by storage_index
+    private_registry: BTreeMap<String, PrivateEntry>,
+    /// UID counter per manager
+    uid_counters: BTreeMap<String, u64>,
+    /// Random seed from host
+    random_seed: Vec<u8>,
+    /// Nonce for deterministic operations
+    nonce: u64,
+    /// Tick counter
+    tick: u64,
+    /// Statistics
+    stats: CodeStats,
+}
+
+#[derive(Clone, Default)]
+struct CodeStats {
+    total_generated: u64,
+    total_redeemed: u64,
+    total_frozen: u64,
+    total_active: u64,
+    total_revoked: u64,
+}
+
+impl ModuleState {
+    fn new() -> Self {
+        Self {
+            public_registry: BTreeMap::new(),
+            private_registry: BTreeMap::new(),
+            uid_counters: BTreeMap::new(),
+            random_seed: Vec::new(),
+            nonce: 0,
+            tick: 0,
+            stats: CodeStats::default(),
         }
     }
+    
+    fn next_uid(&mut self, manager: &str) -> String {
+        let counter = self.uid_counters.entry(manager.to_string()).or_insert(0);
+        *counter += 1;
+        format!("{}-{}", manager, counter)
+    }
 }
 
-/// Public contract entry - visible on blockchain (FIG. 17c public side)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublicCodeEntry {
-    /// Unique identifier (manager_address-index)
-    pub uid: String,
-    /// Current status (frozen, active, redeemed, revoked)
-    pub status: CodeStatus,
-    /// Assigned redeemable content
-    pub content: Option<RedeemableContent>,
-    /// Creation timestamp
-    pub created_at: u64,
-    /// Last status update timestamp
-    pub updated_at: u64,
-    /// Optional metadata (artwork URL, description, etc.)
-    pub metadata: BTreeMap<String, String>,
+static mut MODULE_STATE: UnsafeCell<Option<ModuleState>> = UnsafeCell::new(None);
+
+fn get_state() -> &'static mut ModuleState {
+    unsafe {
+        let state = &mut *MODULE_STATE.get();
+        if state.is_none() {
+            *state = Some(ModuleState::new());
+        }
+        state.as_mut().unwrap()
+    }
 }
 
-/// Private contract entry - stored securely in TEE (FIG. 17c private side)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PrivateCodeEntry {
-    /// Storage index (first portion of gift code - FIG. 17a)
-    pub storage_index: String,
-    /// Hash of the redeemable portion (FIG. 17b hashed)
-    pub code_hash: String,
-    /// Salt used in hashing
-    pub salt: String,
-    /// Associated UID in public contract
-    pub uid: String,
-    /// Redemption count (usually 0 or 1)
-    pub redemption_count: u32,
-    /// Max redemptions allowed (usually 1)
-    pub max_redemptions: u32,
-    /// Redeemer wallet address (set after redemption)
-    pub redeemer: Option<String>,
-    /// Redemption timestamp
-    pub redeemed_at: Option<u64>,
+// ============================================================================
+// Cryptographic Primitives
+// ============================================================================
+
+/// SHA256-like hash
+fn hash_256(data: &[u8]) -> Vec<u8> {
+    let mut h: [u64; 4] = [
+        0x6a09e667f3bcc908,
+        0xbb67ae8584caa73b,
+        0x3c6ef372fe94f82b,
+        0xa54ff53a5f1d36f1,
+    ];
+    
+    for (i, &byte) in data.iter().enumerate() {
+        let idx = i % 4;
+        h[idx] = h[idx].wrapping_mul(0x100000001b3);
+        h[idx] ^= byte as u64;
+        h[(idx + 1) % 4] = h[(idx + 1) % 4].wrapping_add(h[idx].rotate_left(17));
+    }
+    
+    for _ in 0..8 {
+        for i in 0..4 {
+            h[i] = h[i].wrapping_mul(0x100000001b3);
+            h[(i + 1) % 4] ^= h[i].rotate_right(23);
+        }
+    }
+    
+    let mut result = Vec::with_capacity(32);
+    for val in h.iter() {
+        result.extend_from_slice(&val.to_le_bytes());
+    }
+    result
 }
 
-/// Full gift code structure (FIG. 17)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GiftCode {
-    /// Storage index portion (a) - used to locate hash in private contract
-    pub index: String,
-    /// Redeemable portion (b) - validated against stored hash
-    pub code: String,
-    /// Optional dashes for readability (d)
-    pub formatted: Option<String>,
+/// Hash with salt
+fn hash_with_salt(data: &[u8], salt: &[u8]) -> Vec<u8> {
+    let mut input = Vec::with_capacity(data.len() + salt.len());
+    input.extend_from_slice(salt);
+    input.extend_from_slice(data);
+    hash_256(&input)
 }
 
-impl GiftCode {
-    /// Format code with dashes for display (XXXX-XXXX-XXXX-XXXX)
-    pub fn format_for_display(&self) -> String {
-        let full = format!("{}{}", self.index, self.code);
-        let chars: Vec<char> = full.chars().collect();
-        let mut result = String::new();
-        for (i, c) in chars.iter().enumerate() {
-            if i > 0 && i % 4 == 0 {
-                result.push('-');
+/// Generate deterministic random bytes
+fn generate_random(state: &mut ModuleState, len: usize) -> Vec<u8> {
+    state.nonce += 1;
+    let mut input = state.random_seed.clone();
+    input.extend_from_slice(&state.nonce.to_le_bytes());
+    
+    let mut result = Vec::with_capacity(len);
+    let mut counter = 0u64;
+    
+    while result.len() < len {
+        input.extend_from_slice(&counter.to_le_bytes());
+        let hash = hash_256(&input);
+        for &b in hash.iter() {
+            if result.len() >= len {
+                break;
             }
-            result.push(*c);
+            result.push(b);
         }
-        result
+        counter += 1;
     }
     
-    /// Parse from formatted string
-    pub fn from_formatted(formatted: &str) -> Option<Self> {
-        let clean: String = formatted.chars().filter(|c| c.is_alphanumeric()).collect();
-        if clean.len() < 8 {
-            return None;
+    result.truncate(len);
+    result
+}
+
+// ============================================================================
+// JSON Helpers
+// ============================================================================
+
+fn json_get_string<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let search = format!("\"{}\"", key);
+    let start = json.find(&search)?;
+    let rest = &json[start + search.len()..];
+    let colon = rest.find(':')?;
+    let after_colon = rest[colon + 1..].trim_start();
+    
+    if after_colon.starts_with('"') {
+        let content = &after_colon[1..];
+        let mut end = 0;
+        let chars: Vec<char> = content.chars().collect();
+        while end < chars.len() {
+            if chars[end] == '"' && (end == 0 || chars[end - 1] != '\\') {
+                break;
+            }
+            end += 1;
         }
-        // First 4 chars are index, rest is code
-        let (index, code) = clean.split_at(4);
-        Some(GiftCode {
-            index: index.to_string(),
-            code: code.to_string(),
-            formatted: Some(formatted.to_string()),
-        })
+        Some(&content[..end])
+    } else {
+        None
     }
 }
 
-// ============================================================================
-// Request/Response Types
-// ============================================================================
-
-/// Generate new redeemable code (FIG. 3)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GenerateCodeRequest {
-    /// Manager address (who can manage this code)
-    pub manager_address: String,
-    /// Optional content to assign immediately
-    pub content: Option<RedeemableContent>,
-    /// Initial status (default: Frozen)
-    #[serde(default)]
-    pub initial_status: Option<CodeStatus>,
-    /// Optional metadata
-    #[serde(default)]
-    pub metadata: BTreeMap<String, String>,
-    /// Number of codes to generate (batch)
-    #[serde(default = "default_one")]
-    pub count: u32,
-}
-
-fn default_one() -> u32 { 1 }
-
-/// Generated code response
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GeneratedCode {
-    /// The full gift code (index + code)
-    pub gift_code: GiftCode,
-    /// Unique identifier for management
-    pub uid: String,
-    /// Formatted for display/printing
-    pub formatted_code: String,
-    /// QR code data URL (if requested)
-    pub qr_code: Option<String>,
-}
-
-/// Redeem code request (FIG. 1 step 20-22)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RedeemCodeRequest {
-    /// The gift code (can be formatted with dashes)
-    pub code: String,
-    /// Redeemer's wallet address
-    pub redeemer_address: String,
-    /// Optional: specific content variant to redeem
-    pub content_variant: Option<String>,
-}
-
-/// Redemption result
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RedemptionResult {
-    pub success: bool,
-    pub uid: String,
-    pub content: Option<RedeemableContent>,
-    pub message: String,
-    /// Transaction hash if blockchain write occurred
-    pub tx_hash: Option<String>,
-}
-
-/// Update code status (FIG. 15)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateStatusRequest {
-    /// Unique identifier
-    pub uid: String,
-    /// New status
-    pub status: CodeStatus,
-    /// Manager signature/proof
-    pub manager_signature: Option<String>,
-}
-
-/// Update code content (FIG. 16)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateContentRequest {
-    /// Unique identifier
-    pub uid: String,
-    /// New content assignment
-    pub content: RedeemableContent,
-    /// Manager signature/proof
-    pub manager_signature: Option<String>,
-}
-
-/// Query code status (FIG. 14)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QueryStatusRequest {
-    /// Unique identifier
-    pub uid: String,
-}
-
-/// Report lost/stolen card (FIG. 6)
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReportLostRequest {
-    /// Unique identifier of the lost code
-    pub uid: String,
-    /// Owner's proof of ownership
-    pub ownership_proof: String,
-    /// Reason for report
-    pub reason: Option<String>,
-}
-
-/// Batch code operation
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchOperation {
-    /// UIDs to operate on
-    pub uids: Vec<String>,
-    /// Operation type
-    pub operation: String, // "freeze", "unfreeze", "revoke"
-    /// Manager signature
-    pub manager_signature: Option<String>,
-}
-
-/// Code listing/search request
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ListCodesRequest {
-    /// Filter by manager address
-    pub manager_address: Option<String>,
-    /// Filter by status
-    pub status: Option<CodeStatus>,
-    /// Filter by content type
-    pub content_type: Option<String>,
-    /// Pagination offset
-    #[serde(default)]
-    pub offset: u32,
-    /// Pagination limit
-    #[serde(default = "default_limit")]
-    pub limit: u32,
-}
-
-fn default_limit() -> u32 { 50 }
-
-// ============================================================================
-// Host Call Types
-// ============================================================================
-
-/// Host call for runtime to execute
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum HostCall {
-    /// Store entry in private contract (TEE-secured)
-    StorePrivate {
-        entry: PrivateCodeEntry,
-    },
-    /// Update entry in private contract
-    UpdatePrivate {
-        storage_index: String,
-        updates: BTreeMap<String, String>,
-    },
-    /// Query private contract
-    QueryPrivate {
-        storage_index: String,
-    },
-    /// Store/update entry in public contract (on-chain)
-    StorePublic {
-        entry: PublicCodeEntry,
-    },
-    /// Update public contract status
-    UpdatePublicStatus {
-        uid: String,
-        status: CodeStatus,
-    },
-    /// Query public contract
-    QueryPublic {
-        uid: String,
-    },
-    /// List entries from public contract
-    ListPublic {
-        filter: ListCodesRequest,
-    },
-    /// Generate random bytes (QRNG)
-    GenerateRandom {
-        length: u32,
-    },
-    /// Hash data with salt
-    HashWithSalt {
-        data: String,
-        salt: String,
-    },
-    /// Blockchain transaction
-    SubmitTransaction {
-        tx_type: String,
-        payload: String,
-    },
-    /// External API call (for experiences)
-    ExternalApi {
-        endpoint: String,
-        method: String,
-        body: Option<String>,
-    },
-}
-
-// ============================================================================
-// Module Info & Entry Points
-// ============================================================================
-
-#[derive(Serialize)]
-struct ModuleInfo {
-    module: &'static str,
-    version: &'static str,
-    status: &'static str,
-    description: &'static str,
-    patent: &'static str,
-    capabilities: Vec<&'static str>,
-}
-
-#[no_mangle]
-pub extern "C" fn get_info(_input_ptr: i32, _input_len: i32) -> i32 {
-    let info = ModuleInfo {
-        module: "redeemable_codes",
-        version: "1.0.0",
-        status: "operational",
-        description: "On-Chain Managed Redeemable Gift Codes - Dual smart contract system per US Patent App 20250139608",
-        patent: "US 20250139608 - Card System Utilizing On-Chain Managed Redeemable Gift Code",
-        capabilities: vec![
-            // Code Generation (FIG. 3)
-            "generate_code",
-            "generate_batch",
-            // Code Redemption (FIG. 1, 7, 8)
-            "redeem_code",
-            "validate_code",
-            // Status Management (FIG. 15)
-            "freeze_code",
-            "unfreeze_code",
-            "revoke_code",
-            "get_status",
-            // Content Management (FIG. 16)
-            "assign_content",
-            "update_content",
-            // Query Operations (FIG. 14)
-            "list_codes",
-            "search_codes",
-            "get_code_details",
-            // Card Management
-            "report_lost",
-            "transfer_ownership",
-            // Batch Operations
-            "batch_freeze",
-            "batch_unfreeze",
-            "batch_assign",
-            // Validator Integration
-            "redeem_for_validator",
-            // Statistics
-            "get_stats",
-            "get_redemption_history",
-        ],
-    };
+fn json_get_int(json: &str, key: &str) -> Option<i64> {
+    let search = format!("\"{}\"", key);
+    let start = json.find(&search)?;
+    let rest = &json[start + search.len()..];
+    let colon = rest.find(':')?;
+    let after_colon = rest[colon + 1..].trim_start();
     
-    let json = serde_json::to_string(&info).unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());
-    set_output(json.as_bytes());
-    0
-}
-
-#[derive(Deserialize)]
-struct HandleRequest {
-    operation: String,
-    params: Option<serde_json::Value>,
-}
-
-#[no_mangle]
-pub extern "C" fn handle_request(input_ptr: i32, input_len: i32) -> i32 {
-    let input = read_input(input_ptr, input_len);
-    
-    let request: HandleRequest = match serde_json::from_slice(&input) {
-        Ok(r) => r,
-        Err(e) => {
-            let error = format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e);
-            set_output(error.as_bytes());
-            return 1;
+    let mut num_str = String::new();
+    for c in after_colon.chars() {
+        if c.is_ascii_digit() || c == '-' {
+            num_str.push(c);
+        } else if !num_str.is_empty() {
+            break;
         }
-    };
+    }
     
-    let params = request.params.unwrap_or(serde_json::json!({}));
+    num_str.parse().ok()
+}
+
+fn escape_json_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        hex.push(HEX[(b >> 4) as usize] as char);
+        hex.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    hex
+}
+
+fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
     
-    let result = match request.operation.as_str() {
-        // === CODE GENERATION ===
-        "generate_code" | "generate" => handle_generate_code(&params),
-        "generate_batch" | "batch_generate" => handle_generate_batch(&params),
-        
-        // === CODE REDEMPTION ===
-        "redeem_code" | "redeem" => handle_redeem_code(&params),
-        "validate_code" | "validate" => handle_validate_code(&params),
-        
-        // === STATUS MANAGEMENT ===
-        "freeze_code" | "freeze" => handle_freeze_code(&params),
-        "unfreeze_code" | "unfreeze" | "activate" => handle_unfreeze_code(&params),
-        "revoke_code" | "revoke" => handle_revoke_code(&params),
-        "get_status" | "status" => handle_get_status(&params),
-        "update_status" => handle_update_status(&params),
-        
-        // === CONTENT MANAGEMENT ===
-        "assign_content" | "assign" => handle_assign_content(&params),
-        "update_content" => handle_update_content(&params),
-        
-        // === QUERY OPERATIONS ===
-        "list_codes" | "list" => handle_list_codes(&params),
-        "search_codes" | "search" => handle_search_codes(&params),
-        "get_code_details" | "details" => handle_get_details(&params),
-        
-        // === CARD MANAGEMENT ===
-        "report_lost" | "lost" => handle_report_lost(&params),
-        "transfer_ownership" | "transfer" => handle_transfer(&params),
-        
-        // === BATCH OPERATIONS ===
-        "batch_freeze" => handle_batch_operation(&params, CodeStatus::Frozen),
-        "batch_unfreeze" => handle_batch_operation(&params, CodeStatus::Active),
-        "batch_assign" => handle_batch_assign(&params),
-        
-        // === VALIDATOR INTEGRATION ===
-        "redeem_for_validator" | "validator_redeem" => handle_validator_redeem(&params),
-        
-        // === STATISTICS ===
-        "get_stats" | "stats" => handle_get_stats(&params),
-        "get_redemption_history" | "history" => handle_get_history(&params),
-        
-        _ => format!(r#"{{"success":false,"error":"Unknown operation: {}"}}"#, request.operation),
-    };
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let chars: Vec<char> = hex.chars().collect();
     
-    set_output(result.as_bytes());
-    0
+    for chunk in chars.chunks(2) {
+        let high = char_to_nibble(chunk[0])?;
+        let low = char_to_nibble(chunk[1])?;
+        bytes.push((high << 4) | low);
+    }
+    
+    Some(bytes)
+}
+
+fn char_to_nibble(c: char) -> Option<u8> {
+    match c {
+        '0'..='9' => Some(c as u8 - b'0'),
+        'a'..='f' => Some(c as u8 - b'a' + 10),
+        'A'..='F' => Some(c as u8 - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Convert bytes to base32 for readable codes
+fn bytes_to_base32(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No I, O, 0, 1
+    let mut result = String::new();
+    let mut bits = 0u64;
+    let mut num_bits = 0;
+    
+    for &byte in bytes {
+        bits = (bits << 8) | byte as u64;
+        num_bits += 8;
+        
+        while num_bits >= 5 {
+            num_bits -= 5;
+            let idx = ((bits >> num_bits) & 0x1F) as usize;
+            result.push(ALPHABET[idx] as char);
+        }
+    }
+    
+    if num_bits > 0 {
+        let idx = ((bits << (5 - num_bits)) & 0x1F) as usize;
+        result.push(ALPHABET[idx] as char);
+    }
+    
+    result
+}
+
+/// Format code with dashes (XXXX-XXXX-XXXX-XXXX)
+fn format_code(code: &str) -> String {
+    let chars: Vec<char> = code.chars().collect();
+    let mut result = String::new();
+    for (i, c) in chars.iter().enumerate() {
+        if i > 0 && i % 4 == 0 {
+            result.push('-');
+        }
+        result.push(*c);
+    }
+    result
+}
+
+/// Parse code removing dashes
+fn parse_code(formatted: &str) -> String {
+    formatted.chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
 // ============================================================================
-// Handler Implementations
+// API Handlers
 // ============================================================================
 
-/// Generate a new redeemable code (FIG. 3 subprocess)
-fn handle_generate_code(params: &serde_json::Value) -> String {
-    let req: GenerateCodeRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        Err(e) => return format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e),
+fn handle_generate_code(json: &str) -> String {
+    let manager = match json_get_string(json, "managerAddress") {
+        Some(m) if !m.is_empty() => m,
+        _ => return r#"{"error":"managerAddress is required"}"#.to_string(),
     };
     
-    if req.manager_address.is_empty() {
-        return r#"{"success":false,"error":"Manager address is required"}"#.to_string();
+    let state = get_state();
+    
+    // Check if we need random seed
+    if state.random_seed.is_empty() {
+        return r#"{"host_call":"get_random_seed","length":64}"#.to_string();
     }
     
-    // Request random bytes from QRNG (step 40-42)
-    let host_call = HostCall::GenerateRandom { length: 32 };
+    state.tick += 1;
     
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "next_step": "create_code_entry",
-        "params": {
-            "manager_address": req.manager_address,
-            "content": req.content,
-            "initial_status": req.initial_status.unwrap_or(CodeStatus::Frozen),
-            "metadata": req.metadata
-        },
-        "message": "Generating cryptographically secure code..."
-    })).unwrap_or_default()
-}
-
-/// Generate batch of codes
-fn handle_generate_batch(params: &serde_json::Value) -> String {
-    let req: GenerateCodeRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        Err(e) => return format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e),
+    // Generate code components
+    let index_bytes = generate_random(state, 4);
+    let code_bytes = generate_random(state, 12);
+    let salt = generate_random(state, 16);
+    
+    // Convert to readable format
+    let storage_index = bytes_to_base32(&index_bytes);
+    let code_portion = bytes_to_base32(&code_bytes);
+    let full_code = format!("{}{}", storage_index, code_portion);
+    
+    // Hash the code portion with salt
+    let code_hash = hash_with_salt(code_portion.as_bytes(), &salt);
+    
+    // Generate UID
+    let uid = state.next_uid(manager);
+    
+    // Create public entry
+    let public_entry = PublicEntry {
+        uid: uid.clone(),
+        status: CodeStatus::Frozen, // Default frozen per patent
+        content: None,
+        manager_address: manager.to_string(),
+        created_at: state.tick,
+        updated_at: state.tick,
+        metadata: BTreeMap::new(),
     };
     
-    if req.count == 0 || req.count > 1000 {
-        return r#"{"success":false,"error":"Count must be between 1 and 1000"}"#.to_string();
+    // Create private entry
+    let private_entry = PrivateEntry {
+        storage_index: storage_index.clone(),
+        code_hash,
+        salt,
+        uid: uid.clone(),
+        redemption_count: 0,
+        max_redemptions: 1,
+        redeemer: None,
+        redeemed_at: None,
+    };
+    
+    // Store entries
+    state.public_registry.insert(uid.clone(), public_entry);
+    state.private_registry.insert(storage_index.clone(), private_entry);
+    state.stats.total_generated += 1;
+    state.stats.total_frozen += 1;
+    
+    let formatted = format_code(&full_code);
+    
+    format!(
+        r#"{{
+            "success": true,
+            "uid": "{}",
+            "code": "{}",
+            "formattedCode": "{}",
+            "storageIndex": "{}",
+            "status": "frozen",
+            "message": "Code generated. Activate before distribution."
+        }}"#,
+        escape_json_string(&uid),
+        full_code,
+        formatted,
+        storage_index
+    )
+}
+
+fn handle_redeem_code(json: &str) -> String {
+    let code_input = match json_get_string(json, "code") {
+        Some(c) => parse_code(c),
+        None => return r#"{"error":"code is required"}"#.to_string(),
+    };
+    
+    let redeemer = match json_get_string(json, "redeemerAddress") {
+        Some(r) if !r.is_empty() => r,
+        _ => return r#"{"error":"redeemerAddress is required"}"#.to_string(),
+    };
+    
+    if code_input.len() < 8 {
+        return r#"{"error":"code too short"}"#.to_string();
     }
     
-    let host_call = HostCall::GenerateRandom { length: 32 * req.count };
+    // Split into index and code portion
+    let storage_index = &code_input[..7]; // First 7 chars
+    let code_portion = &code_input[7..];  // Rest
     
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "batch_size": req.count,
-        "message": format!("Generating {} codes...", req.count)
-    })).unwrap_or_default()
-}
-
-/// Redeem a code (FIG. 1 steps 20-38, FIG. 7/8)
-fn handle_redeem_code(params: &serde_json::Value) -> String {
-    let req: RedeemCodeRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        Err(e) => return format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e),
+    let state = get_state();
+    state.tick += 1;
+    
+    // Look up private entry
+    let private_entry = match state.private_registry.get(storage_index) {
+        Some(e) => e.clone(),
+        None => return r#"{"error":"invalid code"}"#.to_string(),
     };
     
-    // Parse and validate code format
-    let gift_code = match GiftCode::from_formatted(&req.code) {
-        Some(gc) => gc,
-        None => return r#"{"success":false,"error":"Invalid code format"}"#.to_string(),
-    };
-    
-    if req.redeemer_address.is_empty() {
-        return r#"{"success":false,"error":"Redeemer address is required"}"#.to_string();
+    // Verify hash
+    let computed_hash = hash_with_salt(code_portion.as_bytes(), &private_entry.salt);
+    if computed_hash != private_entry.code_hash {
+        return r#"{"error":"invalid code"}"#.to_string();
     }
     
-    // Step 1: Query private contract to validate code (FIG. 1 step 24)
-    let host_call = HostCall::QueryPrivate {
-        storage_index: gift_code.index.clone(),
+    // Check public status
+    let public_entry = match state.public_registry.get(&private_entry.uid) {
+        Some(e) => e.clone(),
+        None => return r#"{"error":"code entry not found"}"#.to_string(),
     };
     
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "next_step": "validate_and_check_public",
-        "params": {
-            "code_portion": gift_code.code,
-            "redeemer_address": req.redeemer_address,
-            "content_variant": req.content_variant
-        },
-        "message": "Validating code in secure enclave..."
-    })).unwrap_or_default()
-}
-
-/// Validate code without redeeming
-fn handle_validate_code(params: &serde_json::Value) -> String {
-    let code = params.get("code").and_then(|v| v.as_str()).unwrap_or("");
-    
-    let gift_code = match GiftCode::from_formatted(code) {
-        Some(gc) => gc,
-        None => return r#"{"success":false,"error":"Invalid code format"}"#.to_string(),
-    };
-    
-    let host_call = HostCall::QueryPrivate {
-        storage_index: gift_code.index.clone(),
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "validate_only": true,
-        "message": "Checking code validity..."
-    })).unwrap_or_default()
-}
-
-/// Freeze a code (FIG. 15 - set to frozen)
-fn handle_freeze_code(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-    
-    if uid.is_empty() {
-        return r#"{"success":false,"error":"UID is required"}"#.to_string();
+    match public_entry.status {
+        CodeStatus::Frozen => return r#"{"error":"code is frozen - not yet activated"}"#.to_string(),
+        CodeStatus::Redeemed => return r#"{"error":"code already redeemed"}"#.to_string(),
+        CodeStatus::Revoked => return r#"{"error":"code has been revoked"}"#.to_string(),
+        CodeStatus::Active => {}
     }
     
-    let host_call = HostCall::UpdatePublicStatus {
-        uid: uid.to_string(),
-        status: CodeStatus::Frozen,
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "uid": uid,
-        "new_status": "frozen",
-        "message": "Freezing code - redemption disabled"
-    })).unwrap_or_default()
-}
-
-/// Unfreeze/activate a code (FIG. 15 - set to active)
-fn handle_unfreeze_code(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-    
-    if uid.is_empty() {
-        return r#"{"success":false,"error":"UID is required"}"#.to_string();
+    // Check redemption count
+    if private_entry.redemption_count >= private_entry.max_redemptions {
+        return r#"{"error":"max redemptions reached"}"#.to_string();
     }
     
-    let host_call = HostCall::UpdatePublicStatus {
-        uid: uid.to_string(),
-        status: CodeStatus::Active,
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "uid": uid,
-        "new_status": "active",
-        "message": "Activating code - redemption enabled"
-    })).unwrap_or_default()
-}
-
-/// Revoke a code permanently
-fn handle_revoke_code(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-    
-    if uid.is_empty() {
-        return r#"{"success":false,"error":"UID is required"}"#.to_string();
+    // Update private entry
+    if let Some(pe) = state.private_registry.get_mut(storage_index) {
+        pe.redemption_count += 1;
+        pe.redeemer = Some(redeemer.to_string());
+        pe.redeemed_at = Some(state.tick);
     }
     
-    let host_call = HostCall::UpdatePublicStatus {
-        uid: uid.to_string(),
-        status: CodeStatus::Revoked,
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "uid": uid,
-        "new_status": "revoked",
-        "message": "Code permanently revoked"
-    })).unwrap_or_default()
-}
-
-/// Get code status (FIG. 14)
-fn handle_get_status(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-    
-    if uid.is_empty() {
-        return r#"{"success":false,"error":"UID is required"}"#.to_string();
+    // Update public entry
+    if let Some(pub_e) = state.public_registry.get_mut(&private_entry.uid) {
+        pub_e.status = CodeStatus::Redeemed;
+        pub_e.updated_at = state.tick;
     }
     
-    let host_call = HostCall::QueryPublic {
-        uid: uid.to_string(),
+    state.stats.total_redeemed += 1;
+    state.stats.total_active -= 1;
+    
+    // Format content for response
+    let content_json = match &public_entry.content {
+        Some(RedeemableContent::ValidatorRegistration { node_id, stake_amount }) => {
+            format!(
+                r#"{{"type":"validator_registration","nodeId":{},"stakeAmount":"{}"}}"#,
+                node_id.as_ref().map(|n| format!("\"{}\"", n)).unwrap_or("null".to_string()),
+                stake_amount
+            )
+        }
+        Some(RedeemableContent::Token { token_type, contract_address, amount }) => {
+            format!(
+                r#"{{"type":"token","tokenType":"{}","contractAddress":"{}","amount":"{}"}}"#,
+                token_type, contract_address, amount
+            )
+        }
+        Some(RedeemableContent::WalletAccess { wallet_address }) => {
+            format!(r#"{{"type":"wallet_access","walletAddress":"{}"}}"#, wallet_address)
+        }
+        Some(RedeemableContent::Experience { api_endpoint, experience_type }) => {
+            format!(
+                r#"{{"type":"experience","apiEndpoint":"{}","experienceType":"{}"}}"#,
+                escape_json_string(api_endpoint),
+                escape_json_string(experience_type)
+            )
+        }
+        Some(RedeemableContent::Custom { content_type, payload }) => {
+            format!(
+                r#"{{"type":"custom","contentType":"{}","payload":"{}"}}"#,
+                escape_json_string(content_type),
+                escape_json_string(payload)
+            )
+        }
+        None => "null".to_string(),
     };
     
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "message": "Querying public contract status..."
-    })).unwrap_or_default()
-}
-
-/// Update code status
-fn handle_update_status(params: &serde_json::Value) -> String {
-    let req: UpdateStatusRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        Err(e) => return format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e),
-    };
+    // If there's content that requires blockchain transaction, request host call
+    let needs_blockchain = matches!(
+        &public_entry.content,
+        Some(RedeemableContent::ValidatorRegistration { .. }) |
+        Some(RedeemableContent::Token { .. })
+    );
     
-    let host_call = HostCall::UpdatePublicStatus {
-        uid: req.uid.clone(),
-        status: req.status,
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "uid": req.uid,
-        "new_status": req.status,
-        "message": "Updating code status..."
-    })).unwrap_or_default()
-}
-
-/// Assign content to code (FIG. 16)
-fn handle_assign_content(params: &serde_json::Value) -> String {
-    let req: UpdateContentRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        Err(e) => return format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e),
-    };
-    
-    // First query existing entry, then update with content
-    let host_call = HostCall::QueryPublic {
-        uid: req.uid.clone(),
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "next_step": "update_with_content",
-        "content": req.content,
-        "message": "Assigning redeemable content..."
-    })).unwrap_or_default()
-}
-
-/// Update existing content assignment
-fn handle_update_content(params: &serde_json::Value) -> String {
-    handle_assign_content(params)
-}
-
-/// List codes with filters
-fn handle_list_codes(params: &serde_json::Value) -> String {
-    let filter: ListCodesRequest = serde_json::from_value(params.clone()).unwrap_or(ListCodesRequest {
-        manager_address: None,
-        status: None,
-        content_type: None,
-        offset: 0,
-        limit: 50,
-    });
-    
-    let host_call = HostCall::ListPublic { filter };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "message": "Listing codes..."
-    })).unwrap_or_default()
-}
-
-/// Search codes
-fn handle_search_codes(params: &serde_json::Value) -> String {
-    handle_list_codes(params)
-}
-
-/// Get detailed code information
-fn handle_get_details(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-    
-    if uid.is_empty() {
-        return r#"{"success":false,"error":"UID is required"}"#.to_string();
-    }
-    
-    let host_call = HostCall::QueryPublic {
-        uid: uid.to_string(),
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "include_metadata": true,
-        "message": "Fetching code details..."
-    })).unwrap_or_default()
-}
-
-/// Report lost/stolen card (FIG. 6)
-fn handle_report_lost(params: &serde_json::Value) -> String {
-    let req: ReportLostRequest = match serde_json::from_value(params.clone()) {
-        Ok(r) => r,
-        Err(e) => return format!(r#"{{"success":false,"error":"Invalid request: {}"}}"#, e),
-    };
-    
-    // Step 1: Verify ownership (step 86)
-    // Step 2: Freeze the code (step 88)
-    let host_call = HostCall::UpdatePublicStatus {
-        uid: req.uid.clone(),
-        status: CodeStatus::Frozen,
-    };
-    
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "uid": req.uid,
-        "requires_ownership_verification": true,
-        "ownership_proof": req.ownership_proof,
-        "reason": req.reason,
-        "message": "Processing lost card report - code will be frozen"
-    })).unwrap_or_default()
-}
-
-/// Transfer ownership
-fn handle_transfer(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-    let new_owner = params.get("newOwner").and_then(|v| v.as_str()).unwrap_or("");
-    
-    if uid.is_empty() || new_owner.is_empty() {
-        return r#"{"success":false,"error":"UID and newOwner are required"}"#.to_string();
-    }
-    
-    serde_json::to_string(&serde_json::json!({
-        "success": true,
-        "pending": true,
-        "uid": uid,
-        "new_owner": new_owner,
-        "message": "Transferring code ownership..."
-    })).unwrap_or_default()
-}
-
-/// Batch operation (freeze/unfreeze multiple codes)
-fn handle_batch_operation(params: &serde_json::Value, status: CodeStatus) -> String {
-    let uids: Vec<String> = params.get("uids")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
-    
-    if uids.is_empty() {
-        return r#"{"success":false,"error":"UIDs array is required"}"#.to_string();
-    }
-    
-    serde_json::to_string(&serde_json::json!({
-        "success": true,
-        "pending": true,
-        "batch_operation": true,
-        "uids": uids,
-        "target_status": status,
-        "message": format!("Processing batch {} operation for {} codes...", 
-            match status { CodeStatus::Frozen => "freeze", CodeStatus::Active => "unfreeze", _ => "update" },
-            uids.len()
+    if needs_blockchain {
+        format!(
+            r#"{{
+                "success": true,
+                "uid": "{}",
+                "redeemer": "{}",
+                "content": {},
+                "host_call": "submit_redemption_tx",
+                "message": "Redemption validated. Submitting blockchain transaction..."
+            }}"#,
+            escape_json_string(&private_entry.uid),
+            escape_json_string(redeemer),
+            content_json
         )
-    })).unwrap_or_default()
+    } else {
+        format!(
+            r#"{{
+                "success": true,
+                "uid": "{}",
+                "redeemer": "{}",
+                "content": {},
+                "message": "Code redeemed successfully"
+            }}"#,
+            escape_json_string(&private_entry.uid),
+            escape_json_string(redeemer),
+            content_json
+        )
+    }
 }
 
-/// Batch assign content
-fn handle_batch_assign(params: &serde_json::Value) -> String {
-    let uids: Vec<String> = params.get("uids")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
+fn handle_validate_code(json: &str) -> String {
+    let code_input = match json_get_string(json, "code") {
+        Some(c) => parse_code(c),
+        None => return r#"{"error":"code is required"}"#.to_string(),
+    };
     
-    let content: Option<RedeemableContent> = params.get("content")
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
-    
-    if uids.is_empty() {
-        return r#"{"success":false,"error":"UIDs array is required"}"#.to_string();
+    if code_input.len() < 8 {
+        return r#"{"valid":false,"error":"code too short"}"#.to_string();
     }
     
-    serde_json::to_string(&serde_json::json!({
-        "success": true,
-        "pending": true,
-        "batch_operation": true,
-        "uids": uids,
-        "content": content,
-        "message": format!("Assigning content to {} codes...", uids.len())
-    })).unwrap_or_default()
-}
-
-/// Redeem code for validator registration
-fn handle_validator_redeem(params: &serde_json::Value) -> String {
-    let code = params.get("code").and_then(|v| v.as_str()).unwrap_or("");
-    let node_id = params.get("nodeId").and_then(|v| v.as_str());
-    let redeemer = params.get("redeemerAddress").and_then(|v| v.as_str()).unwrap_or("");
+    let storage_index = &code_input[..7];
+    let code_portion = &code_input[7..];
     
-    let gift_code = match GiftCode::from_formatted(code) {
-        Some(gc) => gc,
-        None => return r#"{"success":false,"error":"Invalid code format"}"#.to_string(),
+    let state = get_state();
+    
+    let private_entry = match state.private_registry.get(storage_index) {
+        Some(e) => e,
+        None => return r#"{"valid":false,"error":"code not found"}"#.to_string(),
     };
     
-    let host_call = HostCall::QueryPrivate {
-        storage_index: gift_code.index.clone(),
+    let computed_hash = hash_with_salt(code_portion.as_bytes(), &private_entry.salt);
+    let valid = computed_hash == private_entry.code_hash;
+    
+    if !valid {
+        return r#"{"valid":false,"error":"invalid code"}"#.to_string();
+    }
+    
+    let public_entry = state.public_registry.get(&private_entry.uid);
+    let status = public_entry.map(|e| e.status.as_str()).unwrap_or("unknown");
+    
+    format!(
+        r#"{{"valid":true,"uid":"{}","status":"{}","canRedeem":{}}}"#,
+        escape_json_string(&private_entry.uid),
+        status,
+        status == "active" && private_entry.redemption_count < private_entry.max_redemptions
+    )
+}
+
+fn handle_freeze_code(json: &str) -> String {
+    let uid = match json_get_string(json, "uid") {
+        Some(u) => u,
+        None => return r#"{"error":"uid is required"}"#.to_string(),
     };
     
-    serde_json::to_string(&serde_json::json!({
-        "host_call": host_call,
-        "success": true,
-        "pending": true,
-        "redemption_type": "validator_registration",
-        "next_step": "validate_and_register_validator",
-        "params": {
-            "code_portion": gift_code.code,
-            "node_id": node_id,
-            "redeemer_address": redeemer
-        },
-        "message": "Processing validator registration redemption..."
-    })).unwrap_or_default()
+    let state = get_state();
+    state.tick += 1;
+    
+    if let Some(entry) = state.public_registry.get_mut(uid) {
+        if entry.status == CodeStatus::Active {
+            state.stats.total_active -= 1;
+            state.stats.total_frozen += 1;
+        }
+        entry.status = CodeStatus::Frozen;
+        entry.updated_at = state.tick;
+        
+        format!(
+            r#"{{"success":true,"uid":"{}","status":"frozen","message":"Code frozen"}}"#,
+            escape_json_string(uid)
+        )
+    } else {
+        format!(r#"{{"error":"code not found: {}"}}"#, escape_json_string(uid))
+    }
 }
 
-/// Get statistics
-fn handle_get_stats(params: &serde_json::Value) -> String {
-    let manager_address = params.get("managerAddress").and_then(|v| v.as_str());
+fn handle_activate_code(json: &str) -> String {
+    let uid = match json_get_string(json, "uid") {
+        Some(u) => u,
+        None => return r#"{"error":"uid is required"}"#.to_string(),
+    };
     
-    serde_json::to_string(&serde_json::json!({
-        "success": true,
-        "pending": true,
-        "manager_address": manager_address,
-        "message": "Fetching statistics..."
-    })).unwrap_or_default()
+    let state = get_state();
+    state.tick += 1;
+    
+    if let Some(entry) = state.public_registry.get_mut(uid) {
+        if entry.status == CodeStatus::Redeemed {
+            return r#"{"error":"cannot activate redeemed code"}"#.to_string();
+        }
+        if entry.status == CodeStatus::Revoked {
+            return r#"{"error":"cannot activate revoked code"}"#.to_string();
+        }
+        
+        if entry.status == CodeStatus::Frozen {
+            state.stats.total_frozen -= 1;
+            state.stats.total_active += 1;
+        }
+        entry.status = CodeStatus::Active;
+        entry.updated_at = state.tick;
+        
+        format!(
+            r#"{{"success":true,"uid":"{}","status":"active","message":"Code activated"}}"#,
+            escape_json_string(uid)
+        )
+    } else {
+        format!(r#"{{"error":"code not found: {}"}}"#, escape_json_string(uid))
+    }
 }
 
-/// Get redemption history
-fn handle_get_history(params: &serde_json::Value) -> String {
-    let uid = params.get("uid").and_then(|v| v.as_str());
-    let manager_address = params.get("managerAddress").and_then(|v| v.as_str());
+fn handle_revoke_code(json: &str) -> String {
+    let uid = match json_get_string(json, "uid") {
+        Some(u) => u,
+        None => return r#"{"error":"uid is required"}"#.to_string(),
+    };
     
-    serde_json::to_string(&serde_json::json!({
-        "success": true,
-        "pending": true,
-        "uid": uid,
-        "manager_address": manager_address,
-        "message": "Fetching redemption history..."
-    })).unwrap_or_default()
+    let state = get_state();
+    state.tick += 1;
+    
+    if let Some(entry) = state.public_registry.get_mut(uid) {
+        match entry.status {
+            CodeStatus::Frozen => state.stats.total_frozen -= 1,
+            CodeStatus::Active => state.stats.total_active -= 1,
+            _ => {}
+        }
+        entry.status = CodeStatus::Revoked;
+        entry.updated_at = state.tick;
+        state.stats.total_revoked += 1;
+        
+        format!(
+            r#"{{"success":true,"uid":"{}","status":"revoked","message":"Code permanently revoked"}}"#,
+            escape_json_string(uid)
+        )
+    } else {
+        format!(r#"{{"error":"code not found: {}"}}"#, escape_json_string(uid))
+    }
+}
+
+fn handle_get_status(json: &str) -> String {
+    let uid = match json_get_string(json, "uid") {
+        Some(u) => u,
+        None => return r#"{"error":"uid is required"}"#.to_string(),
+    };
+    
+    let state = get_state();
+    
+    if let Some(entry) = state.public_registry.get(uid) {
+        let has_content = entry.content.is_some();
+        
+        format!(
+            r#"{{
+                "success": true,
+                "uid": "{}",
+                "status": "{}",
+                "manager": "{}",
+                "hasContent": {},
+                "createdAt": {},
+                "updatedAt": {}
+            }}"#,
+            escape_json_string(uid),
+            entry.status.as_str(),
+            escape_json_string(&entry.manager_address),
+            has_content,
+            entry.created_at,
+            entry.updated_at
+        )
+    } else {
+        format!(r#"{{"error":"code not found: {}"}}"#, escape_json_string(uid))
+    }
+}
+
+fn handle_assign_content(json: &str) -> String {
+    let uid = match json_get_string(json, "uid") {
+        Some(u) => u,
+        None => return r#"{"error":"uid is required"}"#.to_string(),
+    };
+    
+    let content_type = json_get_string(json, "contentType").unwrap_or("");
+    
+    let state = get_state();
+    state.tick += 1;
+    
+    let content = match content_type {
+        "validator_registration" => {
+            let stake = json_get_string(json, "stakeAmount").unwrap_or("0").to_string();
+            let node_id = json_get_string(json, "nodeId").map(|s| s.to_string());
+            RedeemableContent::ValidatorRegistration {
+                node_id,
+                stake_amount: stake,
+            }
+        }
+        "token" => {
+            RedeemableContent::Token {
+                token_type: json_get_string(json, "tokenType").unwrap_or("native").to_string(),
+                contract_address: json_get_string(json, "contractAddress").unwrap_or("").to_string(),
+                amount: json_get_string(json, "amount").unwrap_or("0").to_string(),
+            }
+        }
+        "wallet_access" => {
+            RedeemableContent::WalletAccess {
+                wallet_address: json_get_string(json, "walletAddress").unwrap_or("").to_string(),
+            }
+        }
+        "experience" => {
+            RedeemableContent::Experience {
+                api_endpoint: json_get_string(json, "apiEndpoint").unwrap_or("").to_string(),
+                experience_type: json_get_string(json, "experienceType").unwrap_or("").to_string(),
+            }
+        }
+        _ => {
+            RedeemableContent::Custom {
+                content_type: content_type.to_string(),
+                payload: json_get_string(json, "payload").unwrap_or("").to_string(),
+            }
+        }
+    };
+    
+    if let Some(entry) = state.public_registry.get_mut(uid) {
+        entry.content = Some(content);
+        entry.updated_at = state.tick;
+        
+        format!(
+            r#"{{"success":true,"uid":"{}","contentAssigned":true,"message":"Content assigned to code"}}"#,
+            escape_json_string(uid)
+        )
+    } else {
+        format!(r#"{{"error":"code not found: {}"}}"#, escape_json_string(uid))
+    }
+}
+
+fn handle_list_codes(json: &str) -> String {
+    let manager_filter = json_get_string(json, "managerAddress");
+    let status_filter = json_get_string(json, "status").and_then(CodeStatus::from_str);
+    let limit = json_get_int(json, "limit").unwrap_or(50) as usize;
+    let offset = json_get_int(json, "offset").unwrap_or(0) as usize;
+    
+    let state = get_state();
+    
+    let mut codes_json = String::from("[");
+    let mut count = 0;
+    let mut skipped = 0;
+    
+    for (uid, entry) in &state.public_registry {
+        // Apply filters
+        if let Some(m) = manager_filter {
+            if entry.manager_address != m {
+                continue;
+            }
+        }
+        if let Some(s) = status_filter {
+            if entry.status != s {
+                continue;
+            }
+        }
+        
+        if skipped < offset {
+            skipped += 1;
+            continue;
+        }
+        
+        if count >= limit {
+            break;
+        }
+        
+        if count > 0 {
+            codes_json.push(',');
+        }
+        
+        codes_json.push_str(&format!(
+            r#"{{"uid":"{}","status":"{}","manager":"{}","hasContent":{}}}"#,
+            escape_json_string(uid),
+            entry.status.as_str(),
+            escape_json_string(&entry.manager_address),
+            entry.content.is_some()
+        ));
+        
+        count += 1;
+    }
+    
+    codes_json.push(']');
+    
+    format!(
+        r#"{{"success":true,"codes":{},"count":{},"total":{}}}"#,
+        codes_json,
+        count,
+        state.public_registry.len()
+    )
+}
+
+fn handle_get_stats(_json: &str) -> String {
+    let state = get_state();
+    
+    format!(
+        r#"{{
+            "success": true,
+            "totalGenerated": {},
+            "totalRedeemed": {},
+            "totalFrozen": {},
+            "totalActive": {},
+            "totalRevoked": {},
+            "totalManagers": {}
+        }}"#,
+        state.stats.total_generated,
+        state.stats.total_redeemed,
+        state.stats.total_frozen,
+        state.stats.total_active,
+        state.stats.total_revoked,
+        state.uid_counters.len()
+    )
+}
+
+fn handle_set_random_seed(json: &str) -> String {
+    let seed_hex = match json_get_string(json, "seed") {
+        Some(s) => s,
+        None => return r#"{"error":"seed is required"}"#.to_string(),
+    };
+    
+    let seed = match hex_to_bytes(seed_hex) {
+        Some(s) => s,
+        None => return r#"{"error":"invalid seed hex"}"#.to_string(),
+    };
+    
+    let state = get_state();
+    state.random_seed = seed;
+    
+    r#"{"success":true,"message":"random seed initialized"}"#.to_string()
+}
+
+fn handle_module_info(_json: &str) -> String {
+    let state = get_state();
+    let heap_used = unsafe { HEAP_POS };
+    
+    format!(
+        r#"{{
+            "success": true,
+            "module": "redeemable_codes_v1",
+            "version": "2.0.0",
+            "patent": "US 20250139608",
+            "description": "Self-contained gift code system with in-module storage",
+            "totalCodes": {},
+            "heapUsed": {},
+            "capabilities": [
+                "generate_code",
+                "redeem_code",
+                "validate_code",
+                "freeze_code",
+                "activate_code",
+                "revoke_code",
+                "assign_content",
+                "list_codes",
+                "get_stats"
+            ]
+        }}"#,
+        state.public_registry.len(),
+        heap_used
+    )
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
+#[no_mangle]
+pub extern "C" fn invoke(input_ptr: *const u8, input_len: usize) -> usize {
+    let input = unsafe { core::slice::from_raw_parts(input_ptr, input_len) };
+    
+    let json_str = match core::str::from_utf8(input) {
+        Ok(s) => s,
+        Err(_) => {
+            let err = r#"{"error":"invalid UTF-8 input"}"#;
+            return write_output(err.as_bytes());
+        }
+    };
+    
+    let action = json_get_string(json_str, "action")
+        .or_else(|| json_get_string(json_str, "operation"))
+        .unwrap_or("");
+    
+    let response = match action {
+        // Code lifecycle
+        "generate" | "generate_code" => handle_generate_code(json_str),
+        "redeem" | "redeem_code" => handle_redeem_code(json_str),
+        "validate" | "validate_code" => handle_validate_code(json_str),
+        
+        // Status management
+        "freeze" | "freeze_code" => handle_freeze_code(json_str),
+        "activate" | "unfreeze" | "activate_code" => handle_activate_code(json_str),
+        "revoke" | "revoke_code" => handle_revoke_code(json_str),
+        "status" | "get_status" => handle_get_status(json_str),
+        
+        // Content
+        "assign" | "assign_content" => handle_assign_content(json_str),
+        
+        // Queries
+        "list" | "list_codes" => handle_list_codes(json_str),
+        "stats" | "get_stats" => handle_get_stats(json_str),
+        
+        // Module
+        "info" | "module_info" => handle_module_info(json_str),
+        "set_seed" | "setRandomSeed" => handle_set_random_seed(json_str),
+        
+        // Host callback
+        "hostCallback" => {
+            let callback_type = json_get_string(json_str, "callbackType").unwrap_or("");
+            match callback_type {
+                "random_seed" => handle_set_random_seed(json_str),
+                _ => r#"{"error":"unknown callback"}"#.to_string(),
+            }
+        }
+        
+        _ => format!(r#"{{"error":"unknown action: {}"}}"#, escape_json_string(action)),
+    };
+    
+    write_output(response.as_bytes())
+}
+
+fn write_output(data: &[u8]) -> usize {
+    unsafe {
+        let len = data.len().min(OUTPUT_BUFFER.len() - 4);
+        OUTPUT_BUFFER[..4].copy_from_slice(&(len as u32).to_le_bytes());
+        OUTPUT_BUFFER[4..4 + len].copy_from_slice(&data[..len]);
+        OUTPUT_BUFFER.as_ptr() as usize
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn get_output_ptr() -> *const u8 {
+    unsafe { OUTPUT_BUFFER.as_ptr() }
 }

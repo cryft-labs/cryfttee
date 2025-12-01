@@ -1,61 +1,30 @@
 {
-  "id": "cryft_ipfs",
-  "name": "CryftIPFS - Unified Storage with Validator Rewards",
-  "version": "2.0.0",
-  "description": "Decentralized IPFS storage network where validators earn CRYFT rewards for pinning incentivized content. Combines IPFS functionality with blockchain-based storage incentives.",
+  "id": "ipfs_v1",
+  "name": "CryftIPFS - Self-Contained IPFS Module",
+  "version": "3.0.0",
+  "description": "Fully self-contained IPFS-like content-addressable storage. No external daemon required - all storage happens within the WASM module. Includes validator rewards for incentivized pins.",
   "author": "Cryft Labs",
+  "selfContained": true,
   "capabilities": [
-    "node_start",
-    "node_stop",
-    "node_status",
-    "node_info",
-    "bandwidth_stats",
-    "ipfs_add",
-    "ipfs_add_dir",
-    "ipfs_cat",
-    "ipfs_get",
-    "ipfs_ls",
+    "start_node",
+    "stop_node",
+    "status",
+    "add",
+    "cat",
+    "get",
+    "stat",
+    "ls",
+    "pin",
+    "unpin",
     "pin_ls",
-    "pin_add",
-    "pin_rm",
-    "swarm_peers",
-    "swarm_connect",
-    "swarm_disconnect",
-    "bootstrap_list",
-    "bootstrap_add",
-    "bootstrap_rm",
-    "bootstrap_reset",
-    "dht_findpeer",
-    "dht_findprovs",
-    "dht_provide",
-    "key_list",
-    "key_gen",
-    "key_rm",
-    "key_rename",
-    "ipns_publish",
-    "ipns_resolve",
     "repo_stat",
     "repo_gc",
-    "block_stat",
-    "block_get",
-    "config_get",
-    "config_set",
-    "validator_status",
-    "validator_register",
-    "validator_update_config",
-    "validator_metrics",
-    "validator_activity",
-    "validator_claim_rewards",
     "validator_stats",
-    "list_proofs",
-    "claim_rewards",
     "list_incentivized",
     "incentivize",
-    "pin",
-    "network_stats",
-    "register_pin",
-    "challenge_pin",
-    "submit_proof"
+    "challenge",
+    "submit_proof",
+    "claim_rewards"
   ],
   "defaultFor": {
     "ipfs_add": true,
@@ -69,75 +38,26 @@
   },
   "hasGui": true,
   "guiPath": "gui",
-  "nativeBinary": {
-    "name": "cryft-ipfs",
-    "description": "Embedded IPFS node powered by Iroh with validator reward tracking",
-    "buildCommand": "cargo build --release --manifest-path native/Cargo.toml",
-    "platforms": {
-      "linux-x64": "native/target/release/ipfs-node",
-      "linux-arm64": "native/target/aarch64-unknown-linux-gnu/release/ipfs-node",
-      "darwin-x64": "native/target/release/ipfs-node",
-      "darwin-arm64": "native/target/aarch64-apple-darwin/release/ipfs-node",
-      "windows-x64": "native/target/release/ipfs-node.exe"
-    },
-    "args": [
-      "--api-port", "5001",
-      "--gateway-port", "8080"
-    ],
-    "env": {
-      "RUST_LOG": "info"
-    }
-  },
   "config": {
-    "api_url": {
-      "type": "string",
-      "default": "http://127.0.0.1:5001",
-      "description": "IPFS API URL"
-    },
-    "gateway_url": {
-      "type": "string",
-      "default": "http://127.0.0.1:8080",
-      "description": "IPFS Gateway URL"
-    },
-    "public_gateway": {
-      "type": "string",
-      "default": "https://ipfs.cryft.network",
-      "description": "Public gateway for shareable URLs"
-    },
     "validator_id": {
       "type": "string",
       "default": null,
-      "description": "Validator node ID for reward tracking (required for earning rewards)"
-    },
-    "rpc_url": {
-      "type": "string",
-      "default": "http://127.0.0.1:9650",
-      "description": "Cryft blockchain RPC URL for reward submission"
+      "description": "Validator node ID for reward tracking"
     },
     "max_storage_gb": {
       "type": "number",
       "default": 100,
       "description": "Maximum storage allocation in GB"
     },
-    "min_reward_rate": {
-      "type": "number",
-      "default": 100000,
-      "description": "Minimum reward rate (nCRYFT/epoch) to auto-pin content"
-    },
-    "auto_pin_tiers": {
-      "type": "array",
-      "default": ["critical", "priority"],
-      "description": "Automatically pin content from these reward tiers"
-    },
-    "auto_claim": {
+    "auto_pin_incentivized": {
       "type": "boolean",
       "default": true,
-      "description": "Automatically claim rewards when above threshold"
+      "description": "Automatically pin incentivized content"
     },
-    "auto_respond_challenges": {
-      "type": "boolean",
-      "default": true,
-      "description": "Automatically respond to storage challenges"
+    "public_gateway": {
+      "type": "string",
+      "default": "https://ipfs.cryft.network",
+      "description": "Public gateway for shareable URLs"
     }
   },
   "rewards": {
@@ -159,16 +79,6 @@
         "multiplier": 10,
         "description": "Maximum rewards for critical infrastructure content"
       }
-    },
-    "challenges": {
-      "description": "Validators must respond to periodic proof-of-storage challenges",
-      "frequency": "random",
-      "timeout_secs": 30
-    },
-    "economics": {
-      "base_rate_ncryft_per_gb_per_day": 1000000000,
-      "min_claim_ncryft": 1000000000,
-      "challenge_reward_ncryft": 10000000
     }
   },
   "dependencies": {

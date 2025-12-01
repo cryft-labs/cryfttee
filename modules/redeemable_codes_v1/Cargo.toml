@@ -1,23 +1,19 @@
 [package]
 name = "redeemable_codes_v1"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 authors = ["Cryft Labs"]
-description = "On-Chain Managed Redeemable Gift Codes - Dual smart contract system for secure, transparent gift code management"
+description = "Self-contained gift code system - US Patent App 20250139608"
 license = "MIT"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
-serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+# No external dependencies - self-contained module
 
 [profile.release]
 opt-level = "s"
 lto = true
 strip = true
-panic = "abort"
-
-[profile.dev]
 panic = "abort"
