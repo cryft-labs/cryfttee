@@ -1,89 +1,136 @@
 {
   "id": "ipfs_v1",
-  "name": "IPFS Local Node Module",
-  "version": "1.1.0",
-  "description": "Self-contained IPFS module with LOCAL pinning only - connects to local kubo daemon, includes daemon setup wizard",
+  "name": "IPFS Embedded Node Module",
+  "version": "2.0.0",
+  "description": "Standalone IPFS module with embedded node - full node (default) or light node mode, no external daemon required",
   "author": "Cryft Labs",
   "capabilities": [
+    "node_init",
+    "node_start",
+    "node_stop",
+    "node_status",
+    "node_config",
+    "ipfs_add",
+    "ipfs_cat",
+    "ipfs_get",
     "ipfs_pin",
     "ipfs_unpin",
-    "ipfs_search",
-    "ipfs_get",
-    "ipfs_add",
     "ipfs_ls",
-    "ipfs_cat",
     "ipfs_stat",
+    "ipfs_search",
     "ipns_publish",
     "ipns_resolve",
     "ipns_keys",
-    "node_status",
-    "node_id",
-    "kubo_install",
-    "kubo_init",
-    "kubo_start",
-    "kubo_stop",
-    "kubo_status",
-    "kubo_config"
+    "peer_connect",
+    "peer_disconnect",
+    "peer_list",
+    "dht_find_peer",
+    "dht_find_providers",
+    "dht_provide",
+    "block_get",
+    "block_put",
+    "block_stat"
   ],
   "defaultFor": {
+    "node_init": true,
+    "node_start": true,
+    "node_stop": true,
+    "node_status": true,
+    "node_config": true,
+    "ipfs_add": true,
+    "ipfs_cat": true,
+    "ipfs_get": true,
     "ipfs_pin": true,
     "ipfs_unpin": true,
-    "ipfs_search": true,
-    "ipfs_get": true,
-    "ipfs_add": true,
     "ipfs_ls": true,
-    "ipfs_cat": true,
     "ipfs_stat": true,
+    "ipfs_search": true,
     "ipns_publish": true,
     "ipns_resolve": true,
     "ipns_keys": true,
-    "node_status": true,
-    "node_id": true,
-    "kubo_install": true,
-    "kubo_init": true,
-    "kubo_start": true,
-    "kubo_stop": true,
-    "kubo_status": true,
-    "kubo_config": true
+    "peer_connect": true,
+    "peer_disconnect": true,
+    "peer_list": true,
+    "dht_find_peer": true,
+    "dht_find_providers": true,
+    "dht_provide": true,
+    "block_get": true,
+    "block_put": true,
+    "block_stat": true
   },
   "hasGui": true,
   "guiPath": "gui",
   "config": {
-    "ipfs_api": {
-      "url": "http://127.0.0.1:5001",
-      "description": "Local IPFS daemon API endpoint (kubo)"
+    "node": {
+      "mode": "full",
+      "description": "Node mode: 'full' (complete DHT, full block store) or 'light' (minimal DHT, request-only)",
+      "modes": {
+        "full": {
+          "description": "Complete IPFS node with full DHT participation, block serving, and content providing",
+          "dht_mode": "server",
+          "serve_blocks": true,
+          "announce_content": true
+        },
+        "light": {
+          "description": "Lightweight node with minimal DHT, only requests content, does not serve or announce",
+          "dht_mode": "client",
+          "serve_blocks": false,
+          "announce_content": false
+        }
+      }
+    },
+    "storage": {
+      "repo_path": "~/.cryfttee/ipfs",
+      "max_storage_gb": 50,
+      "gc_watermark_high": 0.9,
+      "gc_watermark_low": 0.7
+    },
+    "network": {
+      "listen_addrs": [
+        "/ip4/0.0.0.0/tcp/4001",
+        "/ip6/::/tcp/4001",
+        "/ip4/0.0.0.0/udp/4001/quic-v1",
+        "/ip6/::/udp/4001/quic-v1"
+      ],
+      "bootstrap_peers": [
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt"
+      ],
+      "max_connections": 900,
+      "min_connections": 50,
+      "connection_timeout_secs": 30
     },
     "gateway": {
-      "local": "http://127.0.0.1:8080",
-      "public": "https://gateway.cryft.network",
-      "fallback": [
+      "enabled": true,
+      "listen_addr": "127.0.0.1:8080",
+      "writable": false,
+      "public_gateways": [
+        "https://gateway.cryft.network",
         "https://ipfs.io",
         "https://dweb.link",
         "https://cloudflare-ipfs.com"
       ]
     },
+    "api": {
+      "listen_addr": "127.0.0.1:5001",
+      "cors_origins": ["*"]
+    },
     "ipns": {
-      "namespace": "gateway.cryft.network/ipns",
-      "default_key": "self"
-    },
-    "pinning": {
-      "local_only": true,
-      "metadata_path": "~/.cryfttee/ipfs_pins.json"
-    },
-    "kubo": {
-      "default_version": "0.27.0",
-      "install_path": "~/.cryfttee/kubo",
-      "data_path": "~/.ipfs"
+      "cache_ttl_secs": 3600,
+      "republish_interval_hours": 12
     },
     "limits": {
       "max_add_size_mb": 100,
-      "timeout_secs": 60
+      "max_block_size_bytes": 2097152,
+      "request_timeout_secs": 60
     }
   },
   "dependencies": {
     "runtime": ">=0.4.0"
   },
   "requirements": {
-    "ipfs_daemon": "kubo >= 0.18.0 (optional - can be installed via GUI)"
+    "note": "No external dependencies - this module runs an embedded IPFS node"
   }
 }

@@ -1,96 +1,115 @@
-# IPFS Local Node Module (ipfs_v1)
+# IPFS Embedded Node Module (ipfs_v1) v2.0.0
 
-Self-contained IPFS module with **LOCAL pinning only** - connects to a local kubo daemon, no external pinning services.
+Standalone IPFS module with **embedded node** - No external daemon required. Supports Full Node (default) or Light Node modes.
 
 ## Features
 
-- **Local Pinning**: All pins stored on your local IPFS node
+- **Embedded IPFS Node**: Runs a complete IPFS node within CryftTEE - no kubo required
+- **Full Node Mode** (default): Complete DHT participation, content routing, block serving
+- **Light Node Mode**: Minimal DHT, request-only, low resource usage
+- **Local Pinning**: All pins stored on your embedded node
 - **Content Management**: Add, pin, unpin, search, and list content
-- **IPNS Support**: Publish and resolve IPNS names
-- **Gateway URLs**: Generate shareable URLs via `gateway.cryft.network`
+- **IPNS Support**: Publish and resolve IPNS names via DHT
+- **Peer Management**: Connect/disconnect peers, DHT operations
 - **Key Management**: Create and manage IPNS keys
-- **Node Status**: Monitor local IPFS daemon health
 
-## Prerequisites
+## Node Modes
 
-### Local IPFS Node (kubo)
+### Full Node (Default)
 
-This module requires a running IPFS daemon. Install kubo (formerly go-ipfs):
+Complete IPFS node with:
+- Full DHT server participation
+- Content routing and providing
+- Block serving to other peers
+- Relay and NAT traversal support
+- Higher bandwidth and storage usage
 
-**Linux/macOS:**
-```bash
-# Install kubo
-wget https://dist.ipfs.tech/kubo/v0.27.0/kubo_v0.27.0_linux-amd64.tar.gz
-tar xzf kubo_v0.27.0_linux-amd64.tar.gz
-sudo mv kubo/ipfs /usr/local/bin/
+**Best for**: Servers, always-on machines, content providers
 
-# Initialize and start
-ipfs init
-ipfs daemon
-```
+### Light Node
 
-**Docker:**
-```bash
-docker run -d --name ipfs \
-  -p 5001:5001 \
-  -p 8080:8080 \
-  -v ipfs_data:/data/ipfs \
-  ipfs/kubo:latest
-```
+Lightweight IPFS client with:
+- DHT client mode only (queries but doesn't serve DHT)
+- Requests content but doesn't serve blocks
+- Minimal peer connections
+- Lower bandwidth and storage usage
+- Delegates to gateways when needed
 
-**Windows:**
-```powershell
-# Download from https://dist.ipfs.tech/kubo/
-# Extract and add to PATH, then:
-ipfs init
-ipfs daemon
-```
+**Best for**: Laptops, mobile devices, limited bandwidth
 
 ## Capabilities
 
 | Capability | Description |
 |------------|-------------|
-| `ipfs_pin` | Pin content by CID to local node |
-| `ipfs_unpin` | Unpin content from local node |
+| `node_init` | Initialize embedded node |
+| `node_start` | Start the embedded IPFS node |
+| `node_stop` | Stop the embedded node |
+| `node_status` | Get node status (running, peers, storage) |
+| `node_config` | Get/set node configuration |
 | `ipfs_add` | Add new content to IPFS |
-| `ipfs_get` / `ipfs_cat` | Fetch content from IPFS |
+| `ipfs_cat` / `ipfs_get` | Fetch content from IPFS |
+| `ipfs_pin` | Pin content by CID |
+| `ipfs_unpin` | Unpin content |
 | `ipfs_ls` | List all local pins |
-| `ipfs_search` | Search pins by name, CID, or tags |
 | `ipfs_stat` | Get object statistics |
 | `ipns_publish` | Publish CID to IPNS name |
 | `ipns_resolve` | Resolve IPNS name to CID |
-| `ipns_keys` | List or generate IPNS keys |
-| `node_status` | Check if local node is online |
-| `node_id` | Get node peer ID and info |
+| `ipns_keys` | List/generate IPNS keys |
+| `peer_connect` | Connect to a peer |
+| `peer_disconnect` | Disconnect from a peer |
+| `peer_list` | List connected peers |
+| `dht_find_peer` | Find peer addresses via DHT |
+| `dht_find_providers` | Find content providers |
+| `dht_provide` | Announce content to DHT |
+| `block_get` / `block_put` / `block_stat` | Raw block operations |
 
 ## Configuration
 
-Default settings (configurable via GUI or API):
-
 | Setting | Default Value | Description |
 |---------|---------------|-------------|
-| API URL | `http://127.0.0.1:5001` | Local kubo API endpoint |
-| Local Gateway | `http://127.0.0.1:8080` | Local gateway for content retrieval |
-| Public Gateway | `https://gateway.cryft.network` | Public gateway for shareable URLs |
-| Timeout | 60 seconds | Request timeout |
-| Max Add Size | 100 MB | Maximum file size for add operations |
+| Node Mode | `full` | `full` or `light` |
+| Data Directory | `~/.cryfttee/ipfs` | Node storage location |
+| Swarm Ports | TCP/UDP 4001 | libp2p swarm listeners |
+| API Listen | `127.0.0.1:5001` | Local API endpoint |
+| Gateway Listen | `127.0.0.1:8080` | Local gateway |
+| Public Gateway | `https://gateway.cryft.network` | For shareable URLs |
+| Max Storage | 50 GB | Storage limit |
+| Max Connections | 900 | Peer connection limit |
 
 ## API Examples
 
-### Pin Content
+### Start Node (Full Mode)
 
 ```bash
 curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
   -H "Content-Type: application/json" \
   -d '{
-    "operation": "ipfs_pin",
+    "operation": "node_start",
     "data": {
-      "cid": "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
-      "name": "my-content",
-      "recursive": true,
-      "tags": {"type": "module", "version": "1.0.0"}
+      "config": {"node_type": "full"}
     }
   }'
+```
+
+### Start Node (Light Mode)
+
+```bash
+curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "node_start",
+    "data": {
+      "config": {"node_type": "light"}
+    }
+  }'
+```
+
+### Get Node Status
+
+```bash
+curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
+  -H "Content-Type: application/json" \
+  -d '{"operation": "node_status", "data": {}}'
 ```
 
 ### Add Content
@@ -104,19 +123,50 @@ curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
       "content": "Hello IPFS!",
       "filename": "hello.txt",
       "pin": true,
-      "cidVersion": 1
+      "cid_version": 1
     }
   }'
 ```
 
-### List Pins
+### Pin Content
 
 ```bash
 curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
   -H "Content-Type: application/json" \
   -d '{
-    "operation": "ipfs_ls",
-    "data": {"pinType": "recursive"}
+    "operation": "ipfs_pin",
+    "data": {
+      "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+      "name": "my-content",
+      "recursive": true
+    }
+  }'
+```
+
+### Connect to Peer
+
+```bash
+curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "swarm_connect",
+    "data": {
+      "peer_addr": "/ip4/1.2.3.4/tcp/4001/p2p/QmPeerID..."
+    }
+  }'
+```
+
+### Find Content Providers
+
+```bash
+curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "operation": "dht_findprovs",
+    "data": {
+      "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+      "num_providers": 20
+    }
   }'
 ```
 
@@ -128,31 +178,12 @@ curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
   -d '{
     "operation": "ipns_publish",
     "data": {
-      "cid": "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+      "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
       "key": "self",
-      "ttl": 3600,
-      "lifetime": 86400
+      "ttl_secs": 3600,
+      "lifetime_secs": 86400
     }
   }'
-```
-
-### Resolve IPNS
-
-```bash
-curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "ipns_resolve",
-    "data": {"name": "k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8"}
-  }'
-```
-
-### Check Node Status
-
-```bash
-curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
-  -H "Content-Type: application/json" \
-  -d '{"operation": "node_status", "data": {}}'
 ```
 
 ## Architecture
@@ -167,112 +198,71 @@ curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
 │  └────────┬────────┘  └────────▲────────┘               │
 │           │                    │                         │
 │  ┌────────▼────────────────────┴────────┐               │
-│  │         RuntimeAction Generator       │               │
+│  │       HostApiCall Generator           │               │
 │  └────────┬─────────────────────────────┘               │
-│           │ IpfsApiCall                                  │
+│           │                                              │
 ├───────────▼──────────────────────────────────────────────┤
-│  IPFS Backend (Runtime)                                  │
-│  ┌─────────────────┐  ┌─────────────────┐               │
-│  │ Local Metadata  │  │ HTTP Client     │               │
-│  │ Database (JSON) │  │ (reqwest)       │               │
-│  └─────────────────┘  └────────┬────────┘               │
-└─────────────────────────────────┼────────────────────────┘
-                                  │
-                                  ▼
-                    ┌─────────────────────────┐
-                    │   Local kubo Daemon     │
-                    │   http://127.0.0.1:5001 │
-                    └─────────────────────────┘
+│  IPFS Embedded Node (Runtime)                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │  libp2p      │  │  Bitswap     │  │  DHT/Kad     │   │
+│  │  Networking  │  │  Exchange    │  │  Routing     │   │
+│  └──────────────┘  └──────────────┘  └──────────────┘   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │  Block Store │  │  Pin Manager │  │  IPNS Pub    │   │
+│  │  (Local)     │  │              │  │  /Resolve    │   │
+│  └──────────────┘  └──────────────┘  └──────────────┘   │
+└──────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+              ┌────────────────────────┐
+              │   IPFS Network         │
+              │   - DHT Peers          │
+              │   - Bootstrap Nodes    │
+              │   - Content Providers  │
+              └────────────────────────┘
 ```
 
-## Local-Only Design
+## Embedded vs External Daemon
 
-This module intentionally does **NOT** use:
-- External pinning services (Pinata, Infura, etc.)
-- Remote pin APIs
-- Third-party storage backends
-
-**Why local-only?**
-
-1. **Privacy**: Content stays on your infrastructure
-2. **Control**: No dependence on external services
-3. **Cost**: No pinning service fees
-4. **Security**: Keys and content under your control
-
-**Trade-offs:**
-- Content only available when your node is online
-- No automatic geographic distribution
-- You manage storage and availability
-
-## Gateway URLs
-
-Content pinned locally can be shared via public gateways:
-
-- **Local**: `http://127.0.0.1:8080/ipfs/<CID>`
-- **Public**: `https://gateway.cryft.network/ipfs/<CID>`
-
-Note: For content to be accessible via public gateways, your local node must be:
-1. Online and reachable
-2. Connected to the IPFS DHT
-3. Serving the content to requesting peers
+| Feature | Embedded (v2.0) | External kubo (v1.x) |
+|---------|-----------------|----------------------|
+| Setup | Zero config | Install + init + start kubo |
+| Dependencies | None | kubo daemon |
+| Resource sharing | Integrated | Separate process |
+| Node modes | Full/Light | Single mode |
+| Portability | Complete | Requires kubo |
+| Control | Full | Limited to API |
 
 ## GUI
 
-The module includes a web GUI accessible at `/modules/ipfs_v1/gui/` with:
+The module includes a web GUI at `/modules/ipfs_v1/gui/` with:
 
-- **Local Pins**: Browse and manage pinned content
+- **Node Control**: Start/stop node, select mode (Full/Light)
+- **Pins**: Browse and manage pinned content
 - **Add Content**: Upload files or pin existing CIDs
-- **IPNS**: Publish and resolve IPNS names, manage keys
-- **Node Info**: View local node status and addresses
-- **Settings**: Configure API endpoints and gateways
+- **Peers**: View/manage connected peers, DHT operations
+- **IPNS**: Publish and resolve names, manage keys
+- **Settings**: Configure all node parameters
 
 ## Building
 
 ```bash
 cd modules/ipfs_v1
 cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/ipfs_v1.wasm module.wasm
 ```
 
-The compiled WASM will be at:
-`target/wasm32-unknown-unknown/release/ipfs_v1.wasm`
+## Migration from v1.x
 
-## Module Distribution via IPFS
+If upgrading from v1.x (kubo-based):
 
-This module enables CryftTEE to distribute WASM modules via IPFS:
+1. Export your pins: `ipfs pin ls > pins.txt`
+2. Stop kubo daemon
+3. Update to v2.0 module
+4. Start embedded node
+5. Re-pin content (or import pins)
 
-1. **Publisher**: Builds and pins module to local IPFS, publishes to IPNS
-2. **Registry**: Manifest references modules by CID
-3. **Nodes**: Fetch modules from any IPFS gateway
-4. **Verification**: CID is a content hash - inherent integrity check
-
-### Publishing a Module
-
-```bash
-# Build the WASM module
-cargo build --target wasm32-unknown-unknown --release
-
-# Add and pin to local IPFS
-curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "ipfs_add",
-    "data": {
-      "content": "<base64-encoded-wasm>",
-      "base64": true,
-      "filename": "module.wasm",
-      "pin": true,
-      "name": "my_module_v1.0.0"
-    }
-  }'
-
-# Publish to IPNS for mutable reference
-curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "operation": "ipns_publish",
-    "data": {"cid": "Qm...", "key": "my-module-key"}
-  }'
-```
+Note: Your kubo repository (`~/.ipfs`) is separate from the embedded node (`~/.cryfttee/ipfs`).
 
 ## License
 

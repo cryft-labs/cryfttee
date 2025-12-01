@@ -20,30 +20,78 @@ cryfttee-runtime/           # Rust TEE runtime (v0.4.0)
 │   ├── main.rs            # Entry point, server bootstrap
 │   ├── lib.rs             # Core exports
 │   ├── config/            # Configuration parsing
+│   │   ├── mod.rs
+│   │   └── types.rs
 │   ├── http/              # HTTP/HTTPS server (axum)
+│   │   ├── mod.rs
 │   │   ├── api.rs         # JSON API handlers
 │   │   └── kiosk.rs       # Kiosk UI endpoints
 │   ├── uds/               # Unix Domain Socket server
+│   │   ├── mod.rs
+│   │   └── service.rs
 │   ├── runtime/           # Module registry, loader, dispatch
+│   │   ├── mod.rs
 │   │   ├── registry.rs    # Module tracking and defaults
 │   │   ├── loader.rs      # WASM loading with wasmtime
 │   │   └── dispatch.rs    # Operation routing to modules
 │   ├── signing/           # Blockchain signing operations
+│   │   ├── mod.rs
+│   │   └── blockchain_state.rs
 │   ├── storage/           # Manifest parsing, hashing, signatures
+│   │   ├── mod.rs
+│   │   └── index.rs
 │   └── wasm_api/          # WASM module traits and types
+│       ├── mod.rs
+│       └── staking.rs
 
 modules/                   # WASM modules directory
 ├── manifest.json          # Global module registry
-├── bls_tls_signer_v1/     # BLS + TLS signing module
-│   ├── src/               # Rust source
-│   ├── gui/               # Module web GUI
-│   └── module.json        # Module metadata
+├── bls_tls_signer_v1/     # BLS + TLS signing module (v1.2.0)
+│   ├── Cargo.toml
+│   ├── module.json        # Module metadata
+│   ├── module.wasm        # Compiled WASM
+│   ├── README.md
+│   ├── src/
+│   │   └── lib.rs         # Module implementation
+│   └── gui/
+│       └── index.html     # Module web GUI
 ├── debug_v1/              # Debugging and diagnostics module
-│   ├── src/               # Rust source
-│   └── gui/               # Module web GUI
-└── llm_chat_v1/           # LLM chat interface module
-    ├── src/               # Rust source
-    └── gui/               # Module web GUI
+│   ├── Cargo.toml
+│   ├── module.json
+│   ├── README.md
+│   ├── src/
+│   │   └── lib.rs
+│   └── gui/
+│       └── index.html
+├── llm_chat_v1/           # LLM chat interface module
+│   ├── Cargo.toml
+│   ├── module.json
+│   ├── src/
+│   │   └── lib.rs
+│   └── gui/
+│       └── index.html
+└── ipfs_v1/               # IPFS embedded node module (v2.0.0)
+    ├── Cargo.toml
+    ├── module.json        # Module metadata
+    ├── module.wasm        # Compiled WASM
+    ├── README.md
+    ├── src/
+    │   └── lib.rs         # Embedded IPFS node implementation
+    └── gui/               # Modular GUI structure
+        ├── index.html     # Main HTML shell
+        ├── styles.css     # Shared styles
+        └── js/
+            ├── config.js  # Configuration constants
+            ├── utils.js   # Utility functions
+            ├── api.js     # API wrapper
+            ├── app.js     # Main application
+            └── tabs/      # Tab modules
+                ├── node.js     # Node control
+                ├── pins.js     # Pin management
+                ├── add.js      # Add content
+                ├── peers.js    # Peer management
+                ├── ipns.js     # IPNS publishing
+                └── settings.js # Settings
 
 ui/                        # Kiosk web interface
 ├── index.html
@@ -61,11 +109,12 @@ scripts/                   # Deployment scripts
 
 ## Available Modules
 
-| Module | Description | Capabilities |
-|--------|-------------|--------------|
-| `bls_tls_signer_v1` | Baseline BLS + TLS staking module with Web3Signer integration | `bls_register`, `bls_sign`, `tls_register`, `tls_sign`, `module_signing` |
-| `debug_v1` | Debugging and diagnostics for runtime inspection | `debug_echo`, `debug_info`, `debug_panic` |
-| `llm_chat_v1` | Interactive LLM chat interface for runtime assistance | `llm_chat`, `llm_stream` |
+| Module | Version | Description | Capabilities |
+|--------|---------|-------------|--------------|
+| `bls_tls_signer_v1` | 1.2.0 | BLS + TLS staking module with Web3Signer integration and module signing | `bls_register`, `bls_sign`, `bls_verify`, `tls_register`, `tls_sign`, `tls_verify`, `module_signing_key`, `sign_module`, `verify_module`, `hash_module` |
+| `debug_v1` | 1.0.0 | Debugging and diagnostics for runtime inspection | `debug_echo`, `debug_info`, `debug_panic` |
+| `llm_chat_v1` | 1.0.0 | Interactive LLM chat interface for runtime assistance | `llm_chat`, `llm_stream` |
+| `ipfs_v1` | 2.0.0 | Standalone embedded IPFS node (Full/Light modes) | `node_init`, `node_start`, `node_stop`, `node_status`, `node_config`, `ipfs_add`, `ipfs_cat`, `ipfs_get`, `ipfs_pin`, `ipfs_unpin`, `ipfs_ls`, `ipfs_stat`, `ipns_publish`, `ipns_resolve`, `ipns_keys`, `peer_connect`, `peer_disconnect`, `peer_list`, `dht_find_peer`, `dht_find_providers`, `dht_provide` |
 
 All modules include a web GUI accessible from the kiosk interface.
 
@@ -93,12 +142,19 @@ cargo build --release
 # Build all modules
 cd modules/bls_tls_signer_v1
 cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/bls_tls_signer_v1.wasm module.wasm
 
 cd ../debug_v1
 cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/debug_v1.wasm module.wasm
 
 cd ../llm_chat_v1
 cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/llm_chat_v1.wasm module.wasm
+
+cd ../ipfs_v1
+cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/ipfs_v1.wasm module.wasm
 ```
 
 ### Run
