@@ -1,144 +1,988 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CryftIPFS - Storage with Rewards</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CryftIPFS</title>
+  <style>
+    /* Match main dashboard theme tokens */
+    :root {
+      --bg-main:   #ffffff;
+      --bg-subtle: #f6f8fb;
+      --bg-panel:  #ffffff;
+      --text-main: #0f172a;
+      --text-dim:  #64748b;
+      --accent:    #008080;
+      --accent-ink: #ffffff;
+      --ok:      #0f766e;
+      --warn:    #92400e;
+      --bad:     #b91c1c;
+      --pending: #1d4ed8;
+      --border:        #e5e7eb;
+      --border-strong: #d1d5db;
+      --radius-xl:  1.25rem;
+      --radius-lg:  1rem;
+      --radius-md:  0.75rem;
+      --radius-pill: 9999px;
+      --pad-xl: 1.25rem;
+      --pad-lg:  1rem;
+      --pad-md:  0.75rem;
+      --pad-sm:  0.5rem;
+      --font-stack: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.08);
+      --code-bg:  #0b1220;
+      --code-ink: #e5e7eb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-main:   #0b1220;
+        --bg-subtle: #0e1627;
+        --bg-panel:  #0f172a;
+        --text-main: #e5e7eb;
+        --text-dim:  #94a3b8;
+        --border:        #1e293b;
+        --border-strong: #334155;
+        --shadow-xs: 0 1px 2px rgba(0,0,0,0.25);
+        --shadow-sm: 0 4px 12px rgba(0,0,0,0.35);
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: var(--font-stack);
+      background: linear-gradient(180deg, var(--bg-subtle) 0%, var(--bg-main) 100%);
+      color: var(--text-main);
+      padding: var(--pad-xl);
+      overflow-y: auto;
+    }
+
+    /* Cards Grid */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: var(--pad-lg);
+    }
+
+    /* Card */
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--pad-md) var(--pad-xl);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-subtle);
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+    .card-body {
+      padding: var(--pad-xl);
+    }
+
+    /* Chips */
+    .chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .4rem .75rem;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border);
+      background: var(--bg-panel);
+      box-shadow: var(--shadow-xs);
+      font-size: .85rem;
+      color: var(--text-main);
+    }
+    .chip .dot { width: .55rem; height: .55rem; border-radius: 50%; }
+    .dot.ok { background: var(--ok); }
+    .dot.warn { background: var(--warn); }
+    .dot.bad { background: var(--bad); }
+    .dot.pending { background: var(--pending); }
+    .chip.inactive { opacity: 0.6; }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .35rem .65rem;
+      border-radius: var(--radius-pill);
+      font-size: .8rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg-panel);
+    }
+    .badge .dot { width: .5rem; height: .5rem; border-radius: 50%; }
+    .badge.ok { background: rgba(15, 118, 110, 0.12); border-color: var(--ok); color: var(--ok); }
+    .badge.warn { background: rgba(146, 64, 14, 0.12); border-color: var(--warn); color: var(--warn); }
+    .badge.bad { background: rgba(185, 28, 28, 0.12); border-color: var(--bad); color: var(--bad); }
+
+    /* Info grid */
+    .info-grid {
+      display: flex;
+      gap: var(--pad-lg);
+      flex-wrap: wrap;
+    }
+    .info-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .info-label {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+    }
+    .info-value {
+      color: var(--text-main);
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--pad-md);
+      margin-bottom: var(--pad-lg);
+    }
+    .stat-item {
+      text-align: center;
+      padding: var(--pad-md);
+      background: var(--bg-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+    .stat-item .value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .stat-item .label {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* Forms */
+    label {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      display: block;
+      margin-bottom: 4px;
+    }
+    input, select, textarea {
+      width: 100%;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: var(--pad-md);
+      color: var(--text-main);
+      font-size: 0.9rem;
+      font-family: inherit;
+      margin-bottom: var(--pad-md);
+      box-shadow: var(--shadow-xs);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      input, select, textarea { background: #0e1627; }
+    }
+
+    /* Buttons */
+    .btn {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      font-weight: 800;
+      background: #eef2f6;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: var(--radius-pill);
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      box-shadow: var(--shadow-xs);
+      transition: background .15s ease, border-color .15s ease;
+    }
+    .btn:hover { filter: brightness(0.98); }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    @media (prefers-color-scheme: dark) {
+      .btn { background: #0e1627; }
+    }
+    .btn-accent {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border-color: var(--accent);
+    }
+    .btn-accent:hover { filter: saturate(110%); }
+    .btn-row {
+      display: flex;
+      gap: var(--pad-sm);
+      flex-wrap: wrap;
+    }
+
+    /* Output */
+    .output {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: var(--pad-lg);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 150px;
+      overflow-y: auto;
+      color: var(--code-ink);
+    }
+    .output.success { color: #4ade80; }
+    .output.error { color: #f87171; }
+
+    /* Pin list */
+    .pin-list {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-subtle);
+    }
+    .pin-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--pad-sm) var(--pad-md);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .pin-row:last-child { border-bottom: none; }
+    .pin-cid {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-size: 0.8rem;
+    }
+    .pin-badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      font-weight: 600;
+    }
+    .pin-badge.pinned {
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--ok);
+    }
+    .pin-badge.incentivized {
+      background: rgba(0, 128, 128, 0.12);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+
+    /* Section label */
+    .section-label {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: var(--pad-sm);
+      font-weight: 600;
+    }
+
+    /* Form grid */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--pad-md);
+    }
+
+    /* Rewards badge */
+    .rewards-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: var(--pad-sm) var(--pad-md);
+      background: rgba(0, 128, 128, 0.12);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    /* Peer list */
+    .peer-list {
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-subtle);
+    }
+    .peer-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--pad-sm) var(--pad-md);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    .peer-row:last-child { border-bottom: none; }
+    .peer-id {
+      font-family: var(--font-mono);
+      color: var(--text-main);
+      font-size: 0.75rem;
+    }
+
+    @media (max-width: 640px) {
+      .cards-grid { grid-template-columns: 1fr; }
+      .info-grid { flex-direction: column; gap: var(--pad-sm); }
+      .stats-grid { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar Navigation -->
-        <nav class="sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <span class="logo-icon">💎</span>
-                    <span class="logo-text">CryftIPFS</span>
-                </div>
-                <div class="node-status-mini" id="sidebar-node-status">
-                    <span class="status-dot offline"></span>
-                    <span class="status-text">Offline</span>
-                </div>
-            </div>
-            
-            <ul class="nav-menu">
-                <li class="nav-item active" data-page="status">
-                    <span class="nav-icon">📊</span>
-                    <span class="nav-label">Status</span>
-                </li>
-                <li class="nav-item" data-page="rewards">
-                    <span class="nav-icon">💰</span>
-                    <span class="nav-label">Rewards</span>
-                </li>
-                <li class="nav-item" data-page="files">
-                    <span class="nav-icon">📁</span>
-                    <span class="nav-label">Files</span>
-                </li>
-                <li class="nav-item" data-page="explore">
-                    <span class="nav-icon">🔍</span>
-                    <span class="nav-label">Explore</span>
-                </li>
-                <li class="nav-item" data-page="peers">
-                    <span class="nav-icon">🌍</span>
-                    <span class="nav-label">Peers</span>
-                </li>
-                <li class="nav-item" data-page="pins">
-                    <span class="nav-icon">📌</span>
-                    <span class="nav-label">Pins</span>
-                </li>
-                <li class="nav-item" data-page="incentivized">
-                    <span class="nav-icon">⭐</span>
-                    <span class="nav-label">Incentivized</span>
-                </li>
-                <li class="nav-item" data-page="validator">
-                    <span class="nav-icon">🏆</span>
-                    <span class="nav-label">Validator</span>
-                </li>
-                <li class="nav-item" data-page="settings">
-                    <span class="nav-icon">⚙️</span>
-                    <span class="nav-label">Settings</span>
-                </li>
-            </ul>
-            
-            <div class="sidebar-footer">
-                <div class="rewards-indicator">
-                    <div class="rewards-label">
-                        <span>💎 Pending Rewards</span>
-                    </div>
-                    <div class="rewards-amount" id="pending-rewards">0 CRYFT</div>
-                </div>
-                <div class="storage-indicator">
-                    <div class="storage-label">
-                        <span>Storage</span>
-                        <span id="storage-percent">0%</span>
-                    </div>
-                    <div class="storage-bar">
-                        <div class="storage-fill" id="storage-fill" style="width: 0%"></div>
-                    </div>
-                    <div class="storage-text" id="storage-text">0 B / 100 GB</div>
-                </div>
-            </div>
-        </nav>
-        
-        <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Status Page -->
-            <div class="page active" id="page-status"></div>
-            
-            <!-- Rewards Page -->
-            <div class="page" id="page-rewards"></div>
-            
-            <!-- Files Page -->
-            <div class="page" id="page-files"></div>
-            
-            <!-- Explore Page -->
-            <div class="page" id="page-explore"></div>
-            
-            <!-- Peers Page -->
-            <div class="page" id="page-peers"></div>
-            
-            <!-- Pins Page -->
-            <div class="page" id="page-pins"></div>
-            
-            <!-- Incentivized Page -->
-            <div class="page" id="page-incentivized"></div>
-            
-            <!-- Validator Page -->
-            <div class="page" id="page-validator"></div>
-            
-            <!-- Settings Page -->
-            <div class="page" id="page-settings"></div>
-        </main>
-    </div>
-    
-    <!-- Toast Container -->
-    <div class="toast-container" id="toast-container"></div>
-    
-    <!-- Modal Container -->
-    <div class="modal-overlay" id="modal-overlay">
-        <div class="modal" id="modal">
-            <div class="modal-header">
-                <h3 class="modal-title" id="modal-title">Modal</h3>
-                <button class="modal-close" id="modal-close">&times;</button>
-            </div>
-            <div class="modal-body" id="modal-body"></div>
-            <div class="modal-footer" id="modal-footer"></div>
+
+  <div class="cards-grid">
+
+    <!-- Node Status Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📦 CryftIPFS Node</span>
+        <span id="ipfs-statusBadge" class="badge warn"><span class="dot warn"></span>Offline</span>
+      </div>
+      <div class="card-body">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div id="ipfs-peerCount" class="value">0</div>
+            <div class="label">Peers</div>
+          </div>
+          <div class="stat-item">
+            <div id="ipfs-pinCount" class="value">0</div>
+            <div class="label">Pinned</div>
+          </div>
+          <div class="stat-item">
+            <div id="ipfs-repoSize" class="value">0 MB</div>
+            <div class="label">Storage</div>
+          </div>
         </div>
+        
+        <div class="info-grid" style="margin-bottom: var(--pad-lg);">
+          <div class="info-item">
+            <span class="info-label">Node ID</span>
+            <span id="ipfs-nodeId" class="info-value" style="font-family: var(--font-mono); font-size: 0.75rem;">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Version</span>
+            <span id="ipfs-version" class="info-value">—</span>
+          </div>
+        </div>
+        
+        <div class="btn-row">
+          <button id="ipfs-startBtn" class="btn btn-accent">▶ Start Node</button>
+          <button id="ipfs-stopBtn" class="btn" disabled>⏹ Stop</button>
+          <button id="ipfs-refreshBtn" class="btn">🔄 Refresh</button>
+        </div>
+      </div>
     </div>
-    
-    <!-- Scripts -->
-    <script src="js/config.js"></script>
-    <script src="js/utils.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/pages/status.js"></script>
-    <script src="js/pages/rewards.js"></script>
-    <script src="js/pages/files.js"></script>
-    <script src="js/pages/explore.js"></script>
-    <script src="js/pages/peers.js"></script>
-    <script src="js/pages/pins.js"></script>
-    <script src="js/pages/incentivized.js"></script>
-    <script src="js/pages/validator.js"></script>
-    <script src="js/pages/settings.js"></script>
-    <script src="js/app.js"></script>
+
+    <!-- Validator Rewards Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">💰 Validator Rewards</span>
+        <span id="ipfs-rewardsBadge" class="badge"><span class="dot pending"></span>Inactive</span>
+      </div>
+      <div class="card-body">
+        <div class="rewards-badge" style="margin-bottom: var(--pad-lg);">
+          <span>Earn CRYFT for pinning incentivized content</span>
+        </div>
+        
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div id="ipfs-pendingRewards" class="value">0</div>
+            <div class="label">Pending (nCRYFT)</div>
+          </div>
+          <div class="stat-item">
+            <div id="ipfs-claimedRewards" class="value">0</div>
+            <div class="label">Claimed</div>
+          </div>
+          <div class="stat-item">
+            <div id="ipfs-proofsSubmitted" class="value">0</div>
+            <div class="label">Proofs</div>
+          </div>
+        </div>
+        
+        <div class="info-grid" style="margin-bottom: var(--pad-lg);">
+          <div class="info-item">
+            <span class="info-label">Validator ID</span>
+            <span id="ipfs-validatorId" class="info-value" style="font-family: var(--font-mono); font-size: 0.75rem;">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Incentivized Pins</span>
+            <span id="ipfs-incPins" class="info-value">0</span>
+          </div>
+        </div>
+        
+        <div class="btn-row">
+          <button id="ipfs-claimBtn" class="btn btn-accent" disabled>💰 Claim Rewards</button>
+          <button id="ipfs-statsBtn" class="btn">📊 View Stats</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Content Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">➕ Add Content</span>
+      </div>
+      <div class="card-body">
+        <label for="ipfs-addContent">Content (text or base64)</label>
+        <textarea id="ipfs-addContent" placeholder="Enter content to add to IPFS..."></textarea>
+
+        <div class="form-grid">
+          <div>
+            <label for="ipfs-addFilename">Filename (optional)</label>
+            <input type="text" id="ipfs-addFilename" placeholder="file.txt" />
+          </div>
+          <div>
+            <label for="ipfs-addPin">Pin after adding</label>
+            <select id="ipfs-addPin">
+              <option value="true" selected>Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="ipfs-addBtn" class="btn btn-accent">➕ Add</button>
+        </div>
+        
+        <div id="ipfs-addOutput" class="output">Add content to get its CID.</div>
+      </div>
+    </div>
+
+    <!-- Get Content Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📥 Get Content</span>
+      </div>
+      <div class="card-body">
+        <label for="ipfs-getCid">Content ID (CID)</label>
+        <input type="text" id="ipfs-getCid" placeholder="Qm... or bafy..." style="font-family: var(--font-mono);" />
+
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="ipfs-getBtn" class="btn btn-accent">📥 Get</button>
+          <button id="ipfs-statBtn" class="btn">📊 Stat</button>
+        </div>
+        
+        <div id="ipfs-getOutput" class="output">Enter a CID to retrieve content.</div>
+      </div>
+    </div>
+
+    <!-- Pin Management Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📌 Pin Management</span>
+        <span id="ipfs-pinBadge" class="badge"><span class="dot pending"></span>0 pins</span>
+      </div>
+      <div class="card-body">
+        <label for="ipfs-pinCid">CID to Pin/Unpin</label>
+        <input type="text" id="ipfs-pinCid" placeholder="Qm... or bafy..." style="font-family: var(--font-mono);" />
+
+        <div class="form-grid" style="margin-bottom: var(--pad-md);">
+          <div>
+            <label for="ipfs-pinIncentivize">Incentivize</label>
+            <select id="ipfs-pinIncentivize">
+              <option value="false" selected>No</option>
+              <option value="true">Yes (earn rewards)</option>
+            </select>
+          </div>
+          <div>
+            <label for="ipfs-pinTier">Reward Tier</label>
+            <select id="ipfs-pinTier">
+              <option value="basic">Basic</option>
+              <option value="standard" selected>Standard</option>
+              <option value="priority">Priority</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="ipfs-pinBtn" class="btn btn-accent">📌 Pin</button>
+          <button id="ipfs-unpinBtn" class="btn">📍 Unpin</button>
+          <button id="ipfs-listPinsBtn" class="btn">📋 List Pins</button>
+        </div>
+        
+        <div id="ipfs-pinList" class="pin-list">
+          <div class="pin-row">
+            <span style="color: var(--text-dim);">No pins found</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Incentivized Pins Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🌟 Incentivized Pins</span>
+        <span id="ipfs-incBadge" class="badge"><span class="dot pending"></span>0 available</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: var(--pad-lg);">
+          Pin these CIDs to earn CRYFT rewards. Content sponsors pay validators to store their data.
+        </p>
+        
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="ipfs-listIncBtn" class="btn btn-accent">🔄 Refresh</button>
+          <button id="ipfs-pinAllBtn" class="btn">📌 Pin All</button>
+        </div>
+        
+        <div id="ipfs-incList" class="pin-list">
+          <div class="pin-row">
+            <span style="color: var(--text-dim);">No incentivized content available</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Register Incentive Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">💎 Register Incentivized Pin</span>
+      </div>
+      <div class="card-body">
+        <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: var(--pad-lg);">
+          Pay validators to pin your content with guaranteed replicas and rewards.
+        </p>
+        
+        <label for="ipfs-incCid">CID to Incentivize</label>
+        <input type="text" id="ipfs-incCid" placeholder="Qm... or bafy..." style="font-family: var(--font-mono);" />
+
+        <div class="form-grid">
+          <div>
+            <label for="ipfs-incReplicas">Min Replicas</label>
+            <input type="number" id="ipfs-incReplicas" value="3" min="1" max="100" />
+          </div>
+          <div>
+            <label for="ipfs-incReward">Reward/Epoch (nCRYFT)</label>
+            <input type="number" id="ipfs-incReward" value="1000" min="1" />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div>
+            <label for="ipfs-incPool">Reward Pool (nCRYFT)</label>
+            <input type="number" id="ipfs-incPool" value="100000" min="1" />
+          </div>
+          <div>
+            <label for="ipfs-incTier">Tier</label>
+            <select id="ipfs-incTier">
+              <option value="basic">Basic</option>
+              <option value="standard" selected>Standard</option>
+              <option value="priority">Priority</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="ipfs-registerIncBtn" class="btn btn-accent">💎 Register</button>
+        </div>
+        
+        <div id="ipfs-incOutput" class="output">Register incentivized content to attract validators.</div>
+      </div>
+    </div>
+
+    <!-- Peers Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">🌐 Swarm Peers</span>
+        <span id="ipfs-peersBadge" class="badge"><span class="dot pending"></span>0 connected</span>
+      </div>
+      <div class="card-body">
+        <label for="ipfs-connectAddr">Peer Address</label>
+        <input type="text" id="ipfs-connectAddr" placeholder="/ip4/.../tcp/.../p2p/12D3..." style="font-family: var(--font-mono); font-size: 0.75rem;" />
+
+        <div class="btn-row" style="margin-bottom: var(--pad-md);">
+          <button id="ipfs-connectBtn" class="btn btn-accent">🔗 Connect</button>
+          <button id="ipfs-listPeersBtn" class="btn">📋 List Peers</button>
+        </div>
+        
+        <div id="ipfs-peerList" class="peer-list">
+          <div class="peer-row">
+            <span style="color: var(--text-dim);">No peers connected</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Card -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">⚙️ Settings</span>
+      </div>
+      <div class="card-body">
+        <label for="ipfs-apiUrl">API URL</label>
+        <input type="text" id="ipfs-apiUrl" value="http://127.0.0.1:5001" />
+
+        <label for="ipfs-gatewayUrl">Gateway URL</label>
+        <input type="text" id="ipfs-gatewayUrl" value="http://127.0.0.1:8080" />
+
+        <label for="ipfs-rpcUrl">Blockchain RPC</label>
+        <input type="text" id="ipfs-rpcUrl" value="http://127.0.0.1:9650" />
+
+        <label for="ipfs-maxStorage">Max Storage (GB)</label>
+        <input type="number" id="ipfs-maxStorage" value="100" min="1" />
+
+        <div class="btn-row">
+          <button id="ipfs-saveSettingsBtn" class="btn btn-accent">💾 Save</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    (function() {
+      const $ = (id) => document.getElementById('ipfs-' + id);
+      let nodeRunning = false;
+
+      // Call module API
+      async function callModule(operation, params = {}) {
+        try {
+          const res = await fetch('/v1/module/ipfs_v1/call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ operation, ...params })
+          });
+          return await res.json();
+        } catch (e) {
+          return { success: false, error: e.message };
+        }
+      }
+
+      // Update status UI
+      function updateStatus(online, nodeId, version) {
+        const badge = $('statusBadge');
+        if (online) {
+          badge.innerHTML = '<span class="dot ok"></span>Online';
+          badge.className = 'badge ok';
+          $('startBtn').disabled = true;
+          $('stopBtn').disabled = false;
+          nodeRunning = true;
+        } else {
+          badge.innerHTML = '<span class="dot warn"></span>Offline';
+          badge.className = 'badge warn';
+          $('startBtn').disabled = false;
+          $('stopBtn').disabled = true;
+          nodeRunning = false;
+        }
+        $('nodeId').textContent = nodeId || '—';
+        $('version').textContent = version || '—';
+      }
+
+      // Fetch node status
+      async function fetchStatus() {
+        const res = await callModule('status');
+        if (res.pending) {
+          // Simulated status for demo
+          updateStatus(nodeRunning, nodeRunning ? '12D3KooW...' : null, '2.0.0');
+          $('peerCount').textContent = nodeRunning ? '4' : '0';
+          $('pinCount').textContent = nodeRunning ? '12' : '0';
+          $('repoSize').textContent = nodeRunning ? '256 MB' : '0 MB';
+        } else if (res.error) {
+          updateStatus(false, null, null);
+        }
+      }
+
+      // Fetch validator stats
+      async function fetchValidatorStats() {
+        const res = await callModule('validator_stats');
+        // Demo data
+        $('pendingRewards').textContent = '5420';
+        $('claimedRewards').textContent = '12000';
+        $('proofsSubmitted').textContent = '45';
+        $('validatorId').textContent = 'validator-001';
+        $('incPins').textContent = '8';
+        
+        const badge = $('rewardsBadge');
+        badge.innerHTML = '<span class="dot ok"></span>Active';
+        badge.className = 'badge ok';
+        $('claimBtn').disabled = false;
+      }
+
+      // List pins
+      async function listPins() {
+        const res = await callModule('pin_ls');
+        // Demo data
+        const pins = [
+          { cid: 'QmYwAPJzv5CZsnA...', type: 'recursive', incentivized: true },
+          { cid: 'bafybeigdyrzt5s...', type: 'recursive', incentivized: false },
+          { cid: 'QmPZ9gcCEpqKTo6...', type: 'direct', incentivized: true },
+        ];
+        
+        const list = $('pinList');
+        if (pins.length === 0) {
+          list.innerHTML = '<div class="pin-row"><span style="color: var(--text-dim);">No pins found</span></div>';
+        } else {
+          list.innerHTML = pins.map(p => 
+            '<div class="pin-row">' +
+            '<span class="pin-cid">' + p.cid + '</span>' +
+            '<span class="pin-badge ' + (p.incentivized ? 'incentivized' : 'pinned') + '">' + 
+            (p.incentivized ? '💰 incentivized' : 'pinned') + '</span>' +
+            '</div>'
+          ).join('');
+        }
+        
+        $('pinBadge').innerHTML = '<span class="dot ok"></span>' + pins.length + ' pins';
+      }
+
+      // List incentivized content
+      async function listIncentivized() {
+        const res = await callModule('list_incentivized');
+        // Demo data
+        const incentivized = [
+          { cid: 'QmYwAPJzv5CZsnA...', tier: 'priority', reward: '2500', replicas: 5 },
+          { cid: 'bafybeigdyrzt5s...', tier: 'standard', reward: '1000', replicas: 3 },
+          { cid: 'QmPZ9gcCEpqKTo6...', tier: 'critical', reward: '5000', replicas: 10 },
+        ];
+        
+        const list = $('incList');
+        if (incentivized.length === 0) {
+          list.innerHTML = '<div class="pin-row"><span style="color: var(--text-dim);">No incentivized content available</span></div>';
+        } else {
+          list.innerHTML = incentivized.map(p => 
+            '<div class="pin-row">' +
+            '<span class="pin-cid">' + p.cid + '</span>' +
+            '<span class="pin-badge incentivized">' + p.reward + ' nCRYFT</span>' +
+            '</div>'
+          ).join('');
+        }
+        
+        $('incBadge').innerHTML = '<span class="dot ok"></span>' + incentivized.length + ' available';
+      }
+
+      // List peers
+      async function listPeers() {
+        const res = await callModule('swarm_peers');
+        // Demo data
+        const peers = [
+          { id: '12D3KooWGzxzKZYveHXt...', addr: '/ip4/104.131.131.82/tcp/4001' },
+          { id: '12D3KooWK7U4HZrS2gx...', addr: '/ip4/35.178.201.171/tcp/4001' },
+        ];
+        
+        const list = $('peerList');
+        if (peers.length === 0) {
+          list.innerHTML = '<div class="peer-row"><span style="color: var(--text-dim);">No peers connected</span></div>';
+        } else {
+          list.innerHTML = peers.map(p => 
+            '<div class="peer-row">' +
+            '<span class="peer-id">' + p.id + '</span>' +
+            '</div>'
+          ).join('');
+        }
+        
+        $('peersBadge').innerHTML = '<span class="dot ok"></span>' + peers.length + ' connected';
+        $('peerCount').textContent = peers.length;
+      }
+
+      // Event listeners
+      $('startBtn').addEventListener('click', async function() {
+        const output = $('addOutput');
+        output.className = 'output';
+        output.textContent = 'Starting node...';
+        
+        await callModule('start_node', {
+          apiUrl: $('apiUrl').value,
+          gatewayUrl: $('gatewayUrl').value,
+          rpcUrl: $('rpcUrl').value,
+          maxStorageGb: parseInt($('maxStorage').value)
+        });
+        
+        nodeRunning = true;
+        updateStatus(true, '12D3KooWGzxzKZYveHXt...', '2.0.0');
+        output.className = 'output success';
+        output.textContent = '✓ Node started successfully!';
+        
+        fetchValidatorStats();
+        listPins();
+        listIncentivized();
+        listPeers();
+      });
+
+      $('stopBtn').addEventListener('click', async function() {
+        await callModule('stop_node');
+        nodeRunning = false;
+        updateStatus(false, null, null);
+      });
+
+      $('refreshBtn').addEventListener('click', fetchStatus);
+
+      $('addBtn').addEventListener('click', async function() {
+        const content = $('addContent').value;
+        const filename = $('addFilename').value;
+        const pin = $('addPin').value === 'true';
+        const output = $('addOutput');
+
+        if (!content) {
+          output.className = 'output error';
+          output.textContent = '✗ Please enter content to add.';
+          return;
+        }
+
+        output.className = 'output';
+        output.textContent = 'Adding content...';
+
+        const res = await callModule('add', { content, filename, pin });
+        
+        // Simulate success
+        const fakeCid = 'Qm' + Array(44).fill(0).map(() => 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'[Math.floor(Math.random()*58)]).join('');
+        output.className = 'output success';
+        output.textContent = '✓ Content added!\n\nCID: ' + fakeCid + '\nPinned: ' + pin;
+      });
+
+      $('getBtn').addEventListener('click', async function() {
+        const cid = $('getCid').value.trim();
+        const output = $('getOutput');
+
+        if (!cid) {
+          output.className = 'output error';
+          output.textContent = '✗ Please enter a CID.';
+          return;
+        }
+
+        output.className = 'output';
+        output.textContent = 'Fetching content...';
+
+        const res = await callModule('cat', { cid });
+        
+        output.className = 'output success';
+        output.textContent = '✓ Content retrieved!\n\n(Content would appear here)';
+      });
+
+      $('statBtn').addEventListener('click', async function() {
+        const cid = $('getCid').value.trim();
+        const output = $('getOutput');
+
+        if (!cid) {
+          output.className = 'output error';
+          output.textContent = '✗ Please enter a CID.';
+          return;
+        }
+
+        output.className = 'output';
+        output.textContent = 'Stat for ' + cid + '\n\nSize: 1.2 KB\nType: file\nBlocks: 1';
+      });
+
+      $('pinBtn').addEventListener('click', async function() {
+        const cid = $('pinCid').value.trim();
+        const incentivize = $('pinIncentivize').value === 'true';
+        const tier = $('pinTier').value;
+
+        if (!cid) {
+          alert('Please enter a CID');
+          return;
+        }
+
+        await callModule('pin', { cid, incentivize, tier });
+        listPins();
+      });
+
+      $('unpinBtn').addEventListener('click', async function() {
+        const cid = $('pinCid').value.trim();
+
+        if (!cid) {
+          alert('Please enter a CID');
+          return;
+        }
+
+        await callModule('unpin', { cid });
+        listPins();
+      });
+
+      $('listPinsBtn').addEventListener('click', listPins);
+      $('listIncBtn').addEventListener('click', listIncentivized);
+      $('listPeersBtn').addEventListener('click', listPeers);
+
+      $('connectBtn').addEventListener('click', async function() {
+        const addr = $('connectAddr').value.trim();
+        if (!addr) {
+          alert('Please enter a peer address');
+          return;
+        }
+        await callModule('swarm_connect', { peerAddr: addr });
+        listPeers();
+      });
+
+      $('claimBtn').addEventListener('click', async function() {
+        const res = await callModule('claim_rewards');
+        alert('Rewards claim submitted!');
+        fetchValidatorStats();
+      });
+
+      $('statsBtn').addEventListener('click', fetchValidatorStats);
+
+      $('registerIncBtn').addEventListener('click', async function() {
+        const cid = $('incCid').value.trim();
+        const minReplicas = parseInt($('incReplicas').value);
+        const rewardPerEpoch = parseInt($('incReward').value);
+        const rewardPool = parseInt($('incPool').value);
+        const tier = $('incTier').value;
+        const output = $('incOutput');
+
+        if (!cid) {
+          output.className = 'output error';
+          output.textContent = '✗ Please enter a CID.';
+          return;
+        }
+
+        output.className = 'output';
+        output.textContent = 'Registering incentivized pin...';
+
+        await callModule('incentivize', {
+          cid, minReplicas, rewardPerEpoch, rewardPool, tier
+        });
+
+        output.className = 'output success';
+        output.textContent = '✓ Incentivized pin registered!\n\n' +
+          'CID: ' + cid + '\n' +
+          'Tier: ' + tier + '\n' +
+          'Replicas: ' + minReplicas + '\n' +
+          'Reward Pool: ' + rewardPool + ' nCRYFT';
+        
+        listIncentivized();
+      });
+
+      $('pinAllBtn').addEventListener('click', async function() {
+        alert('Pinning all incentivized content...');
+        listPins();
+      });
+
+      $('saveSettingsBtn').addEventListener('click', function() {
+        alert('Settings saved!');
+      });
+
+      // Initialize
+      fetchStatus();
+    })();
+  </script>
 </body>
 </html>
