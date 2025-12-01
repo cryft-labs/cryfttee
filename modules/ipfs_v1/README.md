@@ -1,153 +1,226 @@
-# IPFS Module v2.0.0
+# CryftIPFS Module
 
-Self-contained IPFS module for CryftTEE with embedded Iroh node (default) or optional kubo support.
+**Unified IPFS Storage with Validator Pin Rewards**
+
+A decentralized storage network where validators earn CRYFT tokens for pinning content that is registered on the Cryft blockchain.
+
+## Overview
+
+CryftIPFS combines standard IPFS functionality with blockchain-based storage incentives:
+
+1. **Content Creators** can incentivize their content by depositing CRYFT tokens
+2. **Validators** pin incentivized content and respond to storage challenges
+3. **Proofs** are verified and rewards are distributed automatically
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      CryftIPFS Architecture                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │   Content    │───▶│  Blockchain  │───▶│    Validators    │  │
+│  │   Creator    │    │   Registry   │    │   (IPFS Nodes)   │  │
+│  └──────────────┘    └──────────────┘    └──────────────────┘  │
+│        │                    │                     │             │
+│        │ Deposit            │ Track               │ Pin         │
+│        │ CRYFT              │ Incentives          │ Content     │
+│        ▼                    ▼                     ▼             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │ Incentivized │    │   Storage    │    │     Rewards      │  │
+│  │     Pin      │───▶│  Challenges  │───▶│    (nCRYFT)      │  │
+│  └──────────────┘    └──────────────┘    └──────────────────┘  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+### Standard IPFS Operations
+- `add` - Add content to IPFS
+- `cat`/`get` - Retrieve content by CID
+- `pin`/`unpin` - Manage local pins
+- `pin_ls` - List pins (optionally filter incentivized only)
+- `swarm_peers` - View connected peers
+- `repo_stat` - Storage statistics
+
+### Validator Reward Operations
+- `validator_stats` - View validator statistics (pins, rewards, challenges)
+- `incentivized_list` - List all network-wide incentivized pins
+- `incentivize_pin` - Register new incentivized content (requires deposit)
+- `storage_challenge` - Respond to proof-of-storage challenges
+- `claim_rewards` - Claim earned rewards
+
+## Reward Tiers
+
+| Tier | Multiplier | Use Case |
+|------|------------|----------|
+| Basic | 1x | General content storage |
+| Standard | 2x | Important data |
+| Priority | 5x | High-availability content |
+| Critical | 10x | Infrastructure-critical data |
+
+## Usage Examples
+
+### Start Node as Validator
+```javascript
+// Start node with validator ID for reward tracking
+await module.call("node_start", {
+  validatorId: "NodeID-ABC123...",
+  maxStorageGb: 500,
+  rpcUrl: "http://localhost:9650"
+});
+```
+
+### Add & Pin Incentivized Content
+```javascript
+// Add content with incentive flag
+const result = await module.call("add", {
+  content: "Important data...",
+  pin: true,
+  incentivize: true,
+  tier: "priority"
+});
+// Returns: { hash: "bafybeig...", size: "1234" }
+```
+
+### Register Network-Wide Incentive
+```javascript
+// Sponsor content for network-wide pinning
+await module.call("incentivize", {
+  cid: "bafybeig...",
+  minReplicas: 10,
+  rewardPerEpoch: 1000000, // nCRYFT per hour
+  tier: "standard",
+  rewardPool: 100000000,   // Total budget
+  expiresAt: 0             // Never expires
+});
+```
+
+### Check Validator Stats
+```javascript
+const stats = await module.call("validator_stats");
+// Returns:
+// {
+//   totalPins: 150,
+//   incentivizedPins: 45,
+//   storageUsed: 52428800000,  // 50GB
+//   challengesPassed: 1234,
+//   totalRewardsEarned: 5000000000, // 5 CRYFT
+//   pendingRewards: 50000000
+// }
+```
+
+### Claim Rewards
+```javascript
+const claim = await module.call("claim_rewards");
+// Returns:
+// {
+//   validatorId: "NodeID-ABC123",
+//   epoch: 12345,
+//   challengesPassed: 50,
+//   rewardAmount: 50000000,  // nCRYFT
+//   message: "Reward claim submitted"
+// }
+```
+
+## Storage Challenges
+
+Validators must respond to periodic **proof-of-storage** challenges to earn rewards:
+
+1. A random byte range is requested from pinned content
+2. Validator computes hash of that range
+3. Proof is submitted and verified
+4. Rewards accumulate for valid proofs
+
+```javascript
+// Respond to challenge (usually automatic)
+const proof = await module.call("challenge", {
+  cid: "bafybeig...",
+  offset: 1024,
+  length: 256
+});
+// Returns:
+// {
+//   challengeId: "bafybeig-1024-1234567890",
+//   chunkHash: "abc123...",
+//   provenAt: 1234567890
+// }
+```
+
+## Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `api_url` | `http://127.0.0.1:5001` | IPFS API endpoint |
+| `gateway_url` | `http://127.0.0.1:8080` | IPFS Gateway endpoint |
+| `validator_id` | - | Validator node ID (required for rewards) |
+| `rpc_url` | `http://127.0.0.1:9650` | Blockchain RPC for reward claims |
+| `max_storage_gb` | 100 | Maximum storage allocation |
 
 ## Architecture
 
 ```
-ipfs_v1/
-├── src/
-│   └── lib.rs              # WASM module (request validation, host calls)
-├── native/
-│   ├── Cargo.toml          # Native binary dependencies (iroh, tokio, axum)
-│   └── src/
-│       └── main.rs         # Iroh daemon with kubo-compatible HTTP API
-├── gui/
-│   ├── index.html          # Main UI shell with sidebar navigation
-│   ├── styles.css          # CryftTEE-themed styles
-│   └── js/
-│       ├── app.js          # Main application logic
-│       ├── api.js          # IPFS API client
-│       ├── config.js       # Configuration
-│       ├── utils.js        # Utility functions
-│       └── pages/          # UI pages
-│           ├── status.js   # Node status & control
-│           ├── files.js    # File browser
-│           ├── explore.js  # CID explorer
-│           ├── peers.js    # Peer management
-│           ├── pins.js     # Pin management
-│           ├── ipns.js     # IPNS keys & publishing
-│           └── settings.js # Node settings
-├── module.json             # Module manifest
-└── README.md               # This file
-```
-
-## How It Works
-
-1. **WASM Module** (`src/lib.rs`)
-   - Validates requests and generates `HostCall` instructions
-   - Runs inside CryftTEE runtime sandbox
-   - Pure request generation - no networking
-
-2. **Native Binary** (`native/ipfs-node`)
-   - Embedded Iroh node providing kubo-compatible API
-   - Runs as subprocess managed by the runtime
-   - Handles actual IPFS networking, storage, DHT
-
-3. **Communication Flow**
-   ```
-   GUI → WASM Module → HostCall → Runtime → Native Binary → IPFS Network
-                                     ↓
-                              HTTP API (localhost:5001)
-   ```
-
-## Backend Options
-
-### Iroh (Default)
-- **No external dependencies** - Iroh node ships with the module
-- Modern Rust implementation, fast QUIC transport
-- Automatic startup/shutdown with the module
-- Data stored in `~/.cryfttee/ipfs`
-
-### Kubo (Optional)
-- Use your existing kubo (go-ipfs) daemon
-- Full IPNS support, mature DHT implementation
-- Set `backend: "kubo"` in config
-
-### Auto-Detect
-- Default behavior: checks if kubo is running on port 5001
-- Uses kubo if available, otherwise starts embedded Iroh
-
-## Configuration
-
-```json
-{
-  "backend": "auto",          // "iroh", "kubo", or "auto"
-  "api_url": "http://127.0.0.1:5001",
-  "gateway_url": "http://127.0.0.1:8080",
-  "public_gateway": "https://gateway.cryft.network",
-  "data_dir": "~/.cryfttee/ipfs",
-  "timeout_secs": 60
-}
+┌─────────────────────────────────────────────────────────┐
+│                    CryftTEE Runtime                      │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────────┐       ┌─────────────────────────┐ │
+│  │   WASM Module   │       │    Native Binary        │ │
+│  │  (lib.rs)       │──────▶│    (cryft-ipfs)         │ │
+│  │                 │       │                         │ │
+│  │ • Request       │       │ • Iroh IPFS Engine      │ │
+│  │   validation    │       │ • Pin Registry          │ │
+│  │ • HostCall      │       │ • Challenge Handler     │ │
+│  │   generation    │       │ • Reward Tracker        │ │
+│  └─────────────────┘       └─────────────────────────┘ │
+│           │                          │                  │
+│           ▼                          ▼                  │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │              Cryft Blockchain                    │   │
+│  │  • Incentivized Pin Registry                    │   │
+│  │  • Reward Distribution                          │   │
+│  │  • Challenge Verification                       │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## Building
 
-### WASM Module
 ```bash
-cd modules/ipfs_v1
+# Build WASM module
 cargo build --release --target wasm32-unknown-unknown
-cp target/wasm32-unknown-unknown/release/ipfs_v1.wasm ./module.wasm
-```
 
-### Native Binary
-```bash
-cd modules/ipfs_v1/native
+# Build native binary
+cd native
 cargo build --release
-# Binary at: native/target/release/ipfs-node
 ```
 
-## API Endpoints
+## API Endpoints (Native Binary)
 
-The native binary exposes a kubo-compatible API:
+The native binary exposes both kubo-compatible and Cryft extension endpoints:
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /api/v0/id` | Node identity |
-| `POST /api/v0/add` | Add content |
-| `POST /api/v0/cat` | Get content |
-| `POST /api/v0/pin/add` | Pin content |
-| `POST /api/v0/pin/rm` | Unpin content |
-| `POST /api/v0/pin/ls` | List pins |
-| `POST /api/v0/name/publish` | Publish to IPNS |
-| `POST /api/v0/key/list` | List IPNS keys |
-| `POST /api/v0/swarm/peers` | List peers |
-| `POST /api/v0/repo/stat` | Repository stats |
-| `GET /ipfs/:cid` | Gateway fetch |
+### Standard IPFS API (`/api/v0/...`)
+- `POST /api/v0/add` - Add content
+- `POST /api/v0/cat` - Get content
+- `POST /api/v0/pin/add` - Pin content
+- `POST /api/v0/pin/rm` - Unpin content
+- `POST /api/v0/pin/ls` - List pins
+- `GET /api/v0/id` - Node identity
+- `GET /api/v0/repo/stat` - Repo stats
 
-## GUI Features
+### Cryft Reward Extensions (`/api/v0/cryft/...`)
+- `GET /api/v0/cryft/stats` - Validator statistics
+- `GET /api/v0/cryft/incentivized` - List incentivized pins
+- `POST /api/v0/cryft/incentivize` - Register incentive
+- `POST /api/v0/cryft/challenge` - Respond to challenge
+- `POST /api/v0/cryft/prove` - Submit proof
+- `POST /api/v0/cryft/claim` - Claim rewards
+- `GET /api/v0/cryft/proofs` - List pending proofs
 
-The module includes a web GUI with:
-
-- **Status Page**: Node control, peer count, storage stats
-- **Files Page**: Upload, browse, download files
-- **Explore Page**: CID lookup with gateway preview
-- **Peers Page**: Connected peers, bootstrap management
-- **Pins Page**: Pin management with search
-- **IPNS Page**: Key management, publishing
-- **Settings Page**: Backend selection, configuration
-
-## Limitations
-
-### Iroh Backend
-- IPNS resolution not yet supported (publish is local-only)
-- CID format is blake3-based, different from IPFS CIDv0/v1
-- No MFS (mutable filesystem) support
-
-### Both Backends
-- Large file streaming requires chunked handling
-- No IPLD/DAG advanced operations yet
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `IPFS_DATA_DIR` | Data directory | `~/.cryfttee/ipfs` |
-| `IPFS_API_PORT` | API port | `5001` |
-| `IPFS_GATEWAY_PORT` | Gateway port | `8080` |
-| `IPFS_API_ADDR` | Bind address | `127.0.0.1` |
-| `IPFS_PUBLIC_GATEWAY` | Public gateway URL | `https://gateway.cryft.network` |
+### Gateway
+- `GET /ipfs/{cid}` - Retrieve content via gateway
 
 ## License
 
-MIT License - Cryft Labs 2025
+MIT License - Cryft Labs 2024

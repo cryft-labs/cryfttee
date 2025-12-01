@@ -17,3 +17,7 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 opt-level = "s"
 lto = true
 strip = true
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

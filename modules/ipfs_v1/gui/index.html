@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPFS Module</title>
+    <title>CryftIPFS - Storage with Rewards</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,8 +12,8 @@
         <nav class="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
-                    <span class="logo-icon">🌐</span>
-                    <span class="logo-text">IPFS</span>
+                    <span class="logo-icon">💎</span>
+                    <span class="logo-text">CryftIPFS</span>
                 </div>
                 <div class="node-status-mini" id="sidebar-node-status">
                     <span class="status-dot offline"></span>
@@ -25,6 +25,10 @@
                 <li class="nav-item active" data-page="status">
                     <span class="nav-icon">📊</span>
                     <span class="nav-label">Status</span>
+                </li>
+                <li class="nav-item" data-page="rewards">
+                    <span class="nav-icon">💰</span>
+                    <span class="nav-label">Rewards</span>
                 </li>
                 <li class="nav-item" data-page="files">
                     <span class="nav-icon">📁</span>
@@ -42,9 +46,13 @@
                     <span class="nav-icon">📌</span>
                     <span class="nav-label">Pins</span>
                 </li>
-                <li class="nav-item" data-page="ipns">
-                    <span class="nav-icon">🔗</span>
-                    <span class="nav-label">IPNS</span>
+                <li class="nav-item" data-page="incentivized">
+                    <span class="nav-icon">⭐</span>
+                    <span class="nav-label">Incentivized</span>
+                </li>
+                <li class="nav-item" data-page="validator">
+                    <span class="nav-icon">🏆</span>
+                    <span class="nav-label">Validator</span>
                 </li>
                 <li class="nav-item" data-page="settings">
                     <span class="nav-icon">⚙️</span>
@@ -53,6 +61,12 @@
             </ul>
             
             <div class="sidebar-footer">
+                <div class="rewards-indicator">
+                    <div class="rewards-label">
+                        <span>💎 Pending Rewards</span>
+                    </div>
+                    <div class="rewards-amount" id="pending-rewards">0 CRYFT</div>
+                </div>
                 <div class="storage-indicator">
                     <div class="storage-label">
                         <span>Storage</span>
@@ -61,7 +75,7 @@
                     <div class="storage-bar">
                         <div class="storage-fill" id="storage-fill" style="width: 0%"></div>
                     </div>
-                    <div class="storage-text" id="storage-text">0 B / 10 GB</div>
+                    <div class="storage-text" id="storage-text">0 B / 100 GB</div>
                 </div>
             </div>
         </nav>
@@ -70,6 +84,9 @@
         <main class="main-content">
             <!-- Status Page -->
             <div class="page active" id="page-status"></div>
+            
+            <!-- Rewards Page -->
+            <div class="page" id="page-rewards"></div>
             
             <!-- Files Page -->
             <div class="page" id="page-files"></div>
@@ -83,8 +100,11 @@
             <!-- Pins Page -->
             <div class="page" id="page-pins"></div>
             
-            <!-- IPNS Page -->
-            <div class="page" id="page-ipns"></div>
+            <!-- Incentivized Page -->
+            <div class="page" id="page-incentivized"></div>
+            
+            <!-- Validator Page -->
+            <div class="page" id="page-validator"></div>
             
             <!-- Settings Page -->
             <div class="page" id="page-settings"></div>
@@ -111,11 +131,13 @@
     <script src="js/utils.js"></script>
     <script src="js/api.js"></script>
     <script src="js/pages/status.js"></script>
+    <script src="js/pages/rewards.js"></script>
     <script src="js/pages/files.js"></script>
     <script src="js/pages/explore.js"></script>
     <script src="js/pages/peers.js"></script>
     <script src="js/pages/pins.js"></script>
-    <script src="js/pages/ipns.js"></script>
+    <script src="js/pages/incentivized.js"></script>
+    <script src="js/pages/validator.js"></script>
     <script src="js/pages/settings.js"></script>
     <script src="js/app.js"></script>
 </body>

@@ -199,6 +199,64 @@ const IPFS_API = {
     
     async setConfig(key, value) {
         return this.call('config_set', { key, value });
+    },
+    
+    // ============ Validator Reward Operations ============
+    
+    async validator_status() {
+        return this.call('validator_status');
+    },
+    
+    async validator_register(params) {
+        return this.call('validator_register', params);
+    },
+    
+    async validator_update_config(config) {
+        return this.call('validator_update_config', config);
+    },
+    
+    async validator_metrics() {
+        return this.call('validator_metrics');
+    },
+    
+    async validator_activity() {
+        return this.call('validator_activity');
+    },
+    
+    async validator_claim_rewards(params) {
+        return this.call('validator_claim_rewards', params);
+    },
+    
+    async validator_stats() {
+        return this.call('validator_stats');
+    },
+    
+    async list_proofs() {
+        return this.call('list_proofs');
+    },
+    
+    async claim_rewards() {
+        return this.call('claim_rewards');
+    },
+    
+    // ============ Incentivized Pin Operations ============
+    
+    async list_incentivized() {
+        return this.call('list_incentivized');
+    },
+    
+    async incentivize(params) {
+        return this.call('incentivize', params);
+    },
+    
+    async pin(params) {
+        return this.call('pin', params);
+    },
+    
+    // ============ Generic Request ============
+    
+    async request(method, params) {
+        return this.call(method, params);
     }
 };
 

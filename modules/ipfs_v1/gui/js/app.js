@@ -4,10 +4,13 @@
     // Page registry
     const pages = {
         status: { init: () => window.StatusPage?.init(), name: 'Status' },
+        rewards: { init: () => window.RewardsPage?.init(), name: 'Rewards' },
         files: { init: () => window.FilesPage?.init(), name: 'Files' },
         explore: { init: () => window.ExplorePage?.init(), name: 'Explore' },
         peers: { init: () => window.PeersPage?.init(), name: 'Peers' },
         pins: { init: () => window.PinsPage?.init(), name: 'Pins' },
+        incentivized: { init: () => window.IncentivizedPage?.init(), name: 'Incentivized' },
+        validator: { init: () => window.ValidatorPage?.init(), name: 'Validator' },
         ipns: { init: () => window.IPNSPage?.init(), name: 'IPNS' },
         settings: { init: () => window.SettingsPage?.init(), name: 'Settings' }
     };
@@ -181,6 +184,37 @@
         showModal,
         closeModal,
         updateSidebarStatus
+    };
+    
+    // Expose simplified aliases for page scripts
+    window.App = {
+        navigate: navigateTo
+    };
+    
+    window.Utils = {
+        showModal,
+        hideModal: closeModal,
+        showToast: (msg, type) => {
+            // Simple toast implementation
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type || 'info'}`;
+            toast.textContent = msg;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+    };
+    
+    window.API = {
+        call: async (method, params) => {
+            // Route to IPFS_API methods
+            if (typeof IPFS_API[method] === 'function') {
+                return IPFS_API[method](params);
+            }
+            // Generic POST for other methods
+            return IPFS_API.request(method, params || {});
+        }
     };
     
     // Initialize when DOM is ready

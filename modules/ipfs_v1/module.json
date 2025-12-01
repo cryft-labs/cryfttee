@@ -1,58 +1,77 @@
 {
-  "id": "ipfs_v1",
-  "name": "IPFS Module",
+  "id": "cryft_ipfs",
+  "name": "CryftIPFS - Unified Storage with Validator Rewards",
   "version": "2.0.0",
-  "description": "Self-contained IPFS module with embedded Iroh node (default) or optional kubo support",
+  "description": "Decentralized IPFS storage network where validators earn CRYFT rewards for pinning incentivized content. Combines IPFS functionality with blockchain-based storage incentives.",
   "author": "Cryft Labs",
   "capabilities": [
     "node_start",
     "node_stop",
     "node_status",
-    "node_config",
+    "node_info",
+    "bandwidth_stats",
     "ipfs_add",
+    "ipfs_add_dir",
     "ipfs_cat",
     "ipfs_get",
-    "ipfs_pin",
-    "ipfs_unpin",
-    "ipfs_pin_ls",
-    "ipfs_stat",
+    "ipfs_ls",
+    "pin_ls",
+    "pin_add",
+    "pin_rm",
+    "swarm_peers",
+    "swarm_connect",
+    "swarm_disconnect",
+    "bootstrap_list",
+    "bootstrap_add",
+    "bootstrap_rm",
+    "bootstrap_reset",
+    "dht_findpeer",
+    "dht_findprovs",
+    "dht_provide",
+    "key_list",
+    "key_gen",
+    "key_rm",
+    "key_rename",
     "ipns_publish",
     "ipns_resolve",
-    "ipns_key_gen",
-    "ipns_key_list",
-    "swarm_connect",
-    "swarm_peers",
-    "swarm_addrs",
     "repo_stat",
-    "repo_gc"
+    "repo_gc",
+    "block_stat",
+    "block_get",
+    "config_get",
+    "config_set",
+    "validator_status",
+    "validator_register",
+    "validator_update_config",
+    "validator_metrics",
+    "validator_activity",
+    "validator_claim_rewards",
+    "validator_stats",
+    "list_proofs",
+    "claim_rewards",
+    "list_incentivized",
+    "incentivize",
+    "pin",
+    "network_stats",
+    "register_pin",
+    "challenge_pin",
+    "submit_proof"
   ],
   "defaultFor": {
-    "node_start": true,
-    "node_stop": true,
-    "node_status": true,
-    "node_config": true,
     "ipfs_add": true,
     "ipfs_cat": true,
     "ipfs_get": true,
-    "ipfs_pin": true,
-    "ipfs_unpin": true,
-    "ipfs_pin_ls": true,
-    "ipfs_stat": true,
-    "ipns_publish": true,
-    "ipns_resolve": true,
-    "ipns_key_gen": true,
-    "ipns_key_list": true,
-    "swarm_connect": true,
-    "swarm_peers": true,
-    "swarm_addrs": true,
-    "repo_stat": true,
-    "repo_gc": true
+    "pin_add": true,
+    "pin_rm": true,
+    "pin_ls": true,
+    "validator_status": true,
+    "claim_rewards": true
   },
   "hasGui": true,
   "guiPath": "gui",
   "nativeBinary": {
-    "path": "native/ipfs-node",
-    "description": "Embedded Iroh IPFS node - provides kubo-compatible API",
+    "name": "cryft-ipfs",
+    "description": "Embedded IPFS node powered by Iroh with validator reward tracking",
     "buildCommand": "cargo build --release --manifest-path native/Cargo.toml",
     "platforms": {
       "linux-x64": "native/target/release/ipfs-node",
@@ -60,15 +79,16 @@
       "darwin-x64": "native/target/release/ipfs-node",
       "darwin-arm64": "native/target/aarch64-apple-darwin/release/ipfs-node",
       "windows-x64": "native/target/release/ipfs-node.exe"
+    },
+    "args": [
+      "--api-port", "5001",
+      "--gateway-port", "8080"
+    ],
+    "env": {
+      "RUST_LOG": "info"
     }
   },
   "config": {
-    "backend": {
-      "type": "string",
-      "default": "auto",
-      "description": "Backend type: 'iroh' (embedded, default), 'kubo' (external daemon), or 'auto' (detect)",
-      "options": ["iroh", "kubo", "auto"]
-    },
     "api_url": {
       "type": "string",
       "default": "http://127.0.0.1:5001",
@@ -81,24 +101,77 @@
     },
     "public_gateway": {
       "type": "string",
-      "default": "https://gateway.cryft.network",
+      "default": "https://ipfs.cryft.network",
       "description": "Public gateway for shareable URLs"
     },
-    "data_dir": {
+    "validator_id": {
       "type": "string",
-      "default": "~/.cryfttee/ipfs",
-      "description": "Data directory for Iroh storage"
+      "default": null,
+      "description": "Validator node ID for reward tracking (required for earning rewards)"
     },
-    "timeout_secs": {
+    "rpc_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:9650",
+      "description": "Cryft blockchain RPC URL for reward submission"
+    },
+    "max_storage_gb": {
       "type": "number",
-      "default": 60,
-      "description": "Request timeout in seconds"
+      "default": 100,
+      "description": "Maximum storage allocation in GB"
+    },
+    "min_reward_rate": {
+      "type": "number",
+      "default": 100000,
+      "description": "Minimum reward rate (nCRYFT/epoch) to auto-pin content"
+    },
+    "auto_pin_tiers": {
+      "type": "array",
+      "default": ["critical", "priority"],
+      "description": "Automatically pin content from these reward tiers"
+    },
+    "auto_claim": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically claim rewards when above threshold"
+    },
+    "auto_respond_challenges": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically respond to storage challenges"
+    }
+  },
+  "rewards": {
+    "description": "Validators earn CRYFT tokens for pinning incentivized content",
+    "tiers": {
+      "basic": {
+        "multiplier": 1,
+        "description": "Standard storage with basic rewards"
+      },
+      "standard": {
+        "multiplier": 2,
+        "description": "Enhanced rewards for standard content"
+      },
+      "priority": {
+        "multiplier": 5,
+        "description": "High rewards for priority content"
+      },
+      "critical": {
+        "multiplier": 10,
+        "description": "Maximum rewards for critical infrastructure content"
+      }
+    },
+    "challenges": {
+      "description": "Validators must respond to periodic proof-of-storage challenges",
+      "frequency": "random",
+      "timeout_secs": 30
+    },
+    "economics": {
+      "base_rate_ncryft_per_gb_per_day": 1000000000,
+      "min_claim_ncryft": 1000000000,
+      "challenge_reward_ncryft": 10000000
     }
   },
   "dependencies": {
     "runtime": ">=0.4.0"
-  },
-  "requirements": {
-    "note": "No external dependencies when using Iroh (default). Optionally use existing kubo daemon."
   }
 }
