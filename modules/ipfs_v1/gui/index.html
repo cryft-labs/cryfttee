@@ -3,93 +3,120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPFS Embedded Node Module</title>
+    <title>IPFS Module</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <h1>
-            <span class="icon">🌐</span>
-            IPFS Embedded Node
-            <span class="mode-badge" id="node-mode-badge">FULL NODE</span>
-        </h1>
-        <p class="subtitle">Standalone embedded IPFS node • No external daemon required • Full or Light mode</p>
-        
-        <!-- Node Mode Selector -->
-        <div class="mode-selector">
-            <div class="mode-option selected" data-mode="full" onclick="selectNodeMode('full')">
-                <div class="mode-icon">🖥️</div>
-                <div class="mode-info">
-                    <div class="mode-name">Full Node</div>
-                    <div class="mode-desc">Complete DHT, serves blocks, announces content</div>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🌐</span>
+                    <span class="logo-text">IPFS</span>
+                </div>
+                <div class="node-status-mini" id="sidebar-node-status">
+                    <span class="status-dot offline"></span>
+                    <span class="status-text">Offline</span>
                 </div>
             </div>
-            <div class="mode-option" data-mode="light" onclick="selectNodeMode('light')">
-                <div class="mode-icon">📱</div>
-                <div class="mode-info">
-                    <div class="mode-name">Light Node</div>
-                    <div class="mode-desc">Minimal DHT, request-only, low resources</div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item active" data-page="status">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Status</span>
+                </li>
+                <li class="nav-item" data-page="files">
+                    <span class="nav-icon">📁</span>
+                    <span class="nav-label">Files</span>
+                </li>
+                <li class="nav-item" data-page="explore">
+                    <span class="nav-icon">🔍</span>
+                    <span class="nav-label">Explore</span>
+                </li>
+                <li class="nav-item" data-page="peers">
+                    <span class="nav-icon">🌍</span>
+                    <span class="nav-label">Peers</span>
+                </li>
+                <li class="nav-item" data-page="pins">
+                    <span class="nav-icon">📌</span>
+                    <span class="nav-label">Pins</span>
+                </li>
+                <li class="nav-item" data-page="ipns">
+                    <span class="nav-icon">🔗</span>
+                    <span class="nav-label">IPNS</span>
+                </li>
+                <li class="nav-item" data-page="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">Settings</span>
+                </li>
+            </ul>
+            
+            <div class="sidebar-footer">
+                <div class="storage-indicator">
+                    <div class="storage-label">
+                        <span>Storage</span>
+                        <span id="storage-percent">0%</span>
+                    </div>
+                    <div class="storage-bar">
+                        <div class="storage-fill" id="storage-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="storage-text" id="storage-text">0 B / 10 GB</div>
                 </div>
             </div>
-        </div>
+        </nav>
         
-        <!-- Status Bar -->
-        <div class="status-bar">
-            <div class="status-item">
-                <span class="status-dot" id="node-status"></span>
-                <span>Node</span>
-                <span class="status-value" id="node-peer-id"></span>
-            </div>
-            <div class="status-item">
-                <span class="status-dot" id="dht-status"></span>
-                <span>DHT</span>
-                <span class="status-value" id="dht-peers">0 peers</span>
-            </div>
-            <div class="status-item">
-                <span class="status-dot" id="gateway-status"></span>
-                <span>Gateway</span>
-            </div>
-            <div class="status-item status-stats">
-                <span id="pin-count">0</span> pins
-                <span class="separator">•</span>
-                <span id="block-count">0</span> blocks
-                <span class="separator">•</span>
-                <span id="storage-used">0 MB</span>
-            </div>
-        </div>
-        
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab active" data-tab="node">🚀 Node Control</button>
-            <button class="tab" data-tab="pins">📌 Pins</button>
-            <button class="tab" data-tab="add">➕ Add Content</button>
-            <button class="tab" data-tab="peers">👥 Peers</button>
-            <button class="tab" data-tab="ipns">🔗 IPNS</button>
-            <button class="tab" data-tab="settings">⚙️ Settings</button>
-        </div>
-        
-        <!-- Tab Contents -->
-        <div class="tab-content active" id="tab-node"></div>
-        <div class="tab-content" id="tab-pins"></div>
-        <div class="tab-content" id="tab-add"></div>
-        <div class="tab-content" id="tab-peers"></div>
-        <div class="tab-content" id="tab-ipns"></div>
-        <div class="tab-content" id="tab-settings"></div>
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Status Page -->
+            <div class="page active" id="page-status"></div>
+            
+            <!-- Files Page -->
+            <div class="page" id="page-files"></div>
+            
+            <!-- Explore Page -->
+            <div class="page" id="page-explore"></div>
+            
+            <!-- Peers Page -->
+            <div class="page" id="page-peers"></div>
+            
+            <!-- Pins Page -->
+            <div class="page" id="page-pins"></div>
+            
+            <!-- IPNS Page -->
+            <div class="page" id="page-ipns"></div>
+            
+            <!-- Settings Page -->
+            <div class="page" id="page-settings"></div>
+        </main>
     </div>
     
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
     
+    <!-- Modal Container -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-title">Modal</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-footer" id="modal-footer"></div>
+        </div>
+    </div>
+    
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/api.js"></script>
-    <script src="js/tabs/node.js"></script>
-    <script src="js/tabs/pins.js"></script>
-    <script src="js/tabs/add.js"></script>
-    <script src="js/tabs/peers.js"></script>
-    <script src="js/tabs/ipns.js"></script>
-    <script src="js/tabs/settings.js"></script>
+    <script src="js/pages/status.js"></script>
+    <script src="js/pages/files.js"></script>
+    <script src="js/pages/explore.js"></script>
+    <script src="js/pages/peers.js"></script>
+    <script src="js/pages/pins.js"></script>
+    <script src="js/pages/ipns.js"></script>
+    <script src="js/pages/settings.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

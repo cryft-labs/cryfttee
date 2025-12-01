@@ -77,21 +77,22 @@ modules/                   # WASM modules directory
     ├── README.md
     ├── src/
     │   └── lib.rs         # Embedded IPFS node implementation
-    └── gui/               # Modular GUI structure
-        ├── index.html     # Main HTML shell
-        ├── styles.css     # Shared styles
+    └── gui/               # Sidebar-style GUI (like IPFS Desktop)
+        ├── index.html     # Main shell with sidebar layout
+        ├── styles.css     # CryftTEE-themed styles
         └── js/
             ├── config.js  # Configuration constants
             ├── utils.js   # Utility functions
-            ├── api.js     # API wrapper
-            ├── app.js     # Main application
-            └── tabs/      # Tab modules
-                ├── node.js     # Node control
-                ├── pins.js     # Pin management
-                ├── add.js      # Add content
+            ├── api.js     # IPFS API wrapper
+            ├── app.js     # Main application entry
+            └── pages/     # Page modules
+                ├── status.js   # Node status & control
+                ├── files.js    # File browser & upload
+                ├── explore.js  # CID explorer
                 ├── peers.js    # Peer management
-                ├── ipns.js     # IPNS publishing
-                └── settings.js # Settings
+                ├── pins.js     # Pin management
+                ├── ipns.js     # IPNS keys & publish
+                └── settings.js # Configuration
 
 ui/                        # Kiosk web interface
 ├── index.html

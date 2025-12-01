@@ -235,14 +235,48 @@ curl -X POST http://localhost:3232/v1/modules/ipfs_v1/call \
 
 ## GUI
 
-The module includes a web GUI at `/modules/ipfs_v1/gui/` with:
+The module includes a sidebar-style web GUI (similar to IPFS Desktop) at `/modules/ipfs_v1/gui/`:
 
-- **Node Control**: Start/stop node, select mode (Full/Light)
-- **Pins**: Browse and manage pinned content
-- **Add Content**: Upload files or pin existing CIDs
-- **Peers**: View/manage connected peers, DHT operations
-- **IPNS**: Publish and resolve names, manage keys
-- **Settings**: Configure all node parameters
+### Structure
+
+```
+gui/
+├── index.html          # Main shell with sidebar layout
+├── styles.css          # CryftTEE-themed styles (~600 lines)
+└── js/
+    ├── config.js       # Configuration constants
+    ├── utils.js        # Utility functions
+    ├── api.js          # IPFS API wrapper
+    ├── app.js          # Main application entry
+    └── pages/
+        ├── status.js   # Node status & control
+        ├── files.js    # File browser & upload
+        ├── explore.js  # CID explorer
+        ├── peers.js    # Peer management
+        ├── pins.js     # Pin management
+        ├── ipns.js     # IPNS keys & publish
+        └── settings.js # Configuration
+```
+
+### Pages
+
+| Page | Description |
+|------|-------------|
+| **Status** | Node status, mode selection (Full/Light), stats, bandwidth |
+| **Files** | File browser, drag & drop upload, folder management |
+| **Explore** | Browse IPFS by CID, preview content, pin discoveries |
+| **Peers** | Connected peers, bootstrap management, connect/disconnect |
+| **Pins** | Pinned content list, search, filter by type, unpin |
+| **IPNS** | Key management, publish to IPNS, resolve names |
+| **Settings** | Network, storage, gateway, connection manager config |
+
+### Features
+
+- **Sidebar Navigation**: Click menu items to switch between pages
+- **Live Status**: Sidebar shows node online/offline status
+- **Storage Indicator**: Visual progress bar for storage usage
+- **Responsive**: Works on mobile with collapsible sidebar
+- **Theme**: Matches CryftTEE dashboard styling (light/dark mode)
 
 ## Building
 

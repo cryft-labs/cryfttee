@@ -1,188 +1,269 @@
-/**
- * Utility functions for IPFS Module GUI
- */
+// Utility functions for IPFS Module
 
 /**
  * Format bytes to human readable string
  */
-function formatBytes(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 B';
+    
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 /**
- * Format date to localized string
+ * Format duration to human readable string
  */
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function formatDuration(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+    return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
 }
 
 /**
- * Truncate CID for display
+ * Format date to locale string
  */
-function truncateCid(cid, prefixLen = 12, suffixLen = 4) {
-    if (!cid || cid.length <= prefixLen + suffixLen) return cid;
-    return `${cid.substring(0, prefixLen)}...${cid.slice(-suffixLen)}`;
+function formatDate(date) {
+    if (!(date instanceof Date)) {
+        date = new Date(date);
+    }
+    return date.toLocaleString();
 }
 
 /**
- * Truncate Peer ID for display
+ * Format timestamp to relative time
  */
-function truncatePeerId(peerId, len = 16) {
-    if (!peerId || peerId.length <= len) return peerId;
-    return `${peerId.substring(0, len)}...`;
+function formatRelativeTime(date) {
+    if (!(date instanceof Date)) {
+        date = new Date(date);
+    }
+    
+    const now = new Date();
+    const diff = Math.floor((now - date) / 1000);
+    
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return formatDate(date);
+}
+
+/**
+ * Truncate string with ellipsis
+ */
+function truncate(str, maxLen = 20, position = 'middle') {
+    if (!str || str.length <= maxLen) return str;
+    
+    if (position === 'middle') {
+        const halfLen = Math.floor((maxLen - 3) / 2);
+        return str.slice(0, halfLen) + '...' + str.slice(-halfLen);
+    }
+    
+    return str.slice(0, maxLen - 3) + '...';
 }
 
 /**
  * Copy text to clipboard
  */
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('Copied to clipboard', 'info');
-    }).catch(err => {
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast('Copied to clipboard', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to copy:', err);
         showToast('Failed to copy', 'error');
-        console.error('Copy failed:', err);
-    });
+        return false;
+    }
 }
 
 /**
  * Show toast notification
  */
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', duration = 3000) {
     const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const icons = {
+        success: '✓',
+        error: '✗',
+        warning: '⚠',
+        info: 'ℹ'
+    };
+    
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.textContent = message;
+    toast.innerHTML = `
+        <span class="toast-icon">${icons[type] || icons.info}</span>
+        <span class="toast-message">${escapeHtml(message)}</span>
+    `;
+    
     container.appendChild(toast);
     
     setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100%)';
+        toast.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => toast.remove(), 300);
-    }, 4000);
+    }, duration);
 }
 
 /**
- * Open CID in public gateway
+ * Escape HTML entities
  */
-function openGateway(cid) {
-    const url = `${CONFIG.publicGateway}/ipfs/${cid}`;
-    window.open(url, '_blank');
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+/**
+ * Parse CID string to validate format
+ */
+function isValidCID(str) {
+    if (!str) return false;
+    // Basic CID validation - starts with Qm (v0) or ba (v1)
+    return /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(str) || 
+           /^ba[a-z2-7]{57,}$/.test(str) ||
+           /^baf[a-z2-7]{50,}$/.test(str);
+}
+
+/**
+ * Parse IPFS path
+ */
+function parseIPFSPath(path) {
+    if (!path) return null;
+    
+    // Handle /ipfs/CID format
+    const ipfsMatch = path.match(/^\/ipfs\/([^/]+)(\/.*)?$/);
+    if (ipfsMatch) {
+        return { type: 'ipfs', cid: ipfsMatch[1], subpath: ipfsMatch[2] || '' };
+    }
+    
+    // Handle /ipns/name format
+    const ipnsMatch = path.match(/^\/ipns\/([^/]+)(\/.*)?$/);
+    if (ipnsMatch) {
+        return { type: 'ipns', name: ipnsMatch[1], subpath: ipnsMatch[2] || '' };
+    }
+    
+    // Handle raw CID
+    if (isValidCID(path)) {
+        return { type: 'ipfs', cid: path, subpath: '' };
+    }
+    
+    return null;
+}
+
+/**
+ * Generate gateway URL for CID
+ */
+function getGatewayUrl(cid, gateway = 'https://ipfs.io') {
+    return `${gateway}/ipfs/${cid}`;
 }
 
 /**
  * Debounce function
  */
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+function debounce(fn, delay) {
+    let timeoutId;
+    return function(...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), delay);
     };
 }
 
 /**
- * Create HTML element from template string
+ * Throttle function
  */
-function htmlToElement(html) {
-    const template = document.createElement('template');
-    template.innerHTML = html.trim();
-    return template.content.firstChild;
+function throttle(fn, limit) {
+    let inThrottle;
+    return function(...args) {
+        if (!inThrottle) {
+            fn.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
 }
 
 /**
- * Escape HTML special characters
+ * Get file icon based on type/extension
  */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-/**
- * Parse multiaddr to human readable
- */
-function parseMultiaddr(addr) {
-    if (!addr) return { protocol: 'unknown', address: addr };
+function getFileIcon(filename, isDirectory = false) {
+    if (isDirectory) return '📁';
     
-    const parts = addr.split('/').filter(p => p);
-    let protocol = 'tcp';
-    let address = addr;
+    const ext = filename.split('.').pop().toLowerCase();
+    const icons = {
+        // Images
+        jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', svg: '🖼️', webp: '🖼️',
+        // Videos
+        mp4: '🎬', webm: '🎬', avi: '🎬', mov: '🎬', mkv: '🎬',
+        // Audio
+        mp3: '🎵', wav: '🎵', ogg: '🎵', flac: '🎵', m4a: '🎵',
+        // Documents
+        pdf: '📄', doc: '📝', docx: '📝', txt: '📝', md: '📝',
+        // Code
+        js: '📜', ts: '📜', py: '📜', rs: '📜', go: '📜', html: '📜', css: '📜', json: '📜',
+        // Archives
+        zip: '📦', tar: '📦', gz: '📦', rar: '📦', '7z': '📦'
+    };
     
-    if (parts.includes('quic') || parts.includes('quic-v1')) {
-        protocol = 'quic';
-    } else if (parts.includes('ws') || parts.includes('wss')) {
-        protocol = 'websocket';
-    }
-    
-    return { protocol, address };
+    return icons[ext] || '📄';
 }
 
 /**
- * Validate CID format
+ * Convert storage size to bytes
  */
-function isValidCid(cid) {
-    if (!cid) return false;
-    // Basic validation - starts with Qm (v0) or ba (v1) or has proper length
-    return /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[a-z2-7]{57,59}|b[a-z2-7]{58,})$/i.test(cid);
+function toBytes(value, unit) {
+    const units = { B: 1, KB: 1024, MB: 1024**2, GB: 1024**3, TB: 1024**4 };
+    return value * (units[unit] || 1);
 }
 
 /**
- * Format duration in seconds to human readable
+ * Load settings from localStorage
  */
-function formatDuration(seconds) {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    return `${hours}h ${mins}m`;
-}
-
-/**
- * Get status dot class based on state
- */
-function getStatusClass(state) {
-    switch (state) {
-        case 'online':
-        case 'running':
-        case 'healthy':
-            return 'online';
-        case 'connecting':
-        case 'starting':
-            return 'connecting';
-        case 'degraded':
-        case 'warning':
-            return 'degraded';
-        case 'offline':
-        case 'stopped':
-        case 'error':
-            return 'offline';
-        default:
-            return 'unknown';
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem('ipfs_settings');
+        return saved ? { ...IPFS_CONFIG.DEFAULTS, ...JSON.parse(saved) } : { ...IPFS_CONFIG.DEFAULTS };
+    } catch (e) {
+        console.error('Failed to load settings:', e);
+        return { ...IPFS_CONFIG.DEFAULTS };
     }
 }
 
-// Export functions
-window.formatBytes = formatBytes;
-window.formatDate = formatDate;
-window.truncateCid = truncateCid;
-window.truncatePeerId = truncatePeerId;
-window.copyToClipboard = copyToClipboard;
-window.showToast = showToast;
-window.openGateway = openGateway;
-window.debounce = debounce;
-window.htmlToElement = htmlToElement;
-window.escapeHtml = escapeHtml;
-window.parseMultiaddr = parseMultiaddr;
-window.isValidCid = isValidCid;
-window.formatDuration = formatDuration;
-window.getStatusClass = getStatusClass;
+/**
+ * Save settings to localStorage
+ */
+function saveSettings(settings) {
+    try {
+        localStorage.setItem('ipfs_settings', JSON.stringify(settings));
+        return true;
+    } catch (e) {
+        console.error('Failed to save settings:', e);
+        return false;
+    }
+}
+
+// Make utilities globally available
+window.IPFSUtils = {
+    formatBytes,
+    formatDuration,
+    formatDate,
+    formatRelativeTime,
+    truncate,
+    copyToClipboard,
+    showToast,
+    escapeHtml,
+    isValidCID,
+    parseIPFSPath,
+    getGatewayUrl,
+    debounce,
+    throttle,
+    getFileIcon,
+    toBytes,
+    loadSettings,
+    saveSettings
+};

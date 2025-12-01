@@ -1,203 +1,206 @@
-/**
- * API wrapper for IPFS Module
- */
+// IPFS Module API wrapper
 
-/**
- * Call module operation
- */
-async function callModule(operation, data = {}) {
-    try {
-        const response = await fetch(`${CONFIG.apiBase}/call`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ operation, data })
-        });
-        
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(error || `HTTP ${response.status}`);
+const IPFS_API = {
+    /**
+     * Call the IPFS module with an operation
+     */
+    async call(operation, params = {}) {
+        try {
+            const response = await fetch(`${IPFS_CONFIG.API_BASE}/call`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ operation, ...params })
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(error || `HTTP ${response.status}`);
+            }
+            
+            return await response.json();
+        } catch (error) {
+            console.error(`IPFS API error (${operation}):`, error);
+            throw error;
         }
-        
-        return await response.json();
-    } catch (error) {
-        console.error(`API error [${operation}]:`, error);
-        return { error: error.message };
+    },
+    
+    // ============ Node Operations ============
+    
+    async getStatus() {
+        return this.call('node_status');
+    },
+    
+    async startNode(mode = 'full') {
+        return this.call('node_start', { mode });
+    },
+    
+    async stopNode() {
+        return this.call('node_stop');
+    },
+    
+    async getNodeInfo() {
+        return this.call('node_info');
+    },
+    
+    async getBandwidth() {
+        return this.call('bandwidth_stats');
+    },
+    
+    // ============ File Operations ============
+    
+    async addFile(content, options = {}) {
+        return this.call('ipfs_add', { 
+            content,
+            pin: options.pin !== false,
+            wrap_with_directory: options.wrapWithDirectory || false,
+            only_hash: options.onlyHash || false
+        });
+    },
+    
+    async addDirectory(files) {
+        return this.call('ipfs_add_dir', { files });
+    },
+    
+    async cat(cid, options = {}) {
+        return this.call('ipfs_cat', {
+            cid,
+            offset: options.offset,
+            length: options.length
+        });
+    },
+    
+    async get(cid) {
+        return this.call('ipfs_get', { cid });
+    },
+    
+    async ls(cid) {
+        return this.call('ipfs_ls', { cid });
+    },
+    
+    // ============ Pin Operations ============
+    
+    async listPins(type = 'all') {
+        return this.call('pin_ls', { type });
+    },
+    
+    async addPin(cid, recursive = true) {
+        return this.call('pin_add', { cid, recursive });
+    },
+    
+    async removePin(cid, recursive = true) {
+        return this.call('pin_rm', { cid, recursive });
+    },
+    
+    // ============ Peer Operations ============
+    
+    async listPeers() {
+        return this.call('swarm_peers');
+    },
+    
+    async connectPeer(multiaddr) {
+        return this.call('swarm_connect', { multiaddr });
+    },
+    
+    async disconnectPeer(peerId) {
+        return this.call('swarm_disconnect', { peer_id: peerId });
+    },
+    
+    async getBootstrapPeers() {
+        return this.call('bootstrap_list');
+    },
+    
+    async addBootstrapPeer(multiaddr) {
+        return this.call('bootstrap_add', { multiaddr });
+    },
+    
+    async removeBootstrapPeer(multiaddr) {
+        return this.call('bootstrap_rm', { multiaddr });
+    },
+    
+    async resetBootstrapPeers() {
+        return this.call('bootstrap_reset');
+    },
+    
+    // ============ DHT Operations ============
+    
+    async dhtFindPeer(peerId) {
+        return this.call('dht_findpeer', { peer_id: peerId });
+    },
+    
+    async dhtFindProviders(cid, numProviders = 20) {
+        return this.call('dht_findprovs', { cid, num_providers: numProviders });
+    },
+    
+    async dhtProvide(cid) {
+        return this.call('dht_provide', { cid });
+    },
+    
+    // ============ IPNS Operations ============
+    
+    async listKeys() {
+        return this.call('key_list');
+    },
+    
+    async generateKey(name, type = 'ed25519', size = 2048) {
+        return this.call('key_gen', { name, type, size });
+    },
+    
+    async removeKey(name) {
+        return this.call('key_rm', { name });
+    },
+    
+    async renameKey(oldName, newName) {
+        return this.call('key_rename', { old_name: oldName, new_name: newName });
+    },
+    
+    async ipnsPublish(cid, options = {}) {
+        return this.call('ipns_publish', {
+            cid,
+            key: options.key || 'self',
+            lifetime: options.lifetime || '24h',
+            ttl: options.ttl || '1h',
+            resolve: options.resolve !== false
+        });
+    },
+    
+    async ipnsResolve(name, options = {}) {
+        return this.call('ipns_resolve', {
+            name,
+            recursive: options.recursive !== false,
+            nocache: options.nocache || false
+        });
+    },
+    
+    // ============ Repo Operations ============
+    
+    async repoStat() {
+        return this.call('repo_stat');
+    },
+    
+    async repoGc() {
+        return this.call('repo_gc');
+    },
+    
+    // ============ Block Operations ============
+    
+    async blockStat(cid) {
+        return this.call('block_stat', { cid });
+    },
+    
+    async blockGet(cid) {
+        return this.call('block_get', { cid });
+    },
+    
+    // ============ Config Operations ============
+    
+    async getConfig(key) {
+        return this.call('config_get', { key });
+    },
+    
+    async setConfig(key, value) {
+        return this.call('config_set', { key, value });
     }
-}
-
-// ==================== Node Operations ====================
-
-async function initNode(mode = 'full') {
-    return callModule('node_init', { mode });
-}
-
-async function startNode() {
-    return callModule('node_start', {});
-}
-
-async function stopNode() {
-    return callModule('node_stop', {});
-}
-
-async function getNodeStatus() {
-    return callModule('node_status', {});
-}
-
-async function getNodeConfig() {
-    return callModule('node_config', { action: 'get' });
-}
-
-async function setNodeConfig(config) {
-    return callModule('node_config', { action: 'set', config });
-}
-
-// ==================== Content Operations ====================
-
-async function addContent(content, options = {}) {
-    return callModule('ipfs_add', {
-        content,
-        base64: options.base64 || false,
-        filename: options.filename,
-        pin: options.pin !== false,
-        cidVersion: options.cidVersion || 1
-    });
-}
-
-async function catContent(cid) {
-    return callModule('ipfs_cat', { cid });
-}
-
-async function getContent(cid, outputPath) {
-    return callModule('ipfs_get', { cid, outputPath });
-}
-
-async function statContent(cid) {
-    return callModule('ipfs_stat', { cid });
-}
-
-// ==================== Pin Operations ====================
-
-async function pinCid(cid, options = {}) {
-    return callModule('ipfs_pin', {
-        cid,
-        name: options.name,
-        recursive: options.recursive !== false
-    });
-}
-
-async function unpinCid(cid) {
-    return callModule('ipfs_unpin', { cid });
-}
-
-async function listPins(type = 'recursive') {
-    return callModule('ipfs_ls', { pinType: type });
-}
-
-async function searchPins(query, limit = 100) {
-    return callModule('ipfs_search', { query, limit });
-}
-
-// ==================== Peer Operations ====================
-
-async function connectPeer(addr) {
-    return callModule('peer_connect', { addr });
-}
-
-async function disconnectPeer(peerId) {
-    return callModule('peer_disconnect', { peerId });
-}
-
-async function listPeers() {
-    return callModule('peer_list', {});
-}
-
-async function findPeer(peerId) {
-    return callModule('dht_find_peer', { peerId });
-}
-
-async function findProviders(cid, limit = 20) {
-    return callModule('dht_find_providers', { cid, limit });
-}
-
-async function provideContent(cid) {
-    return callModule('dht_provide', { cid });
-}
-
-// ==================== Block Operations ====================
-
-async function getBlock(cid) {
-    return callModule('block_get', { cid });
-}
-
-async function putBlock(data, options = {}) {
-    return callModule('block_put', {
-        data,
-        format: options.format || 'raw',
-        mhtype: options.mhtype || 'sha2-256'
-    });
-}
-
-async function statBlock(cid) {
-    return callModule('block_stat', { cid });
-}
-
-// ==================== IPNS Operations ====================
-
-async function publishIpns(cid, options = {}) {
-    return callModule('ipns_publish', {
-        cid,
-        key: options.key || 'self',
-        ttl: options.ttl || 3600,
-        lifetime: options.lifetime || 86400
-    });
-}
-
-async function resolveIpns(name) {
-    return callModule('ipns_resolve', { name });
-}
-
-async function listKeys() {
-    return callModule('ipns_keys', {});
-}
-
-async function generateKey(name, type = 'ed25519') {
-    return callModule('ipns_keys', { generate: name, keyType: type });
-}
-
-// Export all API functions
-window.api = {
-    callModule,
-    // Node
-    initNode,
-    startNode,
-    stopNode,
-    getNodeStatus,
-    getNodeConfig,
-    setNodeConfig,
-    // Content
-    addContent,
-    catContent,
-    getContent,
-    statContent,
-    // Pins
-    pinCid,
-    unpinCid,
-    listPins,
-    searchPins,
-    // Peers
-    connectPeer,
-    disconnectPeer,
-    listPeers,
-    findPeer,
-    findProviders,
-    provideContent,
-    // Blocks
-    getBlock,
-    putBlock,
-    statBlock,
-    // IPNS
-    publishIpns,
-    resolveIpns,
-    listKeys,
-    generateKey
 };
+
+// Make API globally available
+window.IPFS_API = IPFS_API;
