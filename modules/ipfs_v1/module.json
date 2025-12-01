@@ -1,11 +1,10 @@
 {
   "id": "ipfs_v1",
-  "name": "IPFS Embedded Node Module",
+  "name": "IPFS Module",
   "version": "2.0.0",
-  "description": "Standalone IPFS module with embedded node - full node (default) or light node mode, no external daemon required",
+  "description": "Self-contained IPFS module with embedded Iroh node (default) or optional kubo support",
   "author": "Cryft Labs",
   "capabilities": [
-    "node_init",
     "node_start",
     "node_stop",
     "node_status",
@@ -15,24 +14,19 @@
     "ipfs_get",
     "ipfs_pin",
     "ipfs_unpin",
-    "ipfs_ls",
+    "ipfs_pin_ls",
     "ipfs_stat",
-    "ipfs_search",
     "ipns_publish",
     "ipns_resolve",
-    "ipns_keys",
-    "peer_connect",
-    "peer_disconnect",
-    "peer_list",
-    "dht_find_peer",
-    "dht_find_providers",
-    "dht_provide",
-    "block_get",
-    "block_put",
-    "block_stat"
+    "ipns_key_gen",
+    "ipns_key_list",
+    "swarm_connect",
+    "swarm_peers",
+    "swarm_addrs",
+    "repo_stat",
+    "repo_gc"
   ],
   "defaultFor": {
-    "node_init": true,
     "node_start": true,
     "node_stop": true,
     "node_status": true,
@@ -42,95 +36,69 @@
     "ipfs_get": true,
     "ipfs_pin": true,
     "ipfs_unpin": true,
-    "ipfs_ls": true,
+    "ipfs_pin_ls": true,
     "ipfs_stat": true,
-    "ipfs_search": true,
     "ipns_publish": true,
     "ipns_resolve": true,
-    "ipns_keys": true,
-    "peer_connect": true,
-    "peer_disconnect": true,
-    "peer_list": true,
-    "dht_find_peer": true,
-    "dht_find_providers": true,
-    "dht_provide": true,
-    "block_get": true,
-    "block_put": true,
-    "block_stat": true
+    "ipns_key_gen": true,
+    "ipns_key_list": true,
+    "swarm_connect": true,
+    "swarm_peers": true,
+    "swarm_addrs": true,
+    "repo_stat": true,
+    "repo_gc": true
   },
   "hasGui": true,
   "guiPath": "gui",
+  "nativeBinary": {
+    "path": "native/ipfs-node",
+    "description": "Embedded Iroh IPFS node - provides kubo-compatible API",
+    "buildCommand": "cargo build --release --manifest-path native/Cargo.toml",
+    "platforms": {
+      "linux-x64": "native/target/release/ipfs-node",
+      "linux-arm64": "native/target/aarch64-unknown-linux-gnu/release/ipfs-node",
+      "darwin-x64": "native/target/release/ipfs-node",
+      "darwin-arm64": "native/target/aarch64-apple-darwin/release/ipfs-node",
+      "windows-x64": "native/target/release/ipfs-node.exe"
+    }
+  },
   "config": {
-    "node": {
-      "mode": "full",
-      "description": "Node mode: 'full' (complete DHT, full block store) or 'light' (minimal DHT, request-only)",
-      "modes": {
-        "full": {
-          "description": "Complete IPFS node with full DHT participation, block serving, and content providing",
-          "dht_mode": "server",
-          "serve_blocks": true,
-          "announce_content": true
-        },
-        "light": {
-          "description": "Lightweight node with minimal DHT, only requests content, does not serve or announce",
-          "dht_mode": "client",
-          "serve_blocks": false,
-          "announce_content": false
-        }
-      }
+    "backend": {
+      "type": "string",
+      "default": "auto",
+      "description": "Backend type: 'iroh' (embedded, default), 'kubo' (external daemon), or 'auto' (detect)",
+      "options": ["iroh", "kubo", "auto"]
     },
-    "storage": {
-      "repo_path": "~/.cryfttee/ipfs",
-      "max_storage_gb": 50,
-      "gc_watermark_high": 0.9,
-      "gc_watermark_low": 0.7
+    "api_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:5001",
+      "description": "IPFS API URL"
     },
-    "network": {
-      "listen_addrs": [
-        "/ip4/0.0.0.0/tcp/4001",
-        "/ip6/::/tcp/4001",
-        "/ip4/0.0.0.0/udp/4001/quic-v1",
-        "/ip6/::/udp/4001/quic-v1"
-      ],
-      "bootstrap_peers": [
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt"
-      ],
-      "max_connections": 900,
-      "min_connections": 50,
-      "connection_timeout_secs": 30
+    "gateway_url": {
+      "type": "string",
+      "default": "http://127.0.0.1:8080",
+      "description": "IPFS Gateway URL"
     },
-    "gateway": {
-      "enabled": true,
-      "listen_addr": "127.0.0.1:8080",
-      "writable": false,
-      "public_gateways": [
-        "https://gateway.cryft.network",
-        "https://ipfs.io",
-        "https://dweb.link",
-        "https://cloudflare-ipfs.com"
-      ]
+    "public_gateway": {
+      "type": "string",
+      "default": "https://gateway.cryft.network",
+      "description": "Public gateway for shareable URLs"
     },
-    "api": {
-      "listen_addr": "127.0.0.1:5001",
-      "cors_origins": ["*"]
+    "data_dir": {
+      "type": "string",
+      "default": "~/.cryfttee/ipfs",
+      "description": "Data directory for Iroh storage"
     },
-    "ipns": {
-      "cache_ttl_secs": 3600,
-      "republish_interval_hours": 12
-    },
-    "limits": {
-      "max_add_size_mb": 100,
-      "max_block_size_bytes": 2097152,
-      "request_timeout_secs": 60
+    "timeout_secs": {
+      "type": "number",
+      "default": 60,
+      "description": "Request timeout in seconds"
     }
   },
   "dependencies": {
     "runtime": ">=0.4.0"
   },
   "requirements": {
-    "note": "No external dependencies - this module runs an embedded IPFS node"
+    "note": "No external dependencies when using Iroh (default). Optionally use existing kubo daemon."
   }
 }
