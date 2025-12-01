@@ -24,6 +24,49 @@
 set -euo pipefail
 
 # =============================================================================
+# SSH Connection Multiplexing
+# =============================================================================
+# Uses a single SSH connection for all remote commands to avoid repeated
+# password prompts.
+
+SSH_CONTROL_PATH="/tmp/cryfttee-keyvault-ssh-%r@%h:%p"
+SSH_CONTROL_PERSIST="10m"
+
+# Start SSH master connection (call once at start of remote operations)
+start_ssh_master() {
+    local target="${1}"
+    
+    # Check if master already exists
+    if ssh -O check -o ControlPath="${SSH_CONTROL_PATH}" "${target}" 2>/dev/null; then
+        return 0
+    fi
+    
+    # Start master connection in background
+    ssh -fNM \
+        -o ControlPath="${SSH_CONTROL_PATH}" \
+        -o ControlPersist="${SSH_CONTROL_PERSIST}" \
+        -o ServerAliveInterval=60 \
+        -o ServerAliveCountMax=3 \
+        "${target}"
+}
+
+# Stop SSH master connection (cleanup)
+stop_ssh_master() {
+    local target="${1}"
+    ssh -O exit -o ControlPath="${SSH_CONTROL_PATH}" "${target}" 2>/dev/null || true
+}
+
+# SSH wrapper that uses the master connection
+ssh_cmd() {
+    ssh -o ControlPath="${SSH_CONTROL_PATH}" "$@"
+}
+
+# SCP wrapper that uses the master connection  
+scp_cmd() {
+    scp -o ControlPath="${SSH_CONTROL_PATH}" "$@"
+}
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -140,8 +183,8 @@ install_docker_remote() {
     LOCAL_TMP=$(mktemp -d)
     generate_docker_install_script > "${LOCAL_TMP}/install-docker.sh"
     
-    scp "${LOCAL_TMP}/install-docker.sh" "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/"
-    ssh -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/install-docker.sh && /tmp/install-docker.sh && rm /tmp/install-docker.sh"
+    scp_cmd "${LOCAL_TMP}/install-docker.sh" "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/"
+    ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/install-docker.sh && /tmp/install-docker.sh && rm /tmp/install-docker.sh"
     
     rm -rf "${LOCAL_TMP}"
     log "Docker installation complete!"
@@ -1902,18 +1945,25 @@ deploy_remote() {
     info "Mode: ${mode}"
     echo ""
     
-    # Check SSH
+    # Check SSH and establish master connection
     step "Testing SSH connection..."
     if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "${KEYVAULT_USER}@${KEYVAULT_HOST}" "echo 'OK'" 2>/dev/null; then
-        # Try with password
+        # Try with password - this will also establish the master connection
         if ! ssh -o ConnectTimeout=5 "${KEYVAULT_USER}@${KEYVAULT_HOST}" "echo 'OK'" 2>/dev/null; then
             error "Cannot connect to ${KEYVAULT_HOST}"
         fi
     fi
     
+    # Start SSH master connection for connection reuse (avoids repeated password prompts)
+    step "Establishing SSH connection multiplexing..."
+    start_ssh_master "${KEYVAULT_USER}@${KEYVAULT_HOST}"
+    
+    # Cleanup SSH master on exit
+    trap "stop_ssh_master '${KEYVAULT_USER}@${KEYVAULT_HOST}'; rm -rf ${LOCAL_TMP:-/tmp/nonexistent} 2>/dev/null" EXIT
+    
     # Check Docker
     step "Checking Docker..."
-    if ! ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "command -v docker" >/dev/null 2>&1; then
+    if ! ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "command -v docker" >/dev/null 2>&1; then
         warn "Docker not found on ${KEYVAULT_HOST}"
         read -p "Install Docker now? [y/N] " -n 1 -r
         echo
@@ -1929,11 +1979,11 @@ deploy_remote() {
     EXISTING_DEPLOYMENT=false
     EXISTING_VAULT_DATA=false
     
-    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -f ${CONFIG_DIR}/docker-compose.yml ]" 2>/dev/null; then
+    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -f ${CONFIG_DIR}/docker-compose.yml ]" 2>/dev/null; then
         EXISTING_DEPLOYMENT=true
     fi
     
-    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -d ${VAULT_DATA}/data ] && [ -n \"\$(ls -A ${VAULT_DATA}/data 2>/dev/null)\" ]" 2>/dev/null; then
+    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -d ${VAULT_DATA}/data ] && [ -n \"\$(ls -A ${VAULT_DATA}/data 2>/dev/null)\" ]" 2>/dev/null; then
         EXISTING_VAULT_DATA=true
     fi
     
@@ -1954,8 +2004,8 @@ deploy_remote() {
                 exit 1
             fi
             step "Removing existing deployment..."
-            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
-            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true"
             info "Clean slate ready for fresh installation."
             EXISTING_DEPLOYMENT=false
         elif [ "${FORCE_UPGRADE}" = "true" ]; then
@@ -1995,13 +2045,13 @@ deploy_remote() {
             # Create backup of existing config
             step "Backing up existing configuration..."
             BACKUP_DIR="${CONFIG_DIR}/backup-$(date +%Y%m%d-%H%M%S)"
-            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo mkdir -p ${BACKUP_DIR} && sudo cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl ${BACKUP_DIR}/ 2>/dev/null || true"
-            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cp -r ${SCRIPTS_DIR}/*.sh ${BACKUP_DIR}/ 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo mkdir -p ${BACKUP_DIR} && sudo cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl ${BACKUP_DIR}/ 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cp -r ${SCRIPTS_DIR}/*.sh ${BACKUP_DIR}/ 2>/dev/null || true"
             info "Backup created at ${BACKUP_DIR}"
             
             # Stop services before upgrade
             step "Stopping services for upgrade..."
-            ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
         fi
     fi
     
@@ -2083,12 +2133,12 @@ DEPLOYEOF
 
     # Upload files
     step "Uploading files to ${KEYVAULT_HOST}..."
-    ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "mkdir -p /tmp/cryfttee-deploy"
-    scp -q "${LOCAL_TMP}"/* "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/cryfttee-deploy/"
+    ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "mkdir -p /tmp/cryfttee-deploy"
+    scp_cmd -q "${LOCAL_TMP}"/* "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/cryfttee-deploy/"
     
     # Execute
     step "Running deployment..."
-    ssh -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/cryfttee-deploy/deploy.sh && /tmp/cryfttee-deploy/deploy.sh"
+    ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/cryfttee-deploy/deploy.sh && /tmp/cryfttee-deploy/deploy.sh"
     
     # Wait for services
     info "Waiting for services to start..."
@@ -2096,7 +2146,7 @@ DEPLOYEOF
     
     # Check health
     echo ""
-    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck" >/dev/null 2>&1; then
+    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck" >/dev/null 2>&1; then
         log "Web3Signer is healthy!"
     else
         warn "Web3Signer may still be starting..."
@@ -2166,7 +2216,10 @@ DEPLOYEOF
 
 check_status() {
     log "Checking status on ${KEYVAULT_HOST}..."
-    ssh -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo ${SCRIPTS_DIR}/status.sh 2>/dev/null || echo 'Stack not deployed'"
+    # For status check, establish master connection first
+    start_ssh_master "${KEYVAULT_USER}@${KEYVAULT_HOST}"
+    trap "stop_ssh_master '${KEYVAULT_USER}@${KEYVAULT_HOST}'" EXIT
+    ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo ${SCRIPTS_DIR}/status.sh 2>/dev/null || echo 'Stack not deployed'"
 }
 
 generate_env() {
@@ -2259,9 +2312,13 @@ EOF
 test_web3signer() {
     log "Testing Web3Signer connectivity from ${KEYVAULT_HOST}..."
     
+    # Start SSH master connection for this session
+    start_ssh_master "${KEYVAULT_USER}@${KEYVAULT_HOST}"
+    trap "stop_ssh_master '${KEYVAULT_USER}@${KEYVAULT_HOST}'" EXIT
+    
     # Test upcheck
     step "Health check..."
-    if ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck" 2>/dev/null; then
+    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck" 2>/dev/null; then
         log "Web3Signer is healthy!"
     else
         error "Web3Signer not responding"
@@ -2269,12 +2326,12 @@ test_web3signer() {
     
     # Test key endpoints
     step "BLS keys endpoint..."
-    BLS_RESULT=$(ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/api/v1/eth2/publicKeys" 2>/dev/null || echo "[]")
+    BLS_RESULT=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/api/v1/eth2/publicKeys" 2>/dev/null || echo "[]")
     BLS_COUNT=$(echo "${BLS_RESULT}" | jq '. | length' 2>/dev/null || echo "0")
     info "BLS keys: ${BLS_COUNT}"
     
     step "SECP256k1 keys endpoint..."
-    SECP_RESULT=$(ssh "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/api/v1/eth1/publicKeys" 2>/dev/null || echo "[]")
+    SECP_RESULT=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "curl -sf http://localhost:${WEB3SIGNER_PORT}/api/v1/eth1/publicKeys" 2>/dev/null || echo "[]")
     SECP_COUNT=$(echo "${SECP_RESULT}" | jq '. | length' 2>/dev/null || echo "0")
     info "SECP256k1/TLS keys: ${SECP_COUNT}"
     

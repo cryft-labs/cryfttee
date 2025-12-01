@@ -104,8 +104,9 @@ config/                    # Configuration examples
 └── trust.toml
 
 scripts/                   # Deployment scripts
-├── deploy-web3signer.sh   # Linux/macOS Web3Signer setup
-└── Deploy-Web3Signer.ps1  # Windows Web3Signer setup
+├── build.sh               # Linux/macOS build script
+├── build.ps1              # Windows build script
+└── deploy-keyvault.sh     # Deploy Vault + Web3Signer for key management
 ```
 
 ## Available Modules
@@ -498,8 +499,11 @@ cp target/wasm32-unknown-unknown/release/your_module.wasm ./module.wasm
 
 ## Scripts
 
-- `scripts/deploy-web3signer.sh` - Deploy Web3Signer on Linux/macOS
-- `scripts/Deploy-Web3Signer.ps1` - Deploy Web3Signer on Windows
+- `scripts/build.sh` - Build runtime and modules on Linux/macOS
+- `scripts/build.ps1` - Build runtime and modules on Windows  
+- `scripts/deploy-keyvault.sh` - Deploy HashiCorp Vault + Web3Signer for production key management
+  - Run with `--help` to see all options
+  - Supports remote deployment, status checks, and config generation
 
 ## License
 
