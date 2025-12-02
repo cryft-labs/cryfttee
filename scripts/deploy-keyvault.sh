@@ -339,19 +339,21 @@ services:
     command:
       - --config-file=/config/web3signer.yaml
       - eth2
+      - --slashing-protection-enabled=true
       - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
-      - --keystores-path=/keys
+      - --key-store-path=/keys
     environment:
-      - JAVA_OPTS=-Xmx512m -Xms256m
+      - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       - VAULT_ADDR=http://vault:8200
+      - LOG4J_FORMAT_MSG_NO_LOOKUPS=true
     networks:
       - cryfttee-keyvault
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:9000/upcheck"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/upcheck"]
+      interval: 15s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 20s
 
 networks:
   cryfttee-keyvault:
@@ -385,9 +387,8 @@ services:
       - --config-file=/config/web3signer.yaml
       - eth2
       - --slashing-protection-enabled=true
-      - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection;NON_KEYWORDS=KEY,VALUE
-      - --keystores-path=/keys
-      - --keystores-passwords-path=/keys
+      - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
+      - --key-store-path=/keys
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       # Expose to CryftTEE via Tailscale/LAN
