@@ -341,7 +341,8 @@ services:
       - eth2
       - --slashing-protection-enabled=true
       - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
-      - --key-store-path=/keys
+      - --keystores-path=/keys
+      - --key-manager-api-enabled=true
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       - VAULT_ADDR=http://vault:8200
@@ -388,7 +389,8 @@ services:
       - eth2
       - --slashing-protection-enabled=true
       - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
-      - --key-store-path=/keys
+      - --keystores-path=/keys
+      - --key-manager-api-enabled=true
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       # Expose to CryftTEE via Tailscale/LAN
