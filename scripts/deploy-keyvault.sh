@@ -409,7 +409,6 @@ services:
       - "${WEB3SIGNER_METRICS_PORT}:9001"
     volumes:
       - ${WEB3SIGNER_DATA}:/data
-      - ${KEYS_DIR}:/keys
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
       - ${VAULT_DATA}/init:/vault-init:ro
     command:
@@ -417,7 +416,6 @@ services:
       - --config-file=/config/web3signer.yaml
       - eth2
       - --network=mainnet
-      - --keystores-path=/keys
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
@@ -546,14 +544,12 @@ services:
       - "${WEB3SIGNER_METRICS_PORT}:9001"
     volumes:
       - ${WEB3SIGNER_DATA}:/data
-      - ${KEYS_DIR}:/keys:ro
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
       - eth2
       - --network=mainnet
-      - --keystores-path=/keys
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
