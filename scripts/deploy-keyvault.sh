@@ -871,36 +871,30 @@ generate_web3signer_config() {
 #   GET  /upcheck                          - Health check
 #   GET  /api/v1/eth2/publicKeys           - List BLS public keys
 #   POST /api/v1/eth2/sign/:identifier     - Sign with BLS key
-#   GET  /api/v1/eth1/publicKeys           - List SECP256k1 public keys  
+#   GET  /api/v1/eth1/publicKeys           - List SECP256k1 public keys
 #   POST /api/v1/eth1/sign/:identifier     - Sign with SECP256k1 key
-#   GET  /api/v1/keys                      - List all keys (key manager API)
-#   POST /api/v1/keys                      - Import key (key manager API)
-#   DELETE /api/v1/keys/:identifier        - Delete key (key manager API)
 
+# HTTP Server settings
 http-listen-host: "0.0.0.0"
 http-listen-port: 9000
 
 # CORS - allow CryftTEE connections from any origin
-http-cors-origins: ["*"]
-http-host-allowlist: ["*"]
+http-cors-origins: "*"
+http-host-allowlist: "*"
 
 # Metrics for monitoring
 metrics-enabled: true
 metrics-host: "0.0.0.0"
 metrics-port: 9001
-metrics-host-allowlist: ["*"]
+metrics-host-allowlist: "*"
 
 # Logging
 logging: "INFO"
 
-# Key Manager API - REQUIRED for CryftTEE key operations
-# This enables dynamic key import/delete via REST API
-key-manager-api-enabled: true
-
-# Swagger UI for API exploration (useful for debugging, can disable in production)
+# Swagger UI for API exploration (useful for debugging)
 swagger-ui-enabled: true
 
-# Idle connection timeout (ms) - increase for reliability
+# Idle connection timeout (seconds)
 idle-connection-timeout-seconds: 60
 EOF
 }
