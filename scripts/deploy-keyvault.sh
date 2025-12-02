@@ -305,53 +305,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Database Migration - Initialize slashing protection schema
-  db-migration:
-    image: consensys/web3signer:${WEB3SIGNER_VERSION}
-    container_name: cryfttee-db-migration
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - PGPASSWORD=${POSTGRES_PASSWORD}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Running database migrations..."
-        apt-get update -qq && apt-get install -qq -y postgresql-client > /dev/null 2>&1 || true
-        
-        MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
-        if [ ! -d "\$\$MIGRATION_DIR" ]; then
-          echo "ERROR: Migration directory not found at \$\$MIGRATION_DIR"
-          exit 1
-        fi
-        
-        for i in 1 2 3 4 5; do
-          if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" > /dev/null 2>&1; then
-            break
-          fi
-          echo "Waiting for PostgreSQL (attempt \$\$i)..."
-          sleep 2
-        done
-        
-        if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" > /dev/null 2>&1; then
-          echo "Database already initialized, skipping migrations."
-          exit 0
-        fi
-        
-        echo "Applying database migrations..."
-        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql | sort -V); do
-          echo "Applying: \$\$(basename \$\$sql_file)"
-          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || {
-            echo "ERROR: Failed to apply \$\$sql_file"
-            exit 1
-          }
-        done
-        echo "Database migrations completed successfully!"
-    networks:
-      - cryfttee-keyvault
-    restart: "no"
-
   # HashiCorp Vault - Secrets Management
   vault:
     image: hashicorp/vault:${VAULT_VERSION}
@@ -397,6 +350,7 @@ services:
     restart: "no"
 
   # Web3Signer - Ethereum Signing with Vault backend
+  # Note: Web3Signer runs Flyway migrations automatically on startup
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
@@ -406,8 +360,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      db-migration:
-        condition: service_completed_successfully
     ports:
       - "${WEB3SIGNER_PORT}:9000"
       - "${WEB3SIGNER_METRICS_PORT}:9001"
@@ -420,6 +372,7 @@ services:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
       - eth2
+      - --network=mainnet
       - --keystores-path=/keys
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
@@ -437,8 +390,8 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/upcheck"]
       interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
 networks:
   cryfttee-keyvault:
@@ -477,59 +430,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Database Migration - Initialize slashing protection schema
-  db-migration:
-    image: consensys/web3signer:${WEB3SIGNER_VERSION}
-    container_name: cryfttee-db-migration
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - PGPASSWORD=${POSTGRES_PASSWORD}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "Running database migrations..."
-        # Install postgresql-client in the container
-        apt-get update -qq && apt-get install -qq -y postgresql-client > /dev/null 2>&1 || true
-        
-        # Check if migrations directory exists
-        MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
-        if [ ! -d "\$\$MIGRATION_DIR" ]; then
-          echo "ERROR: Migration directory not found at \$\$MIGRATION_DIR"
-          exit 1
-        fi
-        
-        # Wait for postgres to be fully ready
-        for i in 1 2 3 4 5; do
-          if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" > /dev/null 2>&1; then
-            break
-          fi
-          echo "Waiting for PostgreSQL to be ready (attempt \$\$i)..."
-          sleep 2
-        done
-        
-        # Check if database is already initialized (look for database_version table)
-        if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" > /dev/null 2>&1; then
-          echo "Database already initialized, skipping migrations."
-          exit 0
-        fi
-        
-        echo "Applying database migrations..."
-        # Apply migrations in order
-        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql | sort -V); do
-          echo "Applying: \$\$(basename \$\$sql_file)"
-          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || {
-            echo "ERROR: Failed to apply \$\$sql_file"
-            exit 1
-          }
-        done
-        echo "Database migrations completed successfully!"
-    networks:
-      - cryfttee-keyvault
-    restart: "no"
-
   # Web3Signer - Ethereum Signing Service
+  # Note: Web3Signer runs Flyway migrations automatically on startup
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
@@ -537,8 +439,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      db-migration:
-        condition: service_completed_successfully
     ports:
       # Main API - CryftTEE connects here
       - "${WEB3SIGNER_PORT}:9000"
@@ -555,6 +455,7 @@ services:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
       - eth2
+      - --network=mainnet
       - --keystores-path=/keys
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
@@ -564,7 +465,6 @@ services:
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
-      # Expose to CryftTEE via Tailscale/LAN
       - LOG4J_FORMAT_MSG_NO_LOOKUPS=true
     networks:
       cryfttee-keyvault:
@@ -574,8 +474,8 @@ services:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/upcheck"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
