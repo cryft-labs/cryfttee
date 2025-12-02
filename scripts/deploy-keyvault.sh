@@ -276,7 +276,7 @@ install_docker_remote() {
 
 # Docker Compose - Full Stack (Vault + Web3Signer)
 generate_docker_compose_full() {
-    cat << 'COMPOSEEOF'
+    cat << COMPOSEEOF
 version: '3.8'
 
 services:
@@ -286,11 +286,11 @@ services:
     container_name: cryfttee-postgres
     restart: unless-stopped
     volumes:
-      - POSTGRES_DATA_PLACEHOLDER:/var/lib/postgresql/data
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=web3signer
       - POSTGRES_USER=web3signer
-      - POSTGRES_PASSWORD=POSTGRES_PASSWORD_PLACEHOLDER
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     networks:
       - cryfttee-keyvault
     healthcheck:
@@ -307,7 +307,7 @@ services:
 
   # Database Migration - Initialize slashing protection schema
   db-migration:
-    image: consensys/web3signer:WEB3SIGNER_VERSION_PLACEHOLDER
+    image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-db-migration
     depends_on:
       postgres:
@@ -319,14 +319,14 @@ services:
         set -e
         echo "=== Database Migration ==="
         apt-get update -qq && apt-get install -qq -y postgresql-client >/dev/null 2>&1
-        export PGPASSWORD='POSTGRES_PASSWORD_PLACEHOLDER'
+        export PGPASSWORD='${POSTGRES_PASSWORD}'
         
         for i in 1 2 3 4 5; do
           if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
             echo "PostgreSQL is ready"
             break
           fi
-          echo "Waiting for PostgreSQL (attempt $$i)..."
+          echo "Waiting for PostgreSQL (attempt \$\$i)..."
           sleep 2
         done
         
@@ -338,9 +338,9 @@ services:
         echo "Running Flyway migrations..."
         MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
         
-        for sql_file in $$(ls $$MIGRATION_DIR/*.sql 2>/dev/null | sort -V); do
-          echo "Applying: $$(basename $$sql_file)"
-          psql -h postgres -U web3signer -d web3signer -f "$$sql_file" || exit 1
+        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql 2>/dev/null | sort -V); do
+          echo "Applying: \$\$(basename \$\$sql_file)"
+          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || exit 1
         done
         
         echo "=== Migrations completed successfully! ==="
@@ -350,18 +350,18 @@ services:
 
   # HashiCorp Vault - Secrets Management
   vault:
-    image: hashicorp/vault:VAULT_VERSION_PLACEHOLDER
+    image: hashicorp/vault:${VAULT_VERSION}
     container_name: cryfttee-vault
     restart: unless-stopped
     cap_add:
       - IPC_LOCK
     ports:
-      - "VAULT_PORT_PLACEHOLDER:8200"
+      - "${VAULT_PORT}:8200"
     volumes:
-      - VAULT_DATA_PLACEHOLDER/data:/vault/data
-      - VAULT_DATA_PLACEHOLDER/logs:/vault/logs
-      - CONFIG_DIR_PLACEHOLDER/vault.hcl:/vault/config/vault.hcl:ro
-      - VAULT_DATA_PLACEHOLDER/init:/vault/init
+      - ${VAULT_DATA}/data:/vault/data
+      - ${VAULT_DATA}/logs:/vault/logs
+      - ${CONFIG_DIR}/vault.hcl:/vault/config/vault.hcl:ro
+      - ${VAULT_DATA}/init:/vault/init
     environment:
       - VAULT_ADDR=http://127.0.0.1:8200
       - VAULT_API_ADDR=http://0.0.0.0:8200
@@ -377,14 +377,14 @@ services:
 
   # Auto-init and unseal Vault on first start
   vault-init:
-    image: hashicorp/vault:VAULT_VERSION_PLACEHOLDER
+    image: hashicorp/vault:${VAULT_VERSION}
     container_name: cryfttee-vault-init
     depends_on:
       vault:
         condition: service_healthy
     volumes:
-      - VAULT_DATA_PLACEHOLDER/init:/vault/init
-      - CONFIG_DIR_PLACEHOLDER/vault-init.sh:/vault-init.sh:ro
+      - ${VAULT_DATA}/init:/vault/init
+      - ${CONFIG_DIR}/vault-init.sh:/vault-init.sh:ro
     environment:
       - VAULT_ADDR=http://vault:8200
     entrypoint: ["/bin/sh", "/vault-init.sh"]
@@ -394,7 +394,7 @@ services:
 
   # Web3Signer - Ethereum Signing with Vault backend
   web3signer:
-    image: consensys/web3signer:WEB3SIGNER_VERSION_PLACEHOLDER
+    image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
     restart: unless-stopped
     depends_on:
@@ -405,13 +405,13 @@ services:
       db-migration:
         condition: service_completed_successfully
     ports:
-      - "WEB3SIGNER_PORT_PLACEHOLDER:9000"
-      - "WEB3SIGNER_METRICS_PORT_PLACEHOLDER:9001"
+      - "${WEB3SIGNER_PORT}:9000"
+      - "${WEB3SIGNER_METRICS_PORT}:9001"
     volumes:
-      - WEB3SIGNER_DATA_PLACEHOLDER:/data
-      - KEYS_DIR_PLACEHOLDER:/keys
-      - CONFIG_DIR_PLACEHOLDER/web3signer.yaml:/config/web3signer.yaml:ro
-      - VAULT_DATA_PLACEHOLDER/init:/vault-init:ro
+      - ${WEB3SIGNER_DATA}:/data
+      - ${KEYS_DIR}:/keys
+      - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
+      - ${VAULT_DATA}/init:/vault-init:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
@@ -421,7 +421,7 @@ services:
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
-      - --slashing-protection-db-password=POSTGRES_PASSWORD_PLACEHOLDER
+      - --slashing-protection-db-password=${POSTGRES_PASSWORD}
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -441,24 +441,11 @@ networks:
   cryfttee-keyvault:
     driver: bridge
 COMPOSEEOF
-
-    # Replace placeholders with actual values
-    sed -e "s|POSTGRES_DATA_PLACEHOLDER|${POSTGRES_DATA}|g" \
-        -e "s|POSTGRES_PASSWORD_PLACEHOLDER|${POSTGRES_PASSWORD}|g" \
-        -e "s|WEB3SIGNER_VERSION_PLACEHOLDER|${WEB3SIGNER_VERSION}|g" \
-        -e "s|WEB3SIGNER_PORT_PLACEHOLDER|${WEB3SIGNER_PORT}|g" \
-        -e "s|WEB3SIGNER_METRICS_PORT_PLACEHOLDER|${WEB3SIGNER_METRICS_PORT}|g" \
-        -e "s|WEB3SIGNER_DATA_PLACEHOLDER|${WEB3SIGNER_DATA}|g" \
-        -e "s|KEYS_DIR_PLACEHOLDER|${KEYS_DIR}|g" \
-        -e "s|CONFIG_DIR_PLACEHOLDER|${CONFIG_DIR}|g" \
-        -e "s|VAULT_VERSION_PLACEHOLDER|${VAULT_VERSION}|g" \
-        -e "s|VAULT_PORT_PLACEHOLDER|${VAULT_PORT}|g" \
-        -e "s|VAULT_DATA_PLACEHOLDER|${VAULT_DATA}|g"
 }
 
 # Docker Compose - Web3Signer Only (recommended for CryftTEE)
 generate_docker_compose_web3signer() {
-    cat << 'COMPOSEEOF'
+    cat << COMPOSEEOF
 version: '3.8'
 
 services:
@@ -468,11 +455,11 @@ services:
     container_name: cryfttee-postgres
     restart: unless-stopped
     volumes:
-      - POSTGRES_DATA_PLACEHOLDER:/var/lib/postgresql/data
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=web3signer
       - POSTGRES_USER=web3signer
-      - POSTGRES_PASSWORD=POSTGRES_PASSWORD_PLACEHOLDER
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     networks:
       - cryfttee-keyvault
     healthcheck:
@@ -488,9 +475,8 @@ services:
         max-file: "3"
 
   # Database Migration - Initialize slashing protection schema
-  # Copies migrations from web3signer image, then runs Flyway
   db-migration:
-    image: consensys/web3signer:WEB3SIGNER_VERSION_PLACEHOLDER
+    image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-db-migration
     depends_on:
       postgres:
@@ -502,22 +488,19 @@ services:
         set -e
         echo "=== Database Migration ==="
         
-        # Check if database already has tables
         apt-get update -qq && apt-get install -qq -y postgresql-client >/dev/null 2>&1
         
-        export PGPASSWORD='POSTGRES_PASSWORD_PLACEHOLDER'
+        export PGPASSWORD='${POSTGRES_PASSWORD}'
         
-        # Wait for postgres
         for i in 1 2 3 4 5; do
           if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
             echo "PostgreSQL is ready"
             break
           fi
-          echo "Waiting for PostgreSQL (attempt $$i)..."
+          echo "Waiting for PostgreSQL (attempt \$\$i)..."
           sleep 2
         done
         
-        # Check if already migrated
         if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
           echo "Database already initialized, skipping migrations."
           exit 0
@@ -526,20 +509,19 @@ services:
         echo "Running Flyway migrations..."
         MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
         
-        if [ ! -d "$$MIGRATION_DIR" ]; then
-          echo "ERROR: Migration directory not found: $$MIGRATION_DIR"
+        if [ ! -d "\$\$MIGRATION_DIR" ]; then
+          echo "ERROR: Migration directory not found: \$\$MIGRATION_DIR"
           ls -la /opt/web3signer/
           exit 1
         fi
         
         echo "Found migrations:"
-        ls -la $$MIGRATION_DIR/
+        ls -la \$\$MIGRATION_DIR/
         
-        # Apply migrations in order
-        for sql_file in $$(ls $$MIGRATION_DIR/*.sql 2>/dev/null | sort -V); do
-          echo "Applying: $$(basename $$sql_file)"
-          psql -h postgres -U web3signer -d web3signer -f "$$sql_file" || {
-            echo "ERROR: Failed to apply $$sql_file"
+        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql 2>/dev/null | sort -V); do
+          echo "Applying: \$\$(basename \$\$sql_file)"
+          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || {
+            echo "ERROR: Failed to apply \$\$sql_file"
             exit 1
           }
         done
@@ -551,7 +533,7 @@ services:
 
   # Web3Signer - Ethereum Signing Service
   web3signer:
-    image: consensys/web3signer:WEB3SIGNER_VERSION_PLACEHOLDER
+    image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
     restart: unless-stopped
     depends_on:
@@ -560,12 +542,12 @@ services:
       db-migration:
         condition: service_completed_successfully
     ports:
-      - "WEB3SIGNER_PORT_PLACEHOLDER:9000"
-      - "WEB3SIGNER_METRICS_PORT_PLACEHOLDER:9001"
+      - "${WEB3SIGNER_PORT}:9000"
+      - "${WEB3SIGNER_METRICS_PORT}:9001"
     volumes:
-      - WEB3SIGNER_DATA_PLACEHOLDER:/data
-      - KEYS_DIR_PLACEHOLDER:/keys:ro
-      - CONFIG_DIR_PLACEHOLDER/web3signer.yaml:/config/web3signer.yaml:ro
+      - ${WEB3SIGNER_DATA}:/data
+      - ${KEYS_DIR}:/keys:ro
+      - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
@@ -575,7 +557,7 @@ services:
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
-      - --slashing-protection-db-password=POSTGRES_PASSWORD_PLACEHOLDER
+      - --slashing-protection-db-password=${POSTGRES_PASSWORD}
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -604,16 +586,6 @@ networks:
       config:
         - subnet: 172.28.0.0/16
 COMPOSEEOF
-
-    # Replace placeholders with actual values
-    sed -e "s|POSTGRES_DATA_PLACEHOLDER|${POSTGRES_DATA}|g" \
-        -e "s|POSTGRES_PASSWORD_PLACEHOLDER|${POSTGRES_PASSWORD}|g" \
-        -e "s|WEB3SIGNER_VERSION_PLACEHOLDER|${WEB3SIGNER_VERSION}|g" \
-        -e "s|WEB3SIGNER_PORT_PLACEHOLDER|${WEB3SIGNER_PORT}|g" \
-        -e "s|WEB3SIGNER_METRICS_PORT_PLACEHOLDER|${WEB3SIGNER_METRICS_PORT}|g" \
-        -e "s|WEB3SIGNER_DATA_PLACEHOLDER|${WEB3SIGNER_DATA}|g" \
-        -e "s|KEYS_DIR_PLACEHOLDER|${KEYS_DIR}|g" \
-        -e "s|CONFIG_DIR_PLACEHOLDER|${CONFIG_DIR}|g"
 }
 
 # Vault Configuration
