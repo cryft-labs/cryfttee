@@ -457,6 +457,9 @@ generate_vault_init_script() {
 # Automatically initializes and unseals Vault on first deployment
 # Uses AppRole for all access - never exposes root token to applications!
 #
+# NOTE: This script avoids using 'jq' since it's not available in the Vault image.
+# We use sed/grep and vault CLI's -field option instead.
+#
 
 set -e
 
@@ -464,6 +467,22 @@ INIT_FILE="/vault/init/vault-init.json"
 UNSEAL_FILE="/vault/init/unseal-keys.txt"
 ROOT_TOKEN_FILE="/vault/init/root-token.txt"
 APPROLE_FILE="/vault/init/approle.json"
+
+# Simple JSON value extractor (no jq needed)
+# Usage: json_value "key" <<< "$json"
+json_value() {
+    local key="$1"
+    # Handles: "key": "value" or "key":"value"
+    sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1
+}
+
+# Extract array values from JSON (one per line)
+# Usage: json_array "key" <<< "$json"
+json_array() {
+    local key="$1"
+    # Find the array and extract values
+    sed -n "/\"${key}\"[[:space:]]*:/,/\]/p" | grep '"' | sed 's/.*"\([^"]*\)".*/\1/' | grep -v "^${key}$"
+}
 
 echo "[vault-init] Starting Vault auto-initialization..."
 echo "[vault-init] Using AppRole-based access (production-safe)"
@@ -504,10 +523,10 @@ if vault status 2>/dev/null | grep -q "Initialized.*true"; then
                 vault secrets enable -path=cryfttee kv-v2 2>/dev/null || true
             fi
             
-            # Recreate AppRole credentials
+            # Recreate AppRole credentials (using vault -field instead of jq)
             echo "[vault-init] Regenerating AppRole credentials..."
-            ROLE_ID=$(vault read -format=json auth/approle/role/web3signer/role-id 2>/dev/null | jq -r '.data.role_id')
-            SECRET_ID=$(vault write -format=json -f auth/approle/role/web3signer/secret-id 2>/dev/null | jq -r '.data.secret_id')
+            ROLE_ID=$(vault read -field=role_id auth/approle/role/web3signer/role-id 2>/dev/null || echo "")
+            SECRET_ID=$(vault write -field=secret_id -f auth/approle/role/web3signer/secret-id 2>/dev/null || echo "")
             
             if [ -n "${ROLE_ID}" ] && [ -n "${SECRET_ID}" ]; then
                 cat > "${APPROLE_FILE}" << APPROLE
@@ -534,19 +553,19 @@ INIT_OUTPUT=$(vault operator init -key-shares=1 -key-threshold=1 -format=json)
 echo "${INIT_OUTPUT}" > "${INIT_FILE}"
 chmod 600 "${INIT_FILE}"
 
-# Extract and save unseal keys
-echo "${INIT_OUTPUT}" | jq -r '.unseal_keys_b64[]' > "${UNSEAL_FILE}"
+# Extract and save unseal keys (using sed instead of jq)
+echo "${INIT_OUTPUT}" | json_array "unseal_keys_b64" > "${UNSEAL_FILE}"
 chmod 600 "${UNSEAL_FILE}"
 
 # Extract root token (used only for initial setup, NOT for app access)
-ROOT_TOKEN=$(echo "${INIT_OUTPUT}" | jq -r '.root_token')
+ROOT_TOKEN=$(echo "${INIT_OUTPUT}" | json_value "root_token")
 echo "${ROOT_TOKEN}" > "${ROOT_TOKEN_FILE}"
 chmod 600 "${ROOT_TOKEN_FILE}"
 
 echo "[vault-init] Vault initialized! Unsealing..."
 
-# Unseal
-UNSEAL_KEY=$(echo "${INIT_OUTPUT}" | jq -r '.unseal_keys_b64[0]')
+# Unseal - get first key from file
+UNSEAL_KEY=$(head -1 "${UNSEAL_FILE}")
 vault operator unseal "${UNSEAL_KEY}" >/dev/null
 
 echo "[vault-init] Vault unsealed!"
@@ -650,8 +669,9 @@ vault write auth/approle/role/cryfttee-admin \
     secret_id_num_uses=10
 
 # Get Web3Signer AppRole credentials (for runtime signing)
-ROLE_ID=$(vault read -format=json auth/approle/role/web3signer/role-id | jq -r '.data.role_id')
-SECRET_ID=$(vault write -format=json -f auth/approle/role/web3signer/secret-id | jq -r '.data.secret_id')
+# Using vault -field option instead of jq
+ROLE_ID=$(vault read -field=role_id auth/approle/role/web3signer/role-id)
+SECRET_ID=$(vault write -field=secret_id -f auth/approle/role/web3signer/secret-id)
 
 # Save Web3Signer AppRole credentials
 cat > "${APPROLE_FILE}" << APPROLE
@@ -665,8 +685,9 @@ APPROLE
 chmod 600 "${APPROLE_FILE}"
 
 # Get Admin AppRole credentials (for key import operations)
-ADMIN_ROLE_ID=$(vault read -format=json auth/approle/role/cryfttee-admin/role-id | jq -r '.data.role_id')
-ADMIN_SECRET_ID=$(vault write -format=json -f auth/approle/role/cryfttee-admin/secret-id | jq -r '.data.secret_id')
+# Using vault -field option instead of jq
+ADMIN_ROLE_ID=$(vault read -field=role_id auth/approle/role/cryfttee-admin/role-id)
+ADMIN_SECRET_ID=$(vault write -field=secret_id -f auth/approle/role/cryfttee-admin/secret-id)
 
 cat > "/vault/init/approle-admin.json" << APPROLE
 {
