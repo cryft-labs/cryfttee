@@ -2165,6 +2165,10 @@ echo "[+] Creating directories..."
 sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
 sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
 
+# Vault container runs as uid 100 (vault user) - must own its data directories
+echo "[+] Setting Vault data ownership (uid 100)..."
+sudo chown -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init
+
 echo "[+] Installing configuration files..."
 sudo cp /tmp/cryfttee-deploy/docker-compose.yml ${CONFIG_DIR}/
 sudo cp /tmp/cryfttee-deploy/web3signer.yaml ${CONFIG_DIR}/
@@ -2559,6 +2563,10 @@ deploy_local() {
     step "Creating directories..."
     sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
     sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys 2>/dev/null || true
+    
+    # Vault container runs as uid 100 (vault user) - must own its data directories
+    step "Setting Vault data ownership (uid 100)..."
+    sudo chown -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init 2>/dev/null || true
     
     # Generate and install configs
     step "Generating configuration files..."
