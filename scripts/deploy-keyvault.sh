@@ -90,9 +90,13 @@ CRYFTTEE_HOST="${CRYFTTEE_HOST:-localhost}"
 DATA_DIR="/opt/cryfttee-keyvault"
 VAULT_DATA="${DATA_DIR}/vault"
 WEB3SIGNER_DATA="${DATA_DIR}/web3signer"
+POSTGRES_DATA="${DATA_DIR}/postgres"
 CONFIG_DIR="${DATA_DIR}/config"
 KEYS_DIR="${DATA_DIR}/keys"
 SCRIPTS_DIR="${DATA_DIR}/scripts"
+
+# PostgreSQL credentials (generate random password if not set)
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)}"
 
 # Deploy mode: "full" (Vault + Web3Signer) or "web3signer" (Web3Signer only)
 DEPLOY_MODE="${DEPLOY_MODE:-full}"
@@ -276,6 +280,31 @@ generate_docker_compose_full() {
 version: '3.8'
 
 services:
+  # PostgreSQL - Slashing Protection Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cryfttee-postgres
+    restart: unless-stopped
+    volumes:
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=web3signer
+      - POSTGRES_USER=web3signer
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    networks:
+      - cryfttee-keyvault
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U web3signer -d web3signer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # HashiCorp Vault - Secrets Management
   vault:
     image: hashicorp/vault:${VAULT_VERSION}
@@ -328,6 +357,8 @@ services:
     depends_on:
       vault:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "${WEB3SIGNER_PORT}:9000"
       - "${WEB3SIGNER_METRICS_PORT}:9001"
@@ -342,7 +373,11 @@ services:
       - eth2
       - --keystores-path=/keys
       - --enable-key-manager-api=true
-      - --slashing-protection-db-url=jdbc:h2:file:/data/slashprotection;MODE=PostgreSQL;AUTO_SERVER=TRUE
+      - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
+      - --slashing-protection-db-username=web3signer
+      - --slashing-protection-db-password=${POSTGRES_PASSWORD}
+      - --slashing-protection-pruning-enabled=true
+      - --slashing-protection-pruning-epochs-to-keep=500
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       - VAULT_ADDR=http://vault:8200
@@ -354,7 +389,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
 networks:
   cryfttee-keyvault:
@@ -368,17 +403,46 @@ generate_docker_compose_web3signer() {
 version: '3.8'
 
 services:
+  # PostgreSQL - Slashing Protection Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: cryfttee-postgres
+    restart: unless-stopped
+    volumes:
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=web3signer
+      - POSTGRES_USER=web3signer
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    networks:
+      - cryfttee-keyvault
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U web3signer -d web3signer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Web3Signer - Ethereum Signing Service
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       # Main API - CryftTEE connects here
       - "${WEB3SIGNER_PORT}:9000"
       # Metrics endpoint for monitoring
       - "${WEB3SIGNER_METRICS_PORT}:9001"
     volumes:
-      # Persistent data (slashing protection DB)
+      # Persistent data
       - ${WEB3SIGNER_DATA}:/data
       # Key storage directory
       - ${KEYS_DIR}:/keys:ro
@@ -390,7 +454,11 @@ services:
       - eth2
       - --keystores-path=/keys
       - --enable-key-manager-api=true
-      - --slashing-protection-db-url=jdbc:h2:file:/data/slashprotection;MODE=PostgreSQL;AUTO_SERVER=TRUE
+      - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
+      - --slashing-protection-db-username=web3signer
+      - --slashing-protection-db-password=${POSTGRES_PASSWORD}
+      - --slashing-protection-pruning-enabled=true
+      - --slashing-protection-pruning-epochs-to-keep=500
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       # Expose to CryftTEE via Tailscale/LAN
@@ -404,7 +472,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -2180,7 +2248,7 @@ set -e
 MODE="${mode}"
 
 echo "[+] Creating directories..."
-sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
+sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
 sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
 
 # Vault container runs as uid 100 (vault user) - must own its data directories
@@ -2192,6 +2260,11 @@ echo "[+] Setting Web3Signer data ownership (uid 1000)..."
 sudo chown -R 1000:1000 ${DATA_DIR}/web3signer
 sudo chmod 755 ${DATA_DIR}/web3signer
 
+# PostgreSQL container runs as uid 70 (postgres user in alpine) - must own its data directory
+echo "[+] Setting PostgreSQL data ownership (uid 70)..."
+sudo chown -R 70:70 ${DATA_DIR}/postgres
+sudo chmod 700 ${DATA_DIR}/postgres
+
 # Keys directory needs to be readable by web3signer (uid 1000)
 sudo chown -R 1000:1000 ${DATA_DIR}/keys
 sudo chmod 755 ${DATA_DIR}/keys
@@ -2200,6 +2273,10 @@ echo "[+] Installing configuration files..."
 sudo cp /tmp/cryfttee-deploy/docker-compose.yml ${CONFIG_DIR}/
 sudo cp /tmp/cryfttee-deploy/web3signer.yaml ${CONFIG_DIR}/
 sudo cp /tmp/cryfttee-deploy/cryfttee-keyvault.service /etc/systemd/system/
+
+# Save PostgreSQL password for recovery (restricted permissions)
+echo "${POSTGRES_PASSWORD}" | sudo tee ${CONFIG_DIR}/.postgres-password > /dev/null
+sudo chmod 600 ${CONFIG_DIR}/.postgres-password
 
 if [ "\${MODE}" = "full" ]; then
     sudo cp /tmp/cryfttee-deploy/vault.hcl ${CONFIG_DIR}/
@@ -2251,6 +2328,7 @@ retry_pull() {
 if [ "\${MODE}" = "full" ]; then
     retry_pull "hashicorp/vault:${VAULT_VERSION}"
 fi
+retry_pull "postgres:15-alpine"
 retry_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
 
 echo "[+] Starting services..."
@@ -2588,7 +2666,7 @@ deploy_local() {
     
     # Create directories
     step "Creating directories..."
-    sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,keys,config,scripts}
+    sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
     sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys 2>/dev/null || true
     
     # Vault container runs as uid 100 (vault user) - must own its data directories
@@ -2599,6 +2677,11 @@ deploy_local() {
     step "Setting Web3Signer data ownership (uid 1000)..."
     sudo chown -R 1000:1000 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
     sudo chmod 755 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
+    
+    # PostgreSQL container runs as uid 70 (postgres user in alpine) - must own its data directory
+    step "Setting PostgreSQL data ownership (uid 70)..."
+    sudo chown -R 70:70 ${DATA_DIR}/postgres 2>/dev/null || true
+    sudo chmod 700 ${DATA_DIR}/postgres 2>/dev/null || true
     
     # Generate and install configs
     step "Generating configuration files..."
@@ -2621,11 +2704,16 @@ deploy_local() {
     generate_status_script | sudo tee ${SCRIPTS_DIR}/status.sh > /dev/null
     sudo chmod +x ${SCRIPTS_DIR}/*.sh
     
+    # Save PostgreSQL password for recovery (restricted permissions)
+    echo "${POSTGRES_PASSWORD}" | sudo tee ${CONFIG_DIR}/.postgres-password > /dev/null
+    sudo chmod 600 ${CONFIG_DIR}/.postgres-password
+    
     # Pull images
     step "Pulling Docker images..."
     if [ "${mode}" = "full" ]; then
         docker_pull "hashicorp/vault:${VAULT_VERSION}"
     fi
+    docker_pull "postgres:15-alpine"
     docker_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
     
     # Start services
