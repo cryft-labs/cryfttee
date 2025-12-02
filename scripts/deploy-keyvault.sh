@@ -337,11 +337,11 @@ services:
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
       - ${VAULT_DATA}/init:/vault-init:ro
     command:
-      - --config-file=/config/web3signer.yaml
       - --data-path=/data
+      - --config-file=/config/web3signer.yaml
       - eth2
       - --keystores-path=/keys
-      - --key-manager-api-enabled=true
+      - --enable-key-manager-api
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       - VAULT_ADDR=http://vault:8200
@@ -384,11 +384,11 @@ services:
       # Configuration
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
     command:
-      - --config-file=/config/web3signer.yaml
       - --data-path=/data
+      - --config-file=/config/web3signer.yaml
       - eth2
       - --keystores-path=/keys
-      - --key-manager-api-enabled=true
+      - --enable-key-manager-api
     environment:
       - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
       # Expose to CryftTEE via Tailscale/LAN
