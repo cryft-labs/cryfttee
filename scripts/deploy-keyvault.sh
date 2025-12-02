@@ -338,9 +338,8 @@ services:
       - ${VAULT_DATA}/init:/vault-init:ro
     command:
       - --config-file=/config/web3signer.yaml
+      - --data-path=/data
       - eth2
-      - --slashing-protection-enabled=true
-      - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
       - --keystores-path=/keys
       - --key-manager-api-enabled=true
     environment:
@@ -386,9 +385,8 @@ services:
       - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
     command:
       - --config-file=/config/web3signer.yaml
+      - --data-path=/data
       - eth2
-      - --slashing-protection-enabled=true
-      - --slashing-protection-db-url=jdbc:h2:file:/data/slashing-protection
       - --keystores-path=/keys
       - --key-manager-api-enabled=true
     environment:
