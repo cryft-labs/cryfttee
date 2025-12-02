@@ -305,6 +305,53 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Database Migration - Initialize slashing protection schema
+  db-migration:
+    image: consensys/web3signer:${WEB3SIGNER_VERSION}
+    container_name: cryfttee-db-migration
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Running database migrations..."
+        apt-get update -qq && apt-get install -qq -y postgresql-client > /dev/null 2>&1 || true
+        
+        MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
+        if [ ! -d "\$\$MIGRATION_DIR" ]; then
+          echo "ERROR: Migration directory not found at \$\$MIGRATION_DIR"
+          exit 1
+        fi
+        
+        for i in 1 2 3 4 5; do
+          if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" > /dev/null 2>&1; then
+            break
+          fi
+          echo "Waiting for PostgreSQL (attempt \$\$i)..."
+          sleep 2
+        done
+        
+        if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" > /dev/null 2>&1; then
+          echo "Database already initialized, skipping migrations."
+          exit 0
+        fi
+        
+        echo "Applying database migrations..."
+        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql | sort -V); do
+          echo "Applying: \$\$(basename \$\$sql_file)"
+          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || {
+            echo "ERROR: Failed to apply \$\$sql_file"
+            exit 1
+          }
+        done
+        echo "Database migrations completed successfully!"
+    networks:
+      - cryfttee-keyvault
+    restart: "no"
+
   # HashiCorp Vault - Secrets Management
   vault:
     image: hashicorp/vault:${VAULT_VERSION}
@@ -359,6 +406,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
     ports:
       - "${WEB3SIGNER_PORT}:9000"
       - "${WEB3SIGNER_METRICS_PORT}:9001"
@@ -428,6 +477,58 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Database Migration - Initialize slashing protection schema
+  db-migration:
+    image: consensys/web3signer:${WEB3SIGNER_VERSION}
+    container_name: cryfttee-db-migration
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Running database migrations..."
+        # Install postgresql-client in the container
+        apt-get update -qq && apt-get install -qq -y postgresql-client > /dev/null 2>&1 || true
+        
+        # Check if migrations directory exists
+        MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
+        if [ ! -d "\$\$MIGRATION_DIR" ]; then
+          echo "ERROR: Migration directory not found at \$\$MIGRATION_DIR"
+          exit 1
+        fi
+        
+        # Wait for postgres to be fully ready
+        for i in 1 2 3 4 5; do
+          if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" > /dev/null 2>&1; then
+            break
+          fi
+          echo "Waiting for PostgreSQL to be ready (attempt \$\$i)..."
+          sleep 2
+        done
+        
+        # Check if database is already initialized (look for database_version table)
+        if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" > /dev/null 2>&1; then
+          echo "Database already initialized, skipping migrations."
+          exit 0
+        fi
+        
+        echo "Applying database migrations..."
+        # Apply migrations in order
+        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql | sort -V); do
+          echo "Applying: \$\$(basename \$\$sql_file)"
+          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || {
+            echo "ERROR: Failed to apply \$\$sql_file"
+            exit 1
+          }
+        done
+        echo "Database migrations completed successfully!"
+    networks:
+      - cryfttee-keyvault
+    restart: "no"
+
   # Web3Signer - Ethereum Signing Service
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
@@ -436,6 +537,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-migration:
+        condition: service_completed_successfully
     ports:
       # Main API - CryftTEE connects here
       - "${WEB3SIGNER_PORT}:9000"
@@ -2140,6 +2243,8 @@ deploy_remote() {
     step "Checking for existing deployment..."
     EXISTING_DEPLOYMENT=false
     EXISTING_VAULT_DATA=false
+    EXISTING_POSTGRES_DATA=false
+    RESET_POSTGRES=false
     
     if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -f ${CONFIG_DIR}/docker-compose.yml ]" 2>/dev/null; then
         EXISTING_DEPLOYMENT=true
@@ -2147,6 +2252,42 @@ deploy_remote() {
     
     if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -d ${VAULT_DATA}/data ] && [ -n \"\$(ls -A ${VAULT_DATA}/data 2>/dev/null)\" ]" 2>/dev/null; then
         EXISTING_VAULT_DATA=true
+    fi
+    
+    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -d ${POSTGRES_DATA} ] && [ -n \"\$(ls -A ${POSTGRES_DATA} 2>/dev/null)\" ]" 2>/dev/null; then
+        EXISTING_POSTGRES_DATA=true
+    fi
+    
+    # Check if PostgreSQL data exists and prompt user
+    if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║  📦 EXISTING POSTGRESQL DATABASE DETECTED                        ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        info "Found existing PostgreSQL data at: ${POSTGRES_DATA}"
+        info "This contains the slashing protection database."
+        echo ""
+        echo "Options:"
+        echo "  [k] KEEP existing database (recommended for upgrades)"
+        echo "      - Preserves all slashing protection history"
+        echo "      - Web3Signer will use existing data"
+        echo ""
+        echo "  [r] RESET database (fresh start)"
+        echo "      - Deletes all slashing protection history"
+        echo "      - Creates new empty database"
+        echo "      - ⚠️  Only use for fresh validator deployments!"
+        echo ""
+        read -p "Keep or Reset PostgreSQL database? [K/r] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Rr]$ ]]; then
+            warn "PostgreSQL database will be RESET!"
+            RESET_POSTGRES=true
+        else
+            info "PostgreSQL database will be PRESERVED."
+            RESET_POSTGRES=false
+        fi
+        echo ""
     fi
     
     if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
@@ -2246,6 +2387,15 @@ deploy_remote() {
 set -e
 
 MODE="${mode}"
+RESET_POSTGRES="${RESET_POSTGRES}"
+
+# Handle PostgreSQL reset if requested
+if [ "\${RESET_POSTGRES}" = "true" ]; then
+    echo "[!] Resetting PostgreSQL database as requested..."
+    sudo docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
+    sudo rm -rf ${POSTGRES_DATA}
+    echo "[+] PostgreSQL data cleared."
+fi
 
 echo "[+] Creating directories..."
 sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
@@ -2586,6 +2736,8 @@ deploy_local() {
     step "Checking for existing deployment..."
     EXISTING_DEPLOYMENT=false
     EXISTING_VAULT_DATA=false
+    EXISTING_POSTGRES_DATA=false
+    RESET_POSTGRES=false
     
     if [ -f "${CONFIG_DIR}/docker-compose.yml" ]; then
         EXISTING_DEPLOYMENT=true
@@ -2593,6 +2745,42 @@ deploy_local() {
     
     if [ -d "${VAULT_DATA}/data" ] && [ -n "$(ls -A ${VAULT_DATA}/data 2>/dev/null)" ]; then
         EXISTING_VAULT_DATA=true
+    fi
+    
+    if [ -d "${POSTGRES_DATA}" ] && [ -n "$(ls -A ${POSTGRES_DATA} 2>/dev/null)" ]; then
+        EXISTING_POSTGRES_DATA=true
+    fi
+    
+    # Check if PostgreSQL data exists and prompt user
+    if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║  📦 EXISTING POSTGRESQL DATABASE DETECTED                        ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        info "Found existing PostgreSQL data at: ${POSTGRES_DATA}"
+        info "This contains the slashing protection database."
+        echo ""
+        echo "Options:"
+        echo "  [k] KEEP existing database (recommended for upgrades)"
+        echo "      - Preserves all slashing protection history"
+        echo "      - Web3Signer will use existing data"
+        echo ""
+        echo "  [r] RESET database (fresh start)"
+        echo "      - Deletes all slashing protection history"
+        echo "      - Creates new empty database"
+        echo "      - ⚠️  Only use for fresh validator deployments!"
+        echo ""
+        read -p "Keep or Reset PostgreSQL database? [K/r] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Rr]$ ]]; then
+            warn "PostgreSQL database will be RESET!"
+            RESET_POSTGRES=true
+        else
+            info "PostgreSQL database will be PRESERVED."
+            RESET_POSTGRES=false
+        fi
+        echo ""
     fi
     
     if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
@@ -2662,6 +2850,14 @@ deploy_local() {
             step "Stopping services for upgrade..."
             sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
         fi
+    fi
+    
+    # Handle PostgreSQL reset if requested
+    if [ "${RESET_POSTGRES}" = "true" ]; then
+        step "Resetting PostgreSQL database as requested..."
+        sudo docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
+        sudo rm -rf ${POSTGRES_DATA}
+        info "PostgreSQL data cleared."
     fi
     
     # Create directories
