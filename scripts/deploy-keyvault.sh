@@ -119,6 +119,82 @@ error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 info() { echo -e "${BLUE}[i]${NC} $1"; }
 step() { echo -e "${CYAN}[>]${NC} $1"; }
 
+# =============================================================================
+# Network Retry Wrapper
+# =============================================================================
+# Wraps network commands with interactive retry on failure.
+# Usage: retry_network "description" command [args...]
+#
+# Example:
+#   retry_network "Pulling Vault image" docker pull hashicorp/vault:1.15.4
+
+retry_network() {
+    local description="${1}"
+    shift
+    local cmd=("$@")
+    local attempt=1
+    
+    while true; do
+        echo -e "${CYAN}[>]${NC} ${description} (attempt ${attempt})..."
+        
+        if "${cmd[@]}"; then
+            echo -e "${GREEN}[✓]${NC} ${description} succeeded"
+            return 0
+        fi
+        
+        echo ""
+        echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║  ⚠  Network operation failed                                     ║${NC}"
+        echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${RED}[x]${NC} Failed: ${description}"
+        echo ""
+        echo "    Command: ${cmd[*]}"
+        echo ""
+        echo "Options:"
+        echo "  r) Retry      - Try again"
+        echo "  s) Skip       - Skip this step (may cause issues)"
+        echo "  a) Abort      - Exit the script"
+        echo ""
+        
+        while true; do
+            read -p "Choose [r/s/a]: " -n 1 -r choice
+            echo ""
+            case "${choice}" in
+                r|R)
+                    ((attempt++))
+                    echo ""
+                    break
+                    ;;
+                s|S)
+                    warn "Skipping: ${description}"
+                    return 1
+                    ;;
+                a|A)
+                    error "Aborted by user"
+                    ;;
+                *)
+                    echo "Invalid choice. Enter r, s, or a."
+                    ;;
+            esac
+        done
+    done
+}
+
+# Convenience wrapper for docker pull with retry
+docker_pull() {
+    local image="${1}"
+    retry_network "Pulling Docker image: ${image}" docker pull "${image}"
+}
+
+# Convenience wrapper for curl downloads with retry
+curl_download() {
+    local url="${1}"
+    local output="${2}"
+    local desc="${3:-Downloading ${url}}"
+    retry_network "${desc}" curl -fSL -o "${output}" "${url}"
+}
+
 show_banner() {
     echo -e "${BOLD}"
     cat << 'EOF'
@@ -183,7 +259,7 @@ install_docker_remote() {
     LOCAL_TMP=$(mktemp -d)
     generate_docker_install_script > "${LOCAL_TMP}/install-docker.sh"
     
-    scp_cmd "${LOCAL_TMP}/install-docker.sh" "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/"
+    retry_network "Uploading Docker install script" scp_cmd "${LOCAL_TMP}/install-docker.sh" "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/"
     ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "chmod +x /tmp/install-docker.sh && /tmp/install-docker.sh && rm /tmp/install-docker.sh"
     
     rm -rf "${LOCAL_TMP}"
@@ -2115,10 +2191,36 @@ if command -v ufw >/dev/null && sudo ufw status | grep -q 'Status: active'; then
 fi
 
 echo "[+] Pulling Docker images..."
+
+# Retry wrapper for network operations
+retry_pull() {
+    local image="\$1"
+    local attempt=1
+    while true; do
+        echo "    Pulling \${image} (attempt \${attempt})..."
+        if sudo docker pull "\${image}"; then
+            echo "    ✓ Successfully pulled \${image}"
+            return 0
+        fi
+        echo ""
+        echo "    ⚠ Failed to pull \${image}"
+        echo ""
+        echo "    Options: [r]etry, [s]kip, [a]bort"
+        read -p "    Choose: " -n 1 choice
+        echo ""
+        case "\${choice}" in
+            r|R) ((attempt++)) ;;
+            s|S) echo "    Skipping \${image}"; return 1 ;;
+            a|A) echo "    Aborted"; exit 1 ;;
+            *) echo "    Invalid choice" ;;
+        esac
+    done
+}
+
 if [ "\${MODE}" = "full" ]; then
-    sudo docker pull hashicorp/vault:${VAULT_VERSION}
+    retry_pull "hashicorp/vault:${VAULT_VERSION}"
 fi
-sudo docker pull consensys/web3signer:${WEB3SIGNER_VERSION}
+retry_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
 
 echo "[+] Starting services..."
 sudo systemctl daemon-reload
@@ -2134,7 +2236,7 @@ DEPLOYEOF
     # Upload files
     step "Uploading files to ${KEYVAULT_HOST}..."
     ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "mkdir -p /tmp/cryfttee-deploy"
-    scp_cmd -q "${LOCAL_TMP}"/* "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/cryfttee-deploy/"
+    retry_network "Uploading deployment files" scp_cmd -q "${LOCAL_TMP}"/* "${KEYVAULT_USER}@${KEYVAULT_HOST}:/tmp/cryfttee-deploy/"
     
     # Execute
     step "Running deployment..."
@@ -2482,9 +2584,9 @@ deploy_local() {
     # Pull images
     step "Pulling Docker images..."
     if [ "${mode}" = "full" ]; then
-        docker pull hashicorp/vault:${VAULT_VERSION}
+        docker_pull "hashicorp/vault:${VAULT_VERSION}"
     fi
-    docker pull consensys/web3signer:${WEB3SIGNER_VERSION}
+    docker_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
     
     # Start services
     step "Starting services..."
