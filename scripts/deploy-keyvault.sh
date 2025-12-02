@@ -2187,6 +2187,15 @@ sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
 echo "[+] Setting Vault data ownership (uid 100)..."
 sudo chown -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init
 
+# Web3Signer container runs as uid 1000 - must own its data directory for slashing DB
+echo "[+] Setting Web3Signer data ownership (uid 1000)..."
+sudo chown -R 1000:1000 ${DATA_DIR}/web3signer
+sudo chmod 755 ${DATA_DIR}/web3signer
+
+# Keys directory needs to be readable by web3signer (uid 1000)
+sudo chown -R 1000:1000 ${DATA_DIR}/keys
+sudo chmod 755 ${DATA_DIR}/keys
+
 echo "[+] Installing configuration files..."
 sudo cp /tmp/cryfttee-deploy/docker-compose.yml ${CONFIG_DIR}/
 sudo cp /tmp/cryfttee-deploy/web3signer.yaml ${CONFIG_DIR}/
@@ -2585,6 +2594,11 @@ deploy_local() {
     # Vault container runs as uid 100 (vault user) - must own its data directories
     step "Setting Vault data ownership (uid 100)..."
     sudo chown -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init 2>/dev/null || true
+    
+    # Web3Signer container runs as uid 1000 - must own its data directory for slashing DB
+    step "Setting Web3Signer data ownership (uid 1000)..."
+    sudo chown -R 1000:1000 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
+    sudo chmod 755 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
     
     # Generate and install configs
     step "Generating configuration files..."
