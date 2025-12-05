@@ -2388,7 +2388,8 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 if [ "${RESET_POSTGRES}" = "true" ]; then
     echo "[!] Resetting PostgreSQL database as requested..."
     docker rm -f cryfttee-postgres 2>/dev/null || true
-    rm -rf ${DATA_DIR}/postgres
+    # PostgreSQL data dir is owned by uid 70 (postgres), use docker to remove it
+    docker run --rm -v ${DATA_DIR}:/data alpine rm -rf /data/postgres 2>/dev/null || rm -rf ${DATA_DIR}/postgres 2>/dev/null || true
     echo "[+] PostgreSQL data cleared."
 elif [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
     echo "[!] Resetting PostgreSQL password only (preserving data)..."
@@ -2983,7 +2984,8 @@ deploy_local() {
     if [ "${RESET_POSTGRES}" = "true" ]; then
         step "Resetting PostgreSQL database as requested..."
         docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
-        rm -rf ${POSTGRES_DATA}
+        # PostgreSQL data dir is owned by uid 70 (postgres), use docker to remove it
+        docker run --rm -v ${DATA_DIR}:/data alpine rm -rf /data/postgres 2>/dev/null || rm -rf ${POSTGRES_DATA} 2>/dev/null || true
         info "PostgreSQL data cleared."
     elif [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
         step "Resetting PostgreSQL password only (preserving data)..."
