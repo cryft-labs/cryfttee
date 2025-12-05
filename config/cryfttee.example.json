@@ -1,0 +1,42 @@
+{
+  "_comment": "CryftTEE Configuration File - Only loaded if explicitly specified via --config-file",
+
+  "api": {
+    "transport": "uds",
+    "uds-path": "/tmp/cryfttee.sock",
+    "http-addr": "0.0.0.0:8443"
+  },
+
+  "modules": {
+    "enabled": ["bls_tls_signer_v1"],
+    "module-dir": "modules",
+    "manifest-path": "modules/manifest.json",
+    "trust-config": "config/trust.toml",
+    "config": {
+      "bls_tls_signer_v1": {
+        "auto-generate-keys": true,
+        "key-store": "web3signer"
+      }
+    }
+  },
+
+  "web3signer": {
+    "url": "http://localhost:9000",
+    "timeout": 30,
+    "health-check-interval": 10
+  },
+
+  "vault": {
+    "url": null,
+    "token": null
+  },
+
+  "logging": {
+    "level": "info",
+    "json": false
+  },
+
+  "security": {
+    "require-attestation": false
+  }
+}

@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
 use semver::Version;
 
 use crate::config::CryftteeConfig;
 use crate::storage::{Manifest, ManifestEntry};
 use crate::wasm_api::WasmModule;
-use crate::CRYFTTEE_VERSION;
+use crate::{ModuleInitConfig, CRYFTTEE_VERSION};
 
 use super::{ModuleInfo, ModuleStatus, ModuleLoader};
 
@@ -17,6 +17,8 @@ use super::{ModuleInfo, ModuleStatus, ModuleLoader};
 pub struct ModuleRegistry {
     /// Configuration
     config: CryftteeConfig,
+    /// Module initialization config (from CLI args)
+    init_config: ModuleInitConfig,
     /// Loaded modules indexed by ID
     modules: HashMap<String, ModuleInfo>,
     /// WASM instances for loaded modules
@@ -35,6 +37,7 @@ impl ModuleRegistry {
         Self {
             loader: ModuleLoader::new(config.clone()),
             config,
+            init_config: ModuleInitConfig::default(),
             modules: HashMap::new(),
             wasm_instances: HashMap::new(),
             default_bls_module: None,
@@ -42,8 +45,26 @@ impl ModuleRegistry {
         }
     }
 
-    /// Load all modules from the manifest
-    pub async fn load_all_modules(&mut self) -> Result<usize> {
+    /// Create a new module registry with initialization config
+    pub fn new_with_init_config(config: CryftteeConfig, init_config: ModuleInitConfig) -> Self {
+        Self {
+            loader: ModuleLoader::new(config.clone()),
+            config,
+            init_config,
+            modules: HashMap::new(),
+            wasm_instances: HashMap::new(),
+            default_bls_module: None,
+            default_tls_module: None,
+        }
+    }
+
+    /// Get the module init config
+    pub fn init_config(&self) -> &ModuleInitConfig {
+        &self.init_config
+    }
+
+    /// Load modules from manifest, respecting the filter if set
+    pub async fn load_modules_filtered(&mut self) -> Result<usize> {
         let manifest_path = self.config.get_manifest_path();
         
         if !manifest_path.exists() {
@@ -54,23 +75,39 @@ impl ModuleRegistry {
         let contents = std::fs::read_to_string(&manifest_path)?;
         let manifest: Manifest = serde_json::from_str(&contents)?;
 
-        info!("Loading {} modules from manifest v{}", manifest.modules.len(), manifest.version);
+        info!("Loading modules from manifest v{}", manifest.version);
 
         let mut loaded_count = 0;
 
         for entry in &manifest.modules {
-            // Register the module (but don't load it - modules are disabled by default)
-            match self.register_module(entry).await {
+            // Check if this module should be loaded based on filter
+            let should_load = match &self.init_config.module_filter {
+                Some(filter) => {
+                    let included = filter.iter().any(|id| id == &entry.id);
+                    if !included {
+                        debug!("Skipping module {} (not in filter)", entry.id);
+                    }
+                    included
+                }
+                None => true, // No filter = load all
+            };
+
+            if !should_load {
+                continue;
+            }
+
+            // Register and load the module
+            match self.register_and_load_module(entry).await {
                 Ok(loaded) => {
                     if loaded {
                         loaded_count += 1;
-                        info!("Registered and loaded module: {} v{}", entry.id, entry.version);
+                        info!("Loaded module: {} v{}", entry.id, entry.version);
                     } else {
-                        info!("Registered module (disabled): {} v{}", entry.id, entry.version);
+                        info!("Registered module (not loaded): {} v{}", entry.id, entry.version);
                     }
                 }
                 Err(e) => {
-                    error!("Failed to register module {}: {}", entry.id, e);
+                    error!("Failed to load module {}: {}", entry.id, e);
                     // Record the failed module with error reason
                     let mut info = ModuleInfo::from_manifest_entry(entry);
                     info.status = ModuleStatus {
@@ -87,16 +124,14 @@ impl ModuleRegistry {
         Ok(loaded_count)
     }
 
-    /// Register a module from its manifest entry (validates but doesn't load unless enabled)
-    /// Returns true if module was loaded, false if just registered
-    pub async fn register_module(&mut self, entry: &ManifestEntry) -> Result<bool> {
+    /// Register and immediately load a module (for CLI-specified modules)
+    pub async fn register_and_load_module(&mut self, entry: &ManifestEntry) -> Result<bool> {
         // Check version compatibility
         if !self.check_version_compatibility(&entry.min_cryfttee_version)? {
             let reason = format!(
                 "minCryftteeVersion {} > core version {}",
                 entry.min_cryfttee_version, CRYFTTEE_VERSION
             );
-            // Still register the module but mark as incompatible
             let mut info = ModuleInfo::from_manifest_entry(entry);
             info.status = ModuleStatus {
                 trusted: true,
@@ -110,49 +145,37 @@ impl ModuleRegistry {
 
         // Verify signature and trust
         let trusted = self.verify_module_trust(entry)?;
-
-        // Record module info - modules start disabled by default
-        let mut info = ModuleInfo::from_manifest_entry(entry);
-        info.status = ModuleStatus {
-            trusted,
-            compatible: true,
-            loaded: false,
-            reason: if !trusted { Some("Publisher not trusted or signature invalid".to_string()) } else { None },
-        };
-
-        self.modules.insert(entry.id.clone(), info);
-        
-        // Don't load the module - it's disabled by default
-        // User must enable it via the UI
-        Ok(false)
-    }
-
-    /// Load a single module from its manifest entry (for when module is enabled)
-    pub async fn load_module(&mut self, entry: &ManifestEntry) -> Result<()> {
-        // Check version compatibility
-        if !self.check_version_compatibility(&entry.min_cryfttee_version)? {
-            let reason = format!(
-                "minCryftteeVersion {} > core version {}",
-                entry.min_cryfttee_version, CRYFTTEE_VERSION
-            );
-            return Err(anyhow!(reason));
-        }
-
-        // Verify signature and trust
-        if !self.verify_module_trust(entry)? {
-            return Err(anyhow!("Module signature verification failed or publisher not trusted"));
+        if !trusted {
+            let mut info = ModuleInfo::from_manifest_entry(entry);
+            info.status = ModuleStatus {
+                trusted: false,
+                compatible: true,
+                loaded: false,
+                reason: Some("Publisher not trusted or signature invalid".to_string()),
+            };
+            self.modules.insert(entry.id.clone(), info);
+            return Ok(false);
         }
 
         // Verify hash
         if !self.verify_module_hash(entry)? {
-            return Err(anyhow!("Module hash verification failed"));
+            let mut info = ModuleInfo::from_manifest_entry(entry);
+            info.status = ModuleStatus {
+                trusted: true,
+                compatible: true,
+                loaded: false,
+                reason: Some("Hash verification failed".to_string()),
+            };
+            self.modules.insert(entry.id.clone(), info);
+            return Ok(false);
         }
 
         // Load the WASM module
         let wasm_module = self.loader.load_wasm(entry).await?;
 
-        // Record module info
+        // Record module info - enabled and loaded
         let mut info = ModuleInfo::from_manifest_entry(entry);
+        info.enabled = true;
         info.status = ModuleStatus {
             trusted: true,
             compatible: true,
@@ -173,7 +196,7 @@ impl ModuleRegistry {
             info!("Set default TLS module: {}", entry.id);
         }
 
-        Ok(())
+        Ok(true)
     }
 
     /// Check if a module version is compatible with current runtime
@@ -288,8 +311,8 @@ impl ModuleRegistry {
         self.default_bls_module = None;
         self.default_tls_module = None;
 
-        // Try to reload
-        match self.load_all_modules().await {
+        // Try to reload (respecting the filter)
+        match self.load_modules_filtered().await {
             Ok(count) => {
                 info!("Successfully reloaded {} modules", count);
                 Ok(count)

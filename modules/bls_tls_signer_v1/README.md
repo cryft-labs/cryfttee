@@ -2,6 +2,70 @@
 
 This module provides BLS and TLS key management and signing operations via Web3Signer integration.
 
+## Key Generation Flow
+
+The module implements **automatic key provisioning** to simplify validator setup:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Key Registration Flow                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. cryftgo calls: ensureBlsKey(publicKey?)                                │
+│         │                                                                   │
+│         ▼                                                                   │
+│  2. Module checks: Does publicKey exist locally?                           │
+│         │                                                                   │
+│    ┌────┴────┐                                                             │
+│    │ Yes     │ No                                                          │
+│    ▼         ▼                                                             │
+│  Return   3. Check Web3Signer: GET /api/v1/eth2/publicKeys                 │
+│  existing    │                                                             │
+│              ├─── Key found ──► Return success                             │
+│              │                                                             │
+│              └─── Key missing ─► 4. Generate new BLS key pair              │
+│                                      │                                     │
+│                                      ▼                                     │
+│                                 5. Import to Web3Signer                    │
+│                                    POST /eth/v1/keystores                  │
+│                                      │                                     │
+│                                      ▼                                     │
+│                                 6. (Optional) Store in Vault               │
+│                                      │                                     │
+│                                      ▼                                     │
+│                                 Return new publicKey                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Usage from cryftgo
+
+```go
+// Initialize the module with backend configuration
+cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "initialize",
+    "web3signerUrl": "http://web3signer:9000",
+    "vaultUrl": "http://vault:8200",  // optional
+    "vaultEnabled": false,
+})
+
+// Option 1: Let module generate keys automatically
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "ensureBlsKey",
+    "label": "validator-1",
+})
+// Returns: {"success":true,"action":"generated","keyId":"bls_...","publicKey":"0x..."}
+
+// Option 2: Check if existing key is available
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "ensureBlsKey",
+    "publicKey": "0x1234...",  // from cryftgo's local store
+    "label": "validator-1",
+})
+// If found: {"success":true,"action":"found_web3signer","publicKey":"0x1234..."}
+// If missing: {"success":true,"action":"generated_replacement","keyId":"bls_...","publicKey":"0xnew..."}
+```
+
 ## Key Management Architecture
 
 ```
@@ -14,6 +78,7 @@ This module provides BLS and TLS key management and signing operations via Web3S
                                                ┌─────────────────┐
                                                │ HashiCorp Vault │
                                                │  (Key Storage)  │
+                                               │   (Optional)    │
                                                └─────────────────┘
 ```
 

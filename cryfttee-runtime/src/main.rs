@@ -1,10 +1,16 @@
 //! CryftTEE Runtime - TEE-style sidecar for WASM modules
 //!
 //! This is the main entry point for the cryfttee binary. It:
-//! - Parses configuration from environment and CLI
+//! - Parses configuration from environment (set by cryftgo) and CLI
 //! - Initializes the module registry and loads WASM modules
 //! - Starts API listeners (UDS and/or HTTPS)
 //! - Serves the kiosk UI on port 3232
+//!
+//! ## Configuration Priority
+//! 1. CLI flags (--flag=value)
+//! 2. Environment variables (CRYFTTEE_*) - set by cryftgo
+//! 3. Config file (if --config-file specified)
+//! 4. Default values
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,7 +20,7 @@ use clap::Parser;
 use tokio::sync::RwLock;
 use tracing::{info, error, warn};
 
-use cryfttee_runtime::{Args, CryftteeConfig, ModuleRegistry, RuntimeState, CRYFTTEE_VERSION};
+use cryfttee_runtime::{Args, CryftteeConfig, ModuleRegistry, RuntimeState, ModuleInitConfig, CRYFTTEE_VERSION};
 use cryfttee_runtime::http;
 
 #[cfg(unix)]
@@ -22,29 +28,41 @@ use cryfttee_runtime::uds;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Parse CLI arguments
+    // Parse CLI arguments (also reads env vars via clap)
     let args = Args::parse();
 
-    // Initialize logging
-    init_logging(args.verbose);
+    // Initialize logging based on config
+    let log_level = args.log_level.clone().unwrap_or_else(|| {
+        if args.verbose { "debug".to_string() } else { "info".to_string() }
+    });
+    init_logging(&log_level, args.log_json);
 
     info!("Starting cryfttee v{}", CRYFTTEE_VERSION);
 
-    // Load configuration
+    // Load configuration with priority: CLI > env > config file > defaults
     let config = CryftteeConfig::load(&args)?;
-    info!("Configuration loaded successfully");
+
+    // Build module init config from merged config
+    let init_config = ModuleInitConfig {
+        module_filter: config.enabled_modules.clone(),
+        web3signer_url: Some(config.web3signer_url.clone()),
+        vault_url: config.vault_url.clone(),
+        vault_token: config.vault_token.clone(),
+        key_seed: config.key_seed.clone(),
+        node_id: config.node_id.clone(),
+    };
 
     // Initialize runtime state
     let runtime_state = Arc::new(RwLock::new(RuntimeState::new()));
 
-    // Initialize module registry
-    let registry = Arc::new(RwLock::new(ModuleRegistry::new(config.clone())));
+    // Initialize module registry with init config
+    let registry = Arc::new(RwLock::new(ModuleRegistry::new_with_init_config(config.clone(), init_config)));
 
-    // Load modules from manifest
+    // Load modules from manifest (respecting filter)
     {
         let mut reg = registry.write().await;
-        match reg.load_all_modules().await {
-            Ok(count) => info!("Loaded {} modules from manifest", count),
+        match reg.load_modules_filtered().await {
+            Ok(count) => info!("Loaded {} modules", count),
             Err(e) => {
                 error!("Failed to load modules: {}. Continuing with empty registry.", e);
             }
@@ -159,17 +177,21 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn init_logging(verbose: bool) {
+fn init_logging(level: &str, json: bool) {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-    let filter = if verbose {
-        EnvFilter::new("debug")
-    } else {
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
-    };
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(level));
 
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    if json {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().json())
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+    }
 }

@@ -177,17 +177,127 @@ cp target/wasm32-unknown-unknown/release/ipfs_v1.wasm module.wasm
 
 ### Environment Variables
 
+CryftTEE is designed to be controlled by `cryftgo` via environment variables. When cryftgo spawns cryfttee, it sets these variables to configure the runtime.
+
+#### Configuration Priority (highest to lowest)
+1. CLI flags (`--flag=value`)
+2. Environment variables (`CRYFTTEE_*`) ← **cryftgo sets these**
+3. Config file (only if `--config-file` explicitly specified)
+4. Default values
+
+#### Core Settings
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CRYFTTEE_MODULE_DIR` | `./modules` | Module directory path |
 | `CRYFTTEE_MANIFEST_PATH` | `{module_dir}/manifest.json` | Manifest file path |
 | `CRYFTTEE_UI_DIR` | `./ui` | UI static assets path |
 | `CRYFTTEE_TRUST_CONFIG` | - | Trust configuration path |
+| `CRYFTTEE_MODULES` | - | Comma-separated module IDs to enable |
+
+#### API Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `CRYFTTEE_API_TRANSPORT` | `uds` | API transport: `uds` or `https` |
 | `CRYFTTEE_UDS_PATH` | `/tmp/cryfttee.sock` | UDS socket path |
-| `CRYFTTEE_HTTP_ADDR` | `0.0.0.0:3232` | HTTP bind address |
+| `CRYFTTEE_HTTP_ADDR` | `0.0.0.0:8443` | HTTP bind address |
 | `CRYFTTEE_TLS_CERT` | - | TLS certificate path |
 | `CRYFTTEE_TLS_KEY` | - | TLS private key path |
+
+#### Web3Signer Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRYFTTEE_WEB3SIGNER_URL` | `http://localhost:9000` | Web3Signer URL |
+| `CRYFTTEE_WEB3SIGNER_TIMEOUT` | `30` | Request timeout (seconds) |
+
+#### Vault Integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRYFTTEE_VAULT_URL` | - | HashiCorp Vault URL |
+| `CRYFTTEE_VAULT_TOKEN` | - | Vault authentication token |
+
+#### Key Derivation (for BLS/TLS key generation)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRYFTTEE_KEY_SEED` | - | Hex-encoded seed for deterministic keys |
+| `CRYFTTEE_NODE_ID` | - | Node ID for key derivation path |
+
+#### Attestation / Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRYFTTEE_VERIFIED_BINARY_HASH` | - | SHA256 hash verified by cryftgo |
+| `CRYFTTEE_REQUIRE_ATTESTATION` | `false` | Require attestation for operations |
+
+#### Logging
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRYFTTEE_LOG_LEVEL` | `info` | Log level: error, warn, info, debug, trace |
+| `CRYFTTEE_LOG_JSON` | `false` | Enable JSON structured logging |
+| `CRYFTTEE_VERBOSE` | `false` | Shorthand for `--log-level=debug` |
+
+#### Config File (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRYFTTEE_CONFIG_FILE` | - | Path to config file (JSON/YAML/TOML) |
+| `CRYFTTEE_CONFIG_CONTENT` | - | Base64-encoded config content |
+| `CRYFTTEE_CONFIG_CONTENT_TYPE` | `json` | Content type for `CONFIG_CONTENT` |
+
+### CryftGo Integration Example
+
+When cryftgo spawns cryfttee, it should set environment variables:
+
+```go
+// cryftgo launching cryfttee
+func launchCryftTEE(cfg *config.StakingConfig) (*exec.Cmd, error) {
+    // Compute binary hash before launch
+    binaryPath := filepath.Join(cfg.PluginDir, "cryfttee")
+    binaryData, _ := os.ReadFile(binaryPath)
+    hash := sha256.Sum256(binaryData)
+    
+    cmd := exec.Command(binaryPath)
+    cmd.Env = append(os.Environ(),
+        // Core settings
+        fmt.Sprintf("CRYFTTEE_MODULE_DIR=%s", cfg.ModuleDir),
+        fmt.Sprintf("CRYFTTEE_MODULES=%s", strings.Join(cfg.EnabledModules, ",")),
+        
+        // Web3Signer
+        fmt.Sprintf("CRYFTTEE_WEB3SIGNER_URL=%s", cfg.Web3SignerURL),
+        
+        // Key derivation
+        fmt.Sprintf("CRYFTTEE_KEY_SEED=%s", cfg.KeySeed),
+        fmt.Sprintf("CRYFTTEE_NODE_ID=%s", cfg.NodeID),
+        
+        // Security - binary hash verified BEFORE launch
+        fmt.Sprintf("CRYFTTEE_VERIFIED_BINARY_HASH=sha256:%x", hash),
+        
+        // Logging
+        fmt.Sprintf("CRYFTTEE_LOG_LEVEL=%s", cfg.LogLevel),
+    )
+    
+    return cmd, cmd.Start()
+}
+```
+
+### Using a Config File (Alternative)
+
+Config files are only loaded when explicitly specified. Use for standalone deployments or testing:
+
+```bash
+# Via file path
+./cryfttee --config-file=/etc/cryfttee/config.json
+
+# Via base64 content (Kubernetes)
+./cryfttee --config-content=$(base64 -w0 config.json) --config-content-type=json
+```
+
+See `config/cryfttee.example.json` and `config/cryfttee.example.toml` for examples.
 
 ## API Endpoints
 

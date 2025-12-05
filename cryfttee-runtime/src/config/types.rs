@@ -1,14 +1,154 @@
 //! Configuration types for cryfttee runtime
 //!
-//! These types map to:
-//! - config/cryfttee.example.toml (main config)
-//! - config/trust.toml (publisher trust & attestation)
+//! ## Configuration Priority (highest to lowest)
+//! 1. CLI flags (--flag=value)
+//! 2. Environment variables (CRYFTTEE_*) - set by cryftgo
+//! 3. Config file (if --config-file or --config-content specified)
+//! 4. Default values
+//!
+//! By default, cryftgo controls cryfttee configuration through environment
+//! variables. Config files are only loaded when explicitly specified.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
-// trust.toml structures
+// Config File Structure (JSON/YAML/TOML)
+// Only used when --config-file or --config-content is specified
+// =============================================================================
+
+/// Root config file structure
+/// Supports JSON, YAML, or TOML format
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ConfigFile {
+    /// Optional comment/description
+    #[serde(rename = "_comment", default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+
+    /// API configuration
+    #[serde(default)]
+    pub api: ApiConfigFile,
+
+    /// Module configuration
+    #[serde(default)]
+    pub modules: ModulesConfigFile,
+
+    /// Web3Signer configuration
+    #[serde(default)]
+    pub web3signer: Web3SignerConfigFile,
+
+    /// Vault configuration
+    #[serde(default)]
+    pub vault: VaultConfigFile,
+
+    /// Logging configuration
+    #[serde(default)]
+    pub logging: LoggingConfigFile,
+
+    /// Security configuration
+    #[serde(default)]
+    pub security: SecurityConfigFile,
+}
+
+/// API section in config file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ApiConfigFile {
+    /// Transport mode: "uds" or "https"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+
+    /// UDS socket path
+    #[serde(rename = "uds-path", default, skip_serializing_if = "Option::is_none")]
+    pub uds_path: Option<String>,
+
+    /// HTTP bind address
+    #[serde(rename = "http-addr", default, skip_serializing_if = "Option::is_none")]
+    pub http_addr: Option<String>,
+
+    /// TLS certificate path
+    #[serde(rename = "tls-cert", default, skip_serializing_if = "Option::is_none")]
+    pub tls_cert: Option<String>,
+
+    /// TLS key path
+    #[serde(rename = "tls-key", default, skip_serializing_if = "Option::is_none")]
+    pub tls_key: Option<String>,
+}
+
+/// Modules section in config file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModulesConfigFile {
+    /// List of module IDs to enable
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<Vec<String>>,
+
+    /// Module directory path
+    #[serde(rename = "module-dir", default, skip_serializing_if = "Option::is_none")]
+    pub module_dir: Option<String>,
+
+    /// Manifest file path
+    #[serde(rename = "manifest-path", default, skip_serializing_if = "Option::is_none")]
+    pub manifest_path: Option<String>,
+
+    /// Trust config path
+    #[serde(rename = "trust-config", default, skip_serializing_if = "Option::is_none")]
+    pub trust_config: Option<String>,
+
+    /// Per-module configuration (keyed by module ID)
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub config: HashMap<String, serde_json::Value>,
+}
+
+/// Web3Signer section in config file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Web3SignerConfigFile {
+    /// Web3Signer URL
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
+    /// Request timeout in seconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
+
+    /// Health check interval in seconds
+    #[serde(rename = "health-check-interval", default, skip_serializing_if = "Option::is_none")]
+    pub health_check_interval: Option<u64>,
+}
+
+/// Vault section in config file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VaultConfigFile {
+    /// Vault URL
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
+    /// Vault token (prefer env var CRYFTTEE_VAULT_TOKEN for security)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+}
+
+/// Logging section in config file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoggingConfigFile {
+    /// Log level: error, warn, info, debug, trace
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+
+    /// Enable JSON structured logging
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub json: Option<bool>,
+}
+
+/// Security section in config file
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SecurityConfigFile {
+    /// Require attestation for module operations
+    #[serde(rename = "require-attestation", default, skip_serializing_if = "Option::is_none")]
+    pub require_attestation: Option<bool>,
+}
+
+// =============================================================================
+// trust.toml structures (separate file, always TOML)
 // =============================================================================
 
 /// Trust policy settings from [trust] section
@@ -94,208 +234,17 @@ pub struct TrustConfigFile {
 }
 
 // =============================================================================
-// cryfttee.toml structures
+// Runtime Configuration (flattened, merged from all sources)
 // =============================================================================
 
-/// [core] section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CoreConfig {
-    /// Human-readable instance name
-    #[serde(default = "default_instance_name")]
-    pub instance_name: String,
-
-    /// Expected cryfttee version
-    #[serde(default = "default_version")]
-    pub cryfttee_version: String,
-
-    /// Module directory path
-    #[serde(default = "default_module_dir_str")]
-    pub module_dir: String,
-
-    /// Manifest file path
-    #[serde(default = "default_manifest_path")]
-    pub manifest_path: String,
-
-    /// Trust config file path
-    #[serde(default = "default_trust_config")]
-    pub trust_config: String,
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            instance_name: default_instance_name(),
-            cryfttee_version: default_version(),
-            module_dir: default_module_dir_str(),
-            manifest_path: default_manifest_path(),
-            trust_config: default_trust_config(),
-        }
-    }
-}
-
-/// [api] section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    /// Transport mode: "uds" or "https"
-    #[serde(default = "default_transport")]
-    pub transport: String,
-
-    /// UDS socket path
-    #[serde(default = "default_uds_path")]
-    pub uds_path: String,
-
-    /// HTTP bind address
-    #[serde(default = "default_http_addr")]
-    pub http_addr: String,
-
-    /// Base path for API (default: "/v1")
-    #[serde(default = "default_base_path")]
-    pub base_path: String,
-}
-
-impl Default for ApiConfig {
-    fn default() -> Self {
-        Self {
-            transport: default_transport(),
-            uds_path: default_uds_path(),
-            http_addr: default_http_addr(),
-            base_path: default_base_path(),
-        }
-    }
-}
-
-/// [tls] section
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TlsConfig {
-    /// Path to TLS certificate
-    #[serde(default)]
-    pub cert_path: String,
-
-    /// Path to TLS private key
-    #[serde(default)]
-    pub key_path: String,
-}
-
-/// [ui] section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UiConfig {
-    /// UI listen address
-    #[serde(default = "default_ui_addr")]
-    pub addr: String,
-
-    /// Static assets directory
-    #[serde(default = "default_static_dir")]
-    pub static_dir: String,
-}
-
-impl Default for UiConfig {
-    fn default() -> Self {
-        Self {
-            addr: default_ui_addr(),
-            static_dir: default_static_dir(),
-        }
-    }
-}
-
-/// [schema] section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaConfig {
-    /// Whether schema endpoint is enabled
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-impl Default for SchemaConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
-
-/// [logging] section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoggingConfig {
-    /// Log level: "info", "debug", "trace", "warn", "error"
-    #[serde(default = "default_log_level")]
-    pub level: String,
-
-    /// Enable JSON structured logging
-    #[serde(default)]
-    pub json: bool,
-}
-
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            level: default_log_level(),
-            json: false,
-        }
-    }
-}
-
-/// [web3signer] section
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Web3SignerConfig {
-    /// Web3Signer URL (e.g., http://localhost:9000)
-    #[serde(default = "default_web3signer_url")]
-    pub url: String,
-
-    /// Request timeout in seconds
-    #[serde(default = "default_web3signer_timeout")]
-    pub timeout: u64,
-
-    /// Health check interval in seconds
-    #[serde(default = "default_health_check_interval")]
-    pub health_check_interval: u64,
-}
-
-impl Default for Web3SignerConfig {
-    fn default() -> Self {
-        Self {
-            url: default_web3signer_url(),
-            timeout: default_web3signer_timeout(),
-            health_check_interval: default_health_check_interval(),
-        }
-    }
-}
-
-/// Full cryfttee.toml file structure
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CryftteeConfigFile {
-    #[serde(default)]
-    pub core: CoreConfig,
-
-    #[serde(default)]
-    pub api: ApiConfig,
-
-    #[serde(default)]
-    pub tls: TlsConfig,
-
-    #[serde(default)]
-    pub ui: UiConfig,
-
-    #[serde(default)]
-    pub schema: SchemaConfig,
-
-    #[serde(default)]
-    pub logging: LoggingConfig,
-
-    #[serde(default)]
-    pub web3signer: Web3SignerConfig,
-}
-
-// =============================================================================
-// Runtime configuration (flattened for use)
-// =============================================================================
-
-/// Main configuration for cryfttee runtime (flattened from file + env)
+/// Main runtime configuration
+/// Built by merging: defaults < config file < env vars < CLI flags
 #[derive(Debug, Clone)]
 pub struct CryftteeConfig {
     /// Instance name
     pub instance_name: String,
 
     /// Binary hash verified by cryftgo (set via CRYFTTEE_VERIFIED_BINARY_HASH)
-    /// If set, this is trusted as it came from an external verifier
-    /// If not set, cryfttee will compute its own hash (less secure)
     pub verified_binary_hash: Option<String>,
 
     /// Root path for modules directory
@@ -351,50 +300,65 @@ pub struct CryftteeConfig {
 
     /// Web3Signer health check interval (seconds)
     pub web3signer_health_check_interval: u64,
+
+    /// Vault URL
+    pub vault_url: Option<String>,
+
+    /// Vault token
+    pub vault_token: Option<String>,
+
+    /// Key derivation seed
+    pub key_seed: Option<String>,
+
+    /// Node ID for key derivation
+    pub node_id: Option<String>,
+
+    /// Require attestation
+    pub require_attestation: bool,
+
+    /// Module IDs to enable (None = all)
+    pub enabled_modules: Option<Vec<String>>,
+
+    /// Per-module configuration from config file
+    pub module_config: HashMap<String, serde_json::Value>,
 }
 
-// Default value functions
+// =============================================================================
+// Default values
+// =============================================================================
+
 fn default_true() -> bool { true }
-fn default_instance_name() -> String { "cryfttee-01".to_string() }
-fn default_version() -> String { "0.4.0".to_string() }
-fn default_module_dir() -> PathBuf { PathBuf::from("modules") }
-fn default_module_dir_str() -> String { "modules".to_string() }
-fn default_manifest_path() -> String { "modules/manifest.json".to_string() }
-fn default_trust_config() -> String { "config/trust.toml".to_string() }
-fn default_transport() -> String { "uds".to_string() }
-fn default_uds_path() -> String { "/tmp/cryfttee.sock".to_string() }
-fn default_http_addr() -> String { "0.0.0.0:8443".to_string() }
-fn default_base_path() -> String { "/v1".to_string() }
-fn default_ui_addr() -> String { "0.0.0.0:3232".to_string() }
-fn default_static_dir() -> String { "ui".to_string() }
-fn default_log_level() -> String { "info".to_string() }
-fn default_web3signer_url() -> String { "http://localhost:9000".to_string() }
-fn default_web3signer_timeout() -> u64 { 30 }
-fn default_health_check_interval() -> u64 { 10 }
 
 impl Default for CryftteeConfig {
     fn default() -> Self {
         Self {
-            instance_name: default_instance_name(),
+            instance_name: "cryfttee-01".to_string(),
             verified_binary_hash: None,
-            module_dir: default_module_dir(),
+            module_dir: PathBuf::from("modules"),
             manifest_path: None,
             ui_dir: PathBuf::from("ui"),
             trust_config_path: None,
-            api_transport: default_transport(),
-            api_base_path: default_base_path(),
-            uds_path: default_uds_path(),
-            http_addr: default_http_addr(),
-            ui_addr: default_ui_addr(),
+            api_transport: "uds".to_string(),
+            api_base_path: "/v1".to_string(),
+            uds_path: "/tmp/cryfttee.sock".to_string(),
+            http_addr: "0.0.0.0:8443".to_string(),
+            ui_addr: "0.0.0.0:3232".to_string(),
             tls_cert: None,
             tls_key: None,
             schema_enabled: true,
-            log_level: default_log_level(),
+            log_level: "info".to_string(),
             log_json: false,
             trust: TrustConfigFile::default(),
-            web3signer_url: default_web3signer_url(),
-            web3signer_timeout: default_web3signer_timeout(),
-            web3signer_health_check_interval: default_health_check_interval(),
+            web3signer_url: "http://localhost:9000".to_string(),
+            web3signer_timeout: 30,
+            web3signer_health_check_interval: 10,
+            vault_url: None,
+            vault_token: None,
+            key_seed: None,
+            node_id: None,
+            require_attestation: false,
+            enabled_modules: None,
+            module_config: HashMap::new(),
         }
     }
 }
@@ -409,7 +373,6 @@ impl CryftteeConfig {
 
     /// Check if a publisher is trusted
     pub fn is_publisher_trusted(&self, publisher_id: &str) -> bool {
-        // If enforcement is disabled, trust everyone
         if !self.trust.trust.enforce_known_publishers {
             return true;
         }
@@ -449,5 +412,10 @@ impl CryftteeConfig {
     /// Get Web3Signer timeout in seconds
     pub fn get_web3signer_timeout(&self) -> u64 {
         self.web3signer_timeout
+    }
+
+    /// Get module-specific configuration
+    pub fn get_module_config(&self, module_id: &str) -> Option<&serde_json::Value> {
+        self.module_config.get(module_id)
     }
 }
