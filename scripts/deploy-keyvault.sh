@@ -97,19 +97,20 @@ SCRIPTS_DIR="${DATA_DIR}/scripts"
 SECRETS_FILE="${DATA_DIR}/.secrets"
 
 # PostgreSQL credentials - load from secrets file if exists, or generate new
+# Note: Uses echo instead of info() since logging functions aren't defined yet
 load_or_generate_secrets() {
     # Initialize to empty if not set (prevents unbound variable error)
     POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
     
     if [[ -f "$SECRETS_FILE" ]]; then
         source "$SECRETS_FILE"
-        info "Loaded existing secrets from $SECRETS_FILE"
+        echo "[i] Loaded existing secrets from $SECRETS_FILE"
     fi
     
     # Generate password only if not already set (from file or env)
     if [[ -z "$POSTGRES_PASSWORD" ]]; then
         POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
-        info "Generated new PostgreSQL password"
+        echo "[i] Generated new PostgreSQL password"
     fi
 }
 
