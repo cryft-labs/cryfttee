@@ -2450,6 +2450,30 @@ sudo systemctl daemon-reload
 sudo systemctl enable cryfttee-keyvault
 sudo systemctl restart cryfttee-keyvault
 
+# Wait for PostgreSQL to be healthy
+echo "[+] Waiting for PostgreSQL to be ready..."
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if sudo docker exec cryfttee-postgres pg_isready -U web3signer -d web3signer >/dev/null 2>&1; then
+        echo "[+] PostgreSQL is ready!"
+        break
+    fi
+    echo "[i] Waiting for PostgreSQL (attempt \$i/10)..."
+    sleep 2
+done
+
+# Handle password reset if needed (after PostgreSQL is running)
+if [ "\${RESET_PASSWORD_ONLY}" = "true" ]; then
+    echo "[+] Resetting PostgreSQL password..."
+    sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '\${NEW_POSTGRES_PASSWORD}';" && {
+        echo "[+] PostgreSQL password updated successfully!"
+        # Restart web3signer to use the new password
+        sudo docker restart cryfttee-web3signer
+        echo "[+] Web3Signer restarted with new credentials"
+    } || {
+        echo "[!] Warning: Failed to update PostgreSQL password"
+    }
+fi
+
 echo "[+] Cleaning up..."
 rm -rf /tmp/cryfttee-deploy
 
@@ -2927,6 +2951,30 @@ deploy_local() {
     sudo systemctl daemon-reload
     sudo systemctl enable cryfttee-keyvault
     sudo systemctl restart cryfttee-keyvault
+    
+    # Wait for PostgreSQL to be healthy
+    step "Waiting for PostgreSQL to be ready..."
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if sudo docker exec cryfttee-postgres pg_isready -U web3signer -d web3signer >/dev/null 2>&1; then
+            info "PostgreSQL is ready!"
+            break
+        fi
+        echo "  Waiting for PostgreSQL (attempt $i/10)..."
+        sleep 2
+    done
+    
+    # Handle password reset if needed (after PostgreSQL is running)
+    if [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
+        step "Resetting PostgreSQL password..."
+        sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${POSTGRES_PASSWORD}';" && {
+            info "PostgreSQL password updated successfully!"
+            # Restart web3signer to use the new password
+            sudo docker restart cryfttee-web3signer
+            info "Web3Signer restarted with new credentials"
+        } || {
+            warn "Failed to update PostgreSQL password"
+        }
+    fi
     
     # Wait for services
     info "Waiting for services to start..."
