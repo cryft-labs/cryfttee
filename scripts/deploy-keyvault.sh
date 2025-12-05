@@ -96,22 +96,28 @@ KEYS_DIR="${DATA_DIR}/keys"
 SCRIPTS_DIR="${DATA_DIR}/scripts"
 SECRETS_FILE="${DATA_DIR}/.secrets"
 
-# PostgreSQL credentials - load from secrets file if exists, or generate new
+# PostgreSQL credentials - load from local secrets file if exists
+# For remote deployments, password is retrieved from remote host in deploy_remote()
 # Note: Uses echo instead of info() since logging functions aren't defined yet
 load_or_generate_secrets() {
     # Initialize to empty if not set (prevents unbound variable error)
     POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
     
+    # Only check local secrets file (for --local deployments)
+    # Remote deployments retrieve password from remote host later
     if [[ -f "$SECRETS_FILE" ]]; then
         source "$SECRETS_FILE"
         echo "[i] Loaded existing secrets from $SECRETS_FILE"
     fi
     
-    # Generate password only if not already set (from file or env)
-    if [[ -z "$POSTGRES_PASSWORD" ]]; then
-        POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
-        echo "[i] Generated new PostgreSQL password"
-    fi
+    # DON'T generate password here - let deploy functions handle it
+    # This prevents generating a new password before checking remote host
+}
+
+# Generate a new password (called explicitly when needed)
+generate_new_password() {
+    POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+    echo "[i] Generated new PostgreSQL password"
 }
 
 save_secrets() {
@@ -2176,20 +2182,35 @@ deploy_remote() {
         EXISTING_VAULT_DATA=true
     fi
     
-    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -d ${POSTGRES_DATA} ] && [ -n \"\$(ls -A ${POSTGRES_DATA} 2>/dev/null)\" ]" 2>/dev/null; then
+    # Check postgres data - use sudo since directory is owned by uid 70
+    if ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo test -d ${POSTGRES_DATA} && sudo ls -A ${POSTGRES_DATA} 2>/dev/null | grep -q ." 2>/dev/null; then
         EXISTING_POSTGRES_DATA=true
+        info "Found existing PostgreSQL data"
     fi
     
     # If PostgreSQL data exists, try to retrieve the existing password
     if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
         step "Retrieving existing PostgreSQL credentials..."
-        REMOTE_PG_PASSWORD=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cat ${CONFIG_DIR}/.postgres-password 2>/dev/null || true")
+        # Use -t for sudo, and try both config locations
+        REMOTE_PG_PASSWORD=$(ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cat ${CONFIG_DIR}/.postgres-password 2>/dev/null" 2>/dev/null | tr -d '\r\n' || true)
         if [ -n "${REMOTE_PG_PASSWORD}" ]; then
             POSTGRES_PASSWORD="${REMOTE_PG_PASSWORD}"
             info "Using existing PostgreSQL password from remote host"
         else
-            warn "Could not retrieve existing password - PostgreSQL may need to be reset"
+            # Try extracting from docker-compose.yml as fallback
+            REMOTE_PG_PASSWORD=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "grep 'POSTGRES_PASSWORD=' ${CONFIG_DIR}/docker-compose.yml 2>/dev/null | head -1 | sed 's/.*POSTGRES_PASSWORD=//' | tr -d '\"' | tr -d \"'\"" 2>/dev/null | tr -d '\r\n' || true)
+            if [ -n "${REMOTE_PG_PASSWORD}" ]; then
+                POSTGRES_PASSWORD="${REMOTE_PG_PASSWORD}"
+                info "Using existing PostgreSQL password from docker-compose.yml"
+            else
+                warn "Could not retrieve existing password - PostgreSQL may need to be reset"
+            fi
         fi
+    fi
+    
+    # If still no password, generate one (fresh deployment)
+    if [ -z "${POSTGRES_PASSWORD}" ]; then
+        generate_new_password
     fi
     
     # Check if PostgreSQL data exists and prompt user
@@ -2236,6 +2257,12 @@ deploy_remote() {
             POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
             info "Generated new PostgreSQL password"
         else
+            # User wants to keep - but check if we actually have a password
+            if [ -z "${POSTGRES_PASSWORD}" ]; then
+                error "Cannot keep password - no existing password was retrieved!"
+                echo "Please choose [p] to reset password or [r] to reset everything."
+                exit 1
+            fi
             info "PostgreSQL database and password will be PRESERVED."
             RESET_POSTGRES=false
             RESET_PASSWORD_ONLY=false
@@ -2859,11 +2886,22 @@ deploy_local() {
             POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
             info "Generated new PostgreSQL password"
         else
+            # User wants to keep - but check if we actually have a password
+            if [ -z "${POSTGRES_PASSWORD}" ]; then
+                error "Cannot keep password - no existing password was retrieved!"
+                echo "Please choose [p] to reset password or [r] to reset everything."
+                exit 1
+            fi
             info "PostgreSQL database and password will be PRESERVED."
             RESET_POSTGRES=false
             RESET_PASSWORD_ONLY=false
         fi
         echo ""
+    fi
+    
+    # If still no password (fresh deployment), generate one
+    if [ -z "${POSTGRES_PASSWORD}" ]; then
+        generate_new_password
     fi
     
     if [ "${EXISTING_DEPLOYMENT}" = "true" ]; then
