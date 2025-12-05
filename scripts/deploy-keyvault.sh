@@ -317,33 +317,29 @@ services:
     command:
       - |
         set -e
-        echo "=== Database Migration ==="
+        echo "=== Database Setup ==="
         apt-get update -qq && apt-get install -qq -y postgresql-client >/dev/null 2>&1
         export PGPASSWORD='${POSTGRES_PASSWORD}'
         
-        for i in 1 2 3 4 5; do
+        echo "Waiting for PostgreSQL..."
+        for i in 1 2 3 4 5 6 7 8 9 10; do
           if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
-            echo "PostgreSQL is ready"
+            echo "PostgreSQL is ready!"
             break
           fi
-          echo "Waiting for PostgreSQL (attempt \$\$i)..."
-          sleep 2
+          echo "Waiting for PostgreSQL (attempt \$i/10)..."
+          sleep 3
         done
         
-        if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
-          echo "Database already initialized, skipping migrations."
-          exit 0
+        # Test final connection
+        if ! psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
+          echo "ERROR: Could not connect to PostgreSQL after 10 attempts"
+          exit 1
         fi
         
-        echo "Running Flyway migrations..."
-        MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
-        
-        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql 2>/dev/null | sort -V); do
-          echo "Applying: \$\$(basename \$\$sql_file)"
-          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || exit 1
-        done
-        
-        echo "=== Migrations completed successfully! ==="
+        echo "Database connection verified."
+        echo "Web3Signer will handle schema migrations automatically on startup."
+        echo "=== Database setup completed successfully! ==="
     networks:
       - cryfttee-keyvault
     restart: "no"
@@ -484,47 +480,31 @@ services:
     command:
       - |
         set -e
-        echo "=== Database Migration ==="
+        echo "=== Database Setup ==="
         
         apt-get update -qq && apt-get install -qq -y postgresql-client >/dev/null 2>&1
         
         export PGPASSWORD='${POSTGRES_PASSWORD}'
         
-        for i in 1 2 3 4 5; do
+        echo "Waiting for PostgreSQL..."
+        for i in 1 2 3 4 5 6 7 8 9 10; do
           if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
-            echo "PostgreSQL is ready"
+            echo "PostgreSQL is ready!"
             break
           fi
-          echo "Waiting for PostgreSQL (attempt \$\$i)..."
-          sleep 2
+          echo "Waiting for PostgreSQL (attempt \$i/10)..."
+          sleep 3
         done
         
-        if psql -h postgres -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
-          echo "Database already initialized, skipping migrations."
-          exit 0
-        fi
-        
-        echo "Running Flyway migrations..."
-        MIGRATION_DIR="/opt/web3signer/migrations/postgresql"
-        
-        if [ ! -d "\$\$MIGRATION_DIR" ]; then
-          echo "ERROR: Migration directory not found: \$\$MIGRATION_DIR"
-          ls -la /opt/web3signer/
+        # Test final connection
+        if ! psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
+          echo "ERROR: Could not connect to PostgreSQL after 10 attempts"
           exit 1
         fi
         
-        echo "Found migrations:"
-        ls -la \$\$MIGRATION_DIR/
-        
-        for sql_file in \$\$(ls \$\$MIGRATION_DIR/*.sql 2>/dev/null | sort -V); do
-          echo "Applying: \$\$(basename \$\$sql_file)"
-          psql -h postgres -U web3signer -d web3signer -f "\$\$sql_file" || {
-            echo "ERROR: Failed to apply \$\$sql_file"
-            exit 1
-          }
-        done
-        
-        echo "=== Migrations completed successfully! ==="
+        echo "Database connection verified."
+        echo "Web3Signer will handle schema migrations automatically on startup."
+        echo "=== Database setup completed successfully! ==="
     networks:
       - cryfttee-keyvault
     restart: "no"
