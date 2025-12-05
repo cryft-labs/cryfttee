@@ -86,8 +86,10 @@ WEB3SIGNER_METRICS_PORT="${WEB3SIGNER_METRICS_PORT:-9001}"
 # CryftTEE integration - localhost by default (no env vars needed)
 CRYFTTEE_HOST="${CRYFTTEE_HOST:-localhost}"
 
-# Directories
-DATA_DIR="/opt/cryfttee-keyvault"
+# Directories - use user home directory (no sudo required)
+# Remote: uses KEYVAULT_USER's home directory
+# Local: uses current user's home directory
+DATA_DIR="${CRYFTTEE_KEYVAULT_DIR:-\$HOME/.cryfttee-keyvault}"
 VAULT_DATA="${DATA_DIR}/vault"
 WEB3SIGNER_DATA="${DATA_DIR}/web3signer"
 POSTGRES_DATA="${DATA_DIR}/postgres"
@@ -95,6 +97,7 @@ CONFIG_DIR="${DATA_DIR}/config"
 KEYS_DIR="${DATA_DIR}/keys"
 SCRIPTS_DIR="${DATA_DIR}/scripts"
 SECRETS_FILE="${DATA_DIR}/.secrets"
+SYSTEMD_USER_DIR="\$HOME/.config/systemd/user"
 
 # PostgreSQL credentials - load from local secrets file if exists
 # For remote deployments, password is retrieved from remote host in deploy_remote()
@@ -121,7 +124,7 @@ generate_new_password() {
 }
 
 save_secrets() {
-    # Save secrets to file (only readable by root)
+    # Save secrets to file (only readable by owner)
     cat > "$SECRETS_FILE" << EOF
 # CryftTEE KeyVault Secrets - DO NOT DELETE
 # Generated: $(date -Iseconds)
@@ -268,13 +271,13 @@ sudo apt-get install -y ca-certificates curl gnupg lsb-release jq
 echo "[+] Adding Docker GPG key..."
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo "[+] Setting up Docker repository..."
 echo \
     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
     $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 echo "[+] Installing Docker Engine..."
 sudo apt-get update -y
@@ -288,7 +291,7 @@ echo "[+] Adding current user to docker group..."
 sudo usermod -aG docker $USER
 
 echo "[+] Docker version:"
-sudo docker --version
+docker --version
 echo "[+] Docker installed successfully!"
 EOF
 }
@@ -311,8 +314,10 @@ install_docker_remote() {
 # =============================================================================
 
 # Docker Compose - Full Stack (Vault + Web3Signer)
+# Note: Uses relative paths from ~/.cryfttee-keyvault (no sudo required)
+# Placeholders like __POSTGRES_PASSWORD__ are replaced by the deploy script
 generate_docker_compose_full() {
-    cat << COMPOSEEOF
+    cat << 'COMPOSEEOF'
 version: '3.8'
 
 services:
@@ -322,11 +327,11 @@ services:
     container_name: cryfttee-postgres
     restart: unless-stopped
     volumes:
-      - ${POSTGRES_DATA}:/var/lib/postgresql/data
+      - ./postgres:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=web3signer
       - POSTGRES_USER=web3signer
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=__POSTGRES_PASSWORD__
     networks:
       - cryfttee-keyvault
     healthcheck:
@@ -343,18 +348,18 @@ services:
 
   # HashiCorp Vault - Secrets Management
   vault:
-    image: hashicorp/vault:${VAULT_VERSION}
+    image: hashicorp/vault:__VAULT_VERSION__
     container_name: cryfttee-vault
     restart: unless-stopped
     cap_add:
       - IPC_LOCK
     ports:
-      - "${VAULT_PORT}:8200"
+      - "__VAULT_PORT__:8200"
     volumes:
-      - ${VAULT_DATA}/data:/vault/data
-      - ${VAULT_DATA}/logs:/vault/logs
-      - ${CONFIG_DIR}/vault.hcl:/vault/config/vault.hcl:ro
-      - ${VAULT_DATA}/init:/vault/init
+      - ./vault/data:/vault/data
+      - ./vault/logs:/vault/logs
+      - ./config/vault.hcl:/vault/config/vault.hcl:ro
+      - ./vault/init:/vault/init
     environment:
       - VAULT_ADDR=http://127.0.0.1:8200
       - VAULT_API_ADDR=http://0.0.0.0:8200
@@ -370,14 +375,14 @@ services:
 
   # Auto-init and unseal Vault on first start
   vault-init:
-    image: hashicorp/vault:${VAULT_VERSION}
+    image: hashicorp/vault:__VAULT_VERSION__
     container_name: cryfttee-vault-init
     depends_on:
       vault:
         condition: service_healthy
     volumes:
-      - ${VAULT_DATA}/init:/vault/init
-      - ${CONFIG_DIR}/vault-init.sh:/vault-init.sh:ro
+      - ./vault/init:/vault/init
+      - ./config/vault-init.sh:/vault-init.sh:ro
     environment:
       - VAULT_ADDR=http://vault:8200
     entrypoint: ["/bin/sh", "/vault-init.sh"]
@@ -386,9 +391,8 @@ services:
     restart: "no"
 
   # Web3Signer - Ethereum Signing with Vault backend
-  # Note: Web3Signer handles its own database migrations automatically
   web3signer:
-    image: consensys/web3signer:${WEB3SIGNER_VERSION}
+    image: consensys/web3signer:__WEB3SIGNER_VERSION__
     container_name: cryfttee-web3signer
     restart: unless-stopped
     depends_on:
@@ -397,12 +401,12 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${WEB3SIGNER_PORT}:9000"
-      - "${WEB3SIGNER_METRICS_PORT}:9001"
+      - "__WEB3SIGNER_PORT__:9000"
+      - "__WEB3SIGNER_METRICS_PORT__:9001"
     volumes:
-      - ${WEB3SIGNER_DATA}:/data
-      - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
-      - ${VAULT_DATA}/init:/vault-init:ro
+      - ./web3signer:/data
+      - ./config/web3signer.yaml:/config/web3signer.yaml:ro
+      - ./vault/init:/vault-init:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
@@ -411,7 +415,7 @@ services:
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
-      - --slashing-protection-db-password=${POSTGRES_PASSWORD}
+      - --slashing-protection-db-password=__POSTGRES_PASSWORD__
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -434,8 +438,9 @@ COMPOSEEOF
 }
 
 # Docker Compose - Web3Signer Only (recommended for CryftTEE)
+# Note: Uses relative paths from ~/.cryfttee-keyvault (no sudo required)
 generate_docker_compose_web3signer() {
-    cat << COMPOSEEOF
+    cat << 'COMPOSEEOF'
 version: '3.8'
 
 services:
@@ -445,11 +450,11 @@ services:
     container_name: cryfttee-postgres
     restart: unless-stopped
     volumes:
-      - ${POSTGRES_DATA}:/var/lib/postgresql/data
+      - ./postgres:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=web3signer
       - POSTGRES_USER=web3signer
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=__POSTGRES_PASSWORD__
     networks:
       - cryfttee-keyvault
     healthcheck:
@@ -465,20 +470,19 @@ services:
         max-file: "3"
 
   # Web3Signer - Ethereum Signing Service
-  # Note: Web3Signer handles its own database migrations automatically
   web3signer:
-    image: consensys/web3signer:${WEB3SIGNER_VERSION}
+    image: consensys/web3signer:__WEB3SIGNER_VERSION__
     container_name: cryfttee-web3signer
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "${WEB3SIGNER_PORT}:9000"
-      - "${WEB3SIGNER_METRICS_PORT}:9001"
+      - "__WEB3SIGNER_PORT__:9000"
+      - "__WEB3SIGNER_METRICS_PORT__:9001"
     volumes:
-      - ${WEB3SIGNER_DATA}:/data
-      - ${CONFIG_DIR}/web3signer.yaml:/config/web3signer.yaml:ro
+      - ./web3signer:/data
+      - ./config/web3signer.yaml:/config/web3signer.yaml:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
@@ -487,7 +491,7 @@ services:
       - --enable-key-manager-api=true
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
-      - --slashing-protection-db-password=${POSTGRES_PASSWORD}
+      - --slashing-protection-db-password=__POSTGRES_PASSWORD__
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -1023,36 +1027,29 @@ EOF
     fi
 }
 
-# Systemd Service
+# Systemd Service (user-level - no sudo required)
 generate_systemd_service() {
-    cat << EOF
+    # Note: Uses $HOME which will be expanded on the target system
+    cat << 'SERVICEEOF'
 [Unit]
 Description=CryftTEE KeyVault Stack (Vault + Web3Signer)
 Documentation=https://github.com/cryft-labs/cryfttee
-After=network-online.target docker.service
-Wants=network-online.target
-Requires=docker.service
+After=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=${DATA_DIR}
-ExecStartPre=/usr/bin/docker compose -f ${CONFIG_DIR}/docker-compose.yml pull
-ExecStart=/usr/bin/docker compose -f ${CONFIG_DIR}/docker-compose.yml up --remove-orphans
-ExecStop=/usr/bin/docker compose -f ${CONFIG_DIR}/docker-compose.yml down
+WorkingDirectory=%h/.cryfttee-keyvault
+ExecStartPre=/usr/bin/docker compose -f %h/.cryfttee-keyvault/config/docker-compose.yml pull
+ExecStart=/usr/bin/docker compose -f %h/.cryfttee-keyvault/config/docker-compose.yml up --remove-orphans
+ExecStop=/usr/bin/docker compose -f %h/.cryfttee-keyvault/config/docker-compose.yml down
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=180
 TimeoutStopSec=60
 
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=${DATA_DIR}
-
 [Install]
-WantedBy=multi-user.target
-EOF
+WantedBy=default.target
+SERVICEEOF
 }
 
 # =============================================================================
@@ -1090,7 +1087,7 @@ if vault status 2>/dev/null | grep -q "Initialized.*true"; then
     echo "[!] Vault is already initialized"
     
     if vault status 2>/dev/null | grep -q "Sealed.*true"; then
-        echo "[!] Vault is sealed. Run: sudo /opt/cryfttee-keyvault/scripts/unseal-vault.sh"
+        echo "[!] Vault is sealed. Run: ~/.cryfttee-keyvault/scripts/unseal-vault.sh"
     else
         echo "[+] Vault is unsealed and ready"
     fi
@@ -1101,7 +1098,7 @@ echo "[+] Initializing Vault with 5 key shares, 3 required to unseal..."
 INIT_OUTPUT=$(vault operator init -key-shares=5 -key-threshold=3 -format=json)
 
 # Save keys
-KEYS_FILE="/opt/cryfttee-keyvault/vault-init-keys.json"
+KEYS_FILE="~/.cryfttee-keyvault/vault-init-keys.json"
 echo "${INIT_OUTPUT}" > "${KEYS_FILE}"
 chmod 600 "${KEYS_FILE}"
 
@@ -1187,14 +1184,14 @@ vault write auth/approle/role/web3signer \
 ROLE_ID=$(vault read -format=json auth/approle/role/web3signer/role-id | jq -r '.data.role_id')
 SECRET_ID=$(vault write -format=json -f auth/approle/role/web3signer/secret-id | jq -r '.data.secret_id')
 
-cat > /opt/cryfttee-keyvault/vault-approle.json << APPROLE
+cat > ~/.cryfttee-keyvault/vault-approle.json << APPROLE
 {
   "vault_addr": "${VAULT_ADDR}",
   "role_id": "${ROLE_ID}",
   "secret_id": "${SECRET_ID}"
 }
 APPROLE
-chmod 600 /opt/cryfttee-keyvault/vault-approle.json
+chmod 600 ~/.cryfttee-keyvault/vault-approle.json
 
 echo ""
 echo "=== Vault Setup Complete ==="
@@ -1202,11 +1199,11 @@ echo ""
 echo "Vault UI:       ${VAULT_ADDR}/ui"
 echo "Root Token:     ${ROOT_TOKEN}"
 echo ""
-echo "AppRole credentials saved to: /opt/cryfttee-keyvault/vault-approle.json"
+echo "AppRole credentials saved to: ~/.cryfttee-keyvault/vault-approle.json"
 echo ""
 echo "IMPORTANT:"
-echo "  1. Back up /opt/cryfttee-keyvault/vault-init-keys.json to a secure location"
-echo "  2. After Vault restarts, run: sudo /opt/cryfttee-keyvault/scripts/unseal-vault.sh"
+echo "  1. Back up ~/.cryfttee-keyvault/vault-init-keys.json to a secure location"
+echo "  2. After Vault restarts, run: ~/.cryfttee-keyvault/scripts/unseal-vault.sh"
 echo ""
 EOF
 }
@@ -1227,7 +1224,7 @@ export VAULT_ADDR
 # Check if Vault is running
 if ! curl -sf "${VAULT_ADDR}/v1/sys/health" >/dev/null 2>&1; then
     echo "[x] Vault not responding at ${VAULT_ADDR}"
-    echo "[i] Start Vault first: sudo systemctl start cryfttee-keyvault"
+    echo "[i] Start Vault first: systemctl --user start cryfttee-keyvault"
     exit 1
 fi
 
@@ -1295,7 +1292,7 @@ generate_backup_credentials_script() {
 
 set -e
 
-VAULT_INIT_DIR="/opt/cryfttee-keyvault/vault/init"
+VAULT_INIT_DIR="~/.cryfttee-keyvault/vault/init"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -1385,9 +1382,9 @@ case "${OPTION}" in
         
         read -p "Delete credentials from server? (recommended for production) [y/N]: " DELETE_CREDS
         if [[ "${DELETE_CREDS}" =~ ^[Yy]$ ]]; then
-            sudo shred -u "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || true
-            sudo shred -u "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || true
-            sudo rm -f "${VAULT_INIT_DIR}/vault-init.json" 2>/dev/null || true
+            shred -u "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || rm -f "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || true
+            shred -u "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || rm -f "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || true
+            rm -f "${VAULT_INIT_DIR}/vault-init.json" 2>/dev/null || true
             echo "[+] Credentials removed from server."
             echo "[!] Keep your encrypted backup safe - it's the only copy!"
         fi
@@ -1418,9 +1415,9 @@ case "${OPTION}" in
         
         read -p "Delete credentials from server? (recommended for production) [y/N]: " DELETE_CREDS
         if [[ "${DELETE_CREDS}" =~ ^[Yy]$ ]]; then
-            sudo shred -u "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || true
-            sudo shred -u "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || true
-            sudo rm -f "${VAULT_INIT_DIR}/vault-init.json" 2>/dev/null || true
+            shred -u "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || rm -f "${VAULT_INIT_DIR}/unseal-keys.txt" 2>/dev/null || true
+            shred -u "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || rm -f "${VAULT_INIT_DIR}/root-token.txt" 2>/dev/null || true
+            rm -f "${VAULT_INIT_DIR}/vault-init.json" 2>/dev/null || true
             echo "[+] Credentials removed from server."
         fi
         ;;
@@ -1457,7 +1454,7 @@ generate_import_key_script() {
 #   ./import-key.sh list-vault                            # List keys in Vault
 #
 # Storage backends:
-#   - File-based: Keys stored in /opt/cryfttee-keyvault/keys/
+#   - File-based: Keys stored in ~/.cryfttee-keyvault/keys/
 #   - HashiCorp Vault: Keys stored in Vault at cryfttee/data/keys/
 #
 
@@ -1466,10 +1463,10 @@ set -e
 KEY_TYPE="${1:-}"
 KEYSTORE_FILE="${2:-}"
 PASSWORD="${3:-}"
-KEYS_DIR="/opt/cryfttee-keyvault/keys"
+KEYS_DIR="~/.cryfttee-keyvault/keys"
 WEB3SIGNER_URL="${WEB3SIGNER_URL:-http://127.0.0.1:9000}"
 VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
-VAULT_INIT_DIR="/opt/cryfttee-keyvault/vault/init"
+VAULT_INIT_DIR="~/.cryfttee-keyvault/vault/init"
 
 # Authenticate to Vault using AppRole (role-based access)
 # Uses admin role for key management, web3signer role for read operations
@@ -1544,14 +1541,14 @@ usage() {
     echo "  $0 vault-bls validator-1 0x1234...abcd"
     echo ""
     echo "After importing, restart Web3Signer:"
-    echo "  sudo docker restart cryfttee-web3signer"
+    echo "  docker restart cryfttee-web3signer"
     exit 1
 }
 
 check_web3signer() {
     if ! curl -sf "${WEB3SIGNER_URL}/upcheck" >/dev/null 2>&1; then
         echo "[x] Web3Signer not responding at ${WEB3SIGNER_URL}"
-        echo "[i] Start with: sudo systemctl start cryfttee-keyvault"
+        echo "[i] Start with: systemctl --user start cryfttee-keyvault"
         exit 1
     fi
 }
@@ -1644,7 +1641,7 @@ store_in_vault() {
         echo ""
         echo "    # SSH to keyvault server, then:"
         echo "    export VAULT_ADDR=http://127.0.0.1:8200"
-        echo "    export VAULT_TOKEN=\$(cat /opt/cryfttee-keyvault/vault/init/root-token.txt)"
+        echo "    export VAULT_TOKEN=\$(cat ~/.cryfttee-keyvault/vault/init/root-token.txt)"
         echo "    vault write -format=json -f auth/approle/role/cryfttee-admin/secret-id > /tmp/new-secret.json"
         echo "    # Update approle-admin.json with new secret_id"
         echo ""
@@ -1670,7 +1667,7 @@ store_in_vault() {
         WS_ROLE_ID=$(jq -r '.role_id' "${VAULT_INIT_DIR}/approle.json" 2>/dev/null)
         
         if [ "${key_type}" = "bls" ]; then
-            cat << YAMLCONFIG | sudo tee "${CONFIG_FILE}" > /dev/null
+            cat << YAMLCONFIG | tee "${CONFIG_FILE}" > /dev/null
 # Web3Signer Vault key config - uses AppRole authentication
 type: hashicorp
 keyType: BLS
@@ -1683,7 +1680,7 @@ timeout: 10000
 authFilePath: /vault-init/approle.json
 YAMLCONFIG
         else
-            cat << YAMLCONFIG | sudo tee "${CONFIG_FILE}" > /dev/null
+            cat << YAMLCONFIG | tee "${CONFIG_FILE}" > /dev/null
 # Web3Signer Vault key config - uses AppRole authentication
 type: hashicorp
 keyType: SECP256K1
@@ -1697,11 +1694,11 @@ authFilePath: /vault-init/approle.json
 YAMLCONFIG
         fi
         
-        sudo chmod 600 "${CONFIG_FILE}"
+        chmod 600 "${CONFIG_FILE}"
         echo "[+] Web3Signer config created: ${CONFIG_FILE}"
         echo "[i] Uses AppRole authentication (read-only) for signing"
         echo ""
-        echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
+        echo "[!] Restart Web3Signer to load: docker restart cryfttee-web3signer"
         return 0
     else
         echo "[x] Failed to store key in Vault"
@@ -1799,7 +1796,7 @@ case "${KEY_TYPE}" in
         
         # Create output directory
         OUTPUT_DIR="${KEYS_DIR}"
-        sudo mkdir -p "${OUTPUT_DIR}"
+        mkdir -p "${OUTPUT_DIR}"
         
         echo "[+] Generating BLS key using eth2-val-tools..."
         echo "[i] Password: ${PASSWORD}"
@@ -1830,9 +1827,9 @@ case "${KEY_TYPE}" in
                 
                 if [ -n "${PUBKEY}" ]; then
                     # Copy to keys directory
-                    sudo cp "${KEYSTORE}" "${OUTPUT_DIR}/${PUBKEY}.json"
-                    echo -n "${PASSWORD}" | sudo tee "${OUTPUT_DIR}/${PUBKEY}.txt" > /dev/null
-                    sudo chmod 600 "${OUTPUT_DIR}/${PUBKEY}.json" "${OUTPUT_DIR}/${PUBKEY}.txt"
+                    cp "${KEYSTORE}" "${OUTPUT_DIR}/${PUBKEY}.json"
+                    echo -n "${PASSWORD}" | tee "${OUTPUT_DIR}/${PUBKEY}.txt" > /dev/null
+                    chmod 600 "${OUTPUT_DIR}/${PUBKEY}.json" "${OUTPUT_DIR}/${PUBKEY}.txt"
                     
                     echo ""
                     echo "[+] Generated BLS key: 0x${PUBKEY:0:16}...${PUBKEY: -8}"
@@ -1840,7 +1837,7 @@ case "${KEY_TYPE}" in
                     echo "[+] Password: ${OUTPUT_DIR}/${PUBKEY}.txt"
                     echo ""
                     echo "[!] Restart Web3Signer to load the new key:"
-                    echo "    sudo docker restart cryfttee-web3signer"
+                    echo "    docker restart cryfttee-web3signer"
                     echo ""
                     echo "[i] CryftGo will detect this key via: GET /api/v1/eth2/publicKeys"
                 else
@@ -1878,7 +1875,7 @@ case "${KEY_TYPE}" in
         echo ""
         
         OUTPUT_DIR="${KEYS_DIR}"
-        sudo mkdir -p "${OUTPUT_DIR}"
+        mkdir -p "${OUTPUT_DIR}"
         TEMP_DIR=$(mktemp -d)
         
         KEY_NAME="tls-$(date +%s)"
@@ -1894,16 +1891,16 @@ case "${KEY_TYPE}" in
         PRIVATE_HEX=$(openssl ec -in "${TEMP_DIR}/private.pem" -text -noout 2>/dev/null | grep -A 5 'priv:' | grep -v 'priv:' | tr -d ' \n:')
         
         # Copy to keys directory
-        sudo cp "${TEMP_DIR}/private.pkcs8.pem" "${OUTPUT_DIR}/${KEY_NAME}.pem"
-        sudo chmod 600 "${OUTPUT_DIR}/${KEY_NAME}.pem"
+        cp "${TEMP_DIR}/private.pkcs8.pem" "${OUTPUT_DIR}/${KEY_NAME}.pem"
+        chmod 600 "${OUTPUT_DIR}/${KEY_NAME}.pem"
         
         # Create Web3Signer config
-        cat << KEYCONFIG | sudo tee "${OUTPUT_DIR}/${KEY_NAME}.yaml" > /dev/null
+        cat << KEYCONFIG | tee "${OUTPUT_DIR}/${KEY_NAME}.yaml" > /dev/null
 type: file-raw
 keyType: SECP256K1
 privateKeyFile: /keys/${KEY_NAME}.pem
 KEYCONFIG
-        sudo chmod 600 "${OUTPUT_DIR}/${KEY_NAME}.yaml"
+        chmod 600 "${OUTPUT_DIR}/${KEY_NAME}.yaml"
         
         echo "[+] Generated TLS key: ${KEY_NAME}"
         echo "[+] Private key: ${OUTPUT_DIR}/${KEY_NAME}.pem"
@@ -1918,7 +1915,7 @@ KEYCONFIG
         
         echo ""
         echo "[!] Restart Web3Signer to load:"
-        echo "    sudo docker restart cryfttee-web3signer"
+        echo "    docker restart cryfttee-web3signer"
         
         rm -rf "${TEMP_DIR}"
         ;;
@@ -1943,14 +1940,14 @@ KEYCONFIG
         
         echo "[+] Importing BLS key: 0x${PUBKEY:0:12}...${PUBKEY: -8}"
         
-        sudo mkdir -p "${KEYS_DIR}"
-        sudo cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${PUBKEY}.json"
-        sudo chmod 600 "${KEYS_DIR}/${PUBKEY}.json"
-        echo -n "${PASSWORD}" | sudo tee "${KEYS_DIR}/${PUBKEY}.txt" > /dev/null
-        sudo chmod 600 "${KEYS_DIR}/${PUBKEY}.txt"
+        mkdir -p "${KEYS_DIR}"
+        cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${PUBKEY}.json"
+        chmod 600 "${KEYS_DIR}/${PUBKEY}.json"
+        echo -n "${PASSWORD}" | tee "${KEYS_DIR}/${PUBKEY}.txt" > /dev/null
+        chmod 600 "${KEYS_DIR}/${PUBKEY}.txt"
         
         echo "[+] BLS key imported to ${KEYS_DIR}/"
-        echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
+        echo "[!] Restart Web3Signer to load: docker restart cryfttee-web3signer"
         ;;
         
     tls|secp256k1)
@@ -1971,23 +1968,23 @@ KEYCONFIG
         
         echo "[+] Importing SECP256k1 key: 0x${ADDRESS}"
         
-        sudo mkdir -p "${KEYS_DIR}"
+        mkdir -p "${KEYS_DIR}"
         KEYSTORE_NAME="secp256k1-${ADDRESS}"
-        sudo cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${KEYSTORE_NAME}.json"
-        sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.json"
-        echo -n "${PASSWORD}" | sudo tee "${KEYS_DIR}/${KEYSTORE_NAME}.txt" > /dev/null
-        sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.txt"
+        cp "${KEYSTORE_FILE}" "${KEYS_DIR}/${KEYSTORE_NAME}.json"
+        chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.json"
+        echo -n "${PASSWORD}" | tee "${KEYS_DIR}/${KEYSTORE_NAME}.txt" > /dev/null
+        chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.txt"
         
-        cat << KEYCONFIG | sudo tee "${KEYS_DIR}/${KEYSTORE_NAME}.yaml" > /dev/null
+        cat << KEYCONFIG | tee "${KEYS_DIR}/${KEYSTORE_NAME}.yaml" > /dev/null
 type: file-keystore
 keyType: SECP256K1
 keystoreFile: /keys/${KEYSTORE_NAME}.json
 keystorePasswordFile: /keys/${KEYSTORE_NAME}.txt
 KEYCONFIG
-        sudo chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.yaml"
+        chmod 600 "${KEYS_DIR}/${KEYSTORE_NAME}.yaml"
         
         echo "[+] SECP256k1/TLS key imported to ${KEYS_DIR}/"
-        echo "[!] Restart Web3Signer to load: sudo docker restart cryfttee-web3signer"
+        echo "[!] Restart Web3Signer to load: docker restart cryfttee-web3signer"
         ;;
         
     *)
@@ -2096,9 +2093,9 @@ echo ""
 
 # Show key files on disk
 echo "┌─ Key Files on Disk ───────────────────────────────────────────┐"
-KEY_COUNT=$(ls /opt/cryfttee-keyvault/keys/*.json 2>/dev/null | wc -l || echo "0")
+KEY_COUNT=$(ls ~/.cryfttee-keyvault/keys/*.json 2>/dev/null | wc -l || echo "0")
 echo "│ JSON keystores: ${KEY_COUNT}"
-ls /opt/cryfttee-keyvault/keys/*.json 2>/dev/null | head -3 | while read f; do
+ls ~/.cryfttee-keyvault/keys/*.json 2>/dev/null | head -3 | while read f; do
     echo "│   $(basename $f)"
 done
 if [ "${KEY_COUNT}" -gt 3 ]; then
@@ -2182,28 +2179,30 @@ deploy_remote() {
         EXISTING_VAULT_DATA=true
     fi
     
-    # Check postgres data - use sudo since directory is owned by uid 70
-    if ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo test -d ${POSTGRES_DATA} && sudo ls -A ${POSTGRES_DATA} 2>/dev/null | grep -q ." 2>/dev/null; then
+    # Check postgres data - check if docker-compose exists and has postgres config
+    # (avoids needing sudo to check the postgres data directory owned by uid 70)
+    if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "grep -q 'cryfttee-postgres' ${CONFIG_DIR}/docker-compose.yml 2>/dev/null" 2>/dev/null; then
         EXISTING_POSTGRES_DATA=true
-        info "Found existing PostgreSQL data"
+        info "Found existing PostgreSQL configuration"
     fi
     
     # If PostgreSQL data exists, try to retrieve the existing password
     if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
         step "Retrieving existing PostgreSQL credentials..."
-        # Use -t for sudo, and try both config locations
-        REMOTE_PG_PASSWORD=$(ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cat ${CONFIG_DIR}/.postgres-password 2>/dev/null" 2>/dev/null | tr -d '\r\n' || true)
+        
+        # Try docker-compose.yml FIRST (readable without sudo)
+        REMOTE_PG_PASSWORD=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "grep 'POSTGRES_PASSWORD=' ${CONFIG_DIR}/docker-compose.yml 2>/dev/null | head -1 | sed 's/.*POSTGRES_PASSWORD=//' | tr -d '\"' | tr -d \"'\"" 2>/dev/null | tr -d '\r\n' || true)
         if [ -n "${REMOTE_PG_PASSWORD}" ]; then
             POSTGRES_PASSWORD="${REMOTE_PG_PASSWORD}"
-            info "Using existing PostgreSQL password from remote host"
+            info "Using existing PostgreSQL password from docker-compose.yml"
         else
-            # Try extracting from docker-compose.yml as fallback
-            REMOTE_PG_PASSWORD=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "grep 'POSTGRES_PASSWORD=' ${CONFIG_DIR}/docker-compose.yml 2>/dev/null | head -1 | sed 's/.*POSTGRES_PASSWORD=//' | tr -d '\"' | tr -d \"'\"" 2>/dev/null | tr -d '\r\n' || true)
+            # Fallback: try .postgres-password file (user-owned directory, no sudo needed)
+            REMOTE_PG_PASSWORD=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "cat ${CONFIG_DIR}/.postgres-password 2>/dev/null" 2>/dev/null | tr -d '\r\n' || true)
             if [ -n "${REMOTE_PG_PASSWORD}" ]; then
                 POSTGRES_PASSWORD="${REMOTE_PG_PASSWORD}"
-                info "Using existing PostgreSQL password from docker-compose.yml"
+                info "Using existing PostgreSQL password from password file"
             else
-                warn "Could not retrieve existing password - PostgreSQL may need to be reset"
+                warn "Could not retrieve existing password - you may need to reset it"
             fi
         fi
     fi
@@ -2287,8 +2286,8 @@ deploy_remote() {
                 exit 1
             fi
             step "Removing existing deployment..."
-            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
-            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "systemctl --user stop cryfttee-keyvault 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true"
             info "Clean slate ready for fresh installation."
             EXISTING_DEPLOYMENT=false
         elif [ "${FORCE_UPGRADE}" = "true" ]; then
@@ -2328,13 +2327,13 @@ deploy_remote() {
             # Create backup of existing config
             step "Backing up existing configuration..."
             BACKUP_DIR="${CONFIG_DIR}/backup-$(date +%Y%m%d-%H%M%S)"
-            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo mkdir -p ${BACKUP_DIR} && sudo cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl ${BACKUP_DIR}/ 2>/dev/null || true"
-            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cp -r ${SCRIPTS_DIR}/*.sh ${BACKUP_DIR}/ 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "mkdir -p ${BACKUP_DIR} && cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl ${BACKUP_DIR}/ 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "cp -r ${SCRIPTS_DIR}/*.sh ${BACKUP_DIR}/ 2>/dev/null || true"
             info "Backup created at ${BACKUP_DIR}"
             
             # Stop services before upgrade
             step "Stopping services for upgrade..."
-            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo systemctl stop cryfttee-keyvault 2>/dev/null || true"
+            ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "systemctl --user stop cryfttee-keyvault 2>/dev/null || true"
         fi
     fi
     
@@ -2362,26 +2361,37 @@ deploy_remote() {
     generate_status_script > "${LOCAL_TMP}/status.sh"
     
     # Create deploy script
-    cat > "${LOCAL_TMP}/deploy.sh" << DEPLOYEOF
+    cat > "${LOCAL_TMP}/deploy.sh" << 'DEPLOYEOF'
 #!/bin/bash
 set -e
 
-MODE="${mode}"
-RESET_POSTGRES="${RESET_POSTGRES}"
-RESET_PASSWORD_ONLY="${RESET_PASSWORD_ONLY}"
-NEW_POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+# These variables are passed from the parent script
+MODE="__MODE__"
+RESET_POSTGRES="__RESET_POSTGRES__"
+RESET_PASSWORD_ONLY="__RESET_PASSWORD_ONLY__"
+NEW_POSTGRES_PASSWORD="__POSTGRES_PASSWORD__"
+VAULT_VERSION="__VAULT_VERSION__"
+WEB3SIGNER_VERSION="__WEB3SIGNER_VERSION__"
+VAULT_PORT="__VAULT_PORT__"
+WEB3SIGNER_PORT="__WEB3SIGNER_PORT__"
+WEB3SIGNER_METRICS_PORT="__WEB3SIGNER_METRICS_PORT__"
+
+# User-level directories (no sudo required)
+DATA_DIR="$HOME/.cryfttee-keyvault"
+CONFIG_DIR="${DATA_DIR}/config"
+SCRIPTS_DIR="${DATA_DIR}/scripts"
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
 # Handle PostgreSQL reset if requested
-if [ "\${RESET_POSTGRES}" = "true" ]; then
+if [ "${RESET_POSTGRES}" = "true" ]; then
     echo "[!] Resetting PostgreSQL database as requested..."
-    sudo docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
-    sudo rm -rf ${POSTGRES_DATA}
+    docker rm -f cryfttee-postgres 2>/dev/null || true
+    rm -rf ${DATA_DIR}/postgres
     echo "[+] PostgreSQL data cleared."
-elif [ "\${RESET_PASSWORD_ONLY}" = "true" ]; then
+elif [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
     echo "[!] Resetting PostgreSQL password only (preserving data)..."
-    # Wait for postgres to be up and change the password
-    if sudo docker ps | grep -q cryfttee-postgres; then
-        sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '\${NEW_POSTGRES_PASSWORD}';" || {
+    if docker ps | grep -q cryfttee-postgres; then
+        docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${NEW_POSTGRES_PASSWORD}';" || {
             echo "[!] Warning: Could not update password in running PostgreSQL. Will update on restart."
         }
     fi
@@ -2389,121 +2399,101 @@ elif [ "\${RESET_PASSWORD_ONLY}" = "true" ]; then
 fi
 
 echo "[+] Creating directories..."
-sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
-sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
-
-# Vault container runs as uid 100 (vault user) - must own its data directories
-echo "[+] Setting Vault data ownership (uid 100)..."
-sudo chown -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init
-
-# Web3Signer container runs as uid 1000 - must own its data directory for slashing DB
-echo "[+] Setting Web3Signer data ownership (uid 1000)..."
-sudo chown -R 1000:1000 ${DATA_DIR}/web3signer
-sudo chmod 755 ${DATA_DIR}/web3signer
-
-# PostgreSQL container runs as uid 70 (postgres user in alpine) - must own its data directory
-echo "[+] Setting PostgreSQL data ownership (uid 70)..."
-sudo chown -R 70:70 ${DATA_DIR}/postgres
-sudo chmod 700 ${DATA_DIR}/postgres
-
-# Keys directory needs to be readable by web3signer (uid 1000)
-sudo chown -R 1000:1000 ${DATA_DIR}/keys
-sudo chmod 755 ${DATA_DIR}/keys
+mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
+mkdir -p ${SYSTEMD_USER_DIR}
+chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys
 
 echo "[+] Installing configuration files..."
-sudo cp /tmp/cryfttee-deploy/docker-compose.yml ${CONFIG_DIR}/
-sudo cp /tmp/cryfttee-deploy/web3signer.yaml ${CONFIG_DIR}/
-sudo cp /tmp/cryfttee-deploy/cryfttee-keyvault.service /etc/systemd/system/
+cp /tmp/cryfttee-deploy/docker-compose.yml ${CONFIG_DIR}/
+cp /tmp/cryfttee-deploy/web3signer.yaml ${CONFIG_DIR}/
+cp /tmp/cryfttee-deploy/cryfttee-keyvault.service ${SYSTEMD_USER_DIR}/
 
 # Save PostgreSQL password for recovery (restricted permissions)
-echo "${POSTGRES_PASSWORD}" | sudo tee ${CONFIG_DIR}/.postgres-password > /dev/null
-sudo chmod 600 ${CONFIG_DIR}/.postgres-password
+echo "${NEW_POSTGRES_PASSWORD}" > ${CONFIG_DIR}/.postgres-password
+chmod 600 ${CONFIG_DIR}/.postgres-password
 
-if [ "\${MODE}" = "full" ]; then
-    sudo cp /tmp/cryfttee-deploy/vault.hcl ${CONFIG_DIR}/
-    sudo cp /tmp/cryfttee-deploy/vault-init.sh ${CONFIG_DIR}/
-    sudo cp /tmp/cryfttee-deploy/init-vault.sh ${SCRIPTS_DIR}/
-    sudo cp /tmp/cryfttee-deploy/unseal-vault.sh ${SCRIPTS_DIR}/
-    sudo cp /tmp/cryfttee-deploy/backup-credentials.sh ${SCRIPTS_DIR}/
-    sudo chmod +x ${CONFIG_DIR}/vault-init.sh
+if [ "${MODE}" = "full" ]; then
+    cp /tmp/cryfttee-deploy/vault.hcl ${CONFIG_DIR}/
+    cp /tmp/cryfttee-deploy/vault-init.sh ${CONFIG_DIR}/
+    cp /tmp/cryfttee-deploy/init-vault.sh ${SCRIPTS_DIR}/
+    cp /tmp/cryfttee-deploy/unseal-vault.sh ${SCRIPTS_DIR}/
+    cp /tmp/cryfttee-deploy/backup-credentials.sh ${SCRIPTS_DIR}/
+    chmod +x ${CONFIG_DIR}/vault-init.sh
 fi
 
-sudo cp /tmp/cryfttee-deploy/import-key.sh ${SCRIPTS_DIR}/
-sudo cp /tmp/cryfttee-deploy/status.sh ${SCRIPTS_DIR}/
-sudo chmod +x ${SCRIPTS_DIR}/*.sh
-
-echo "[+] Checking firewall..."
-if command -v ufw >/dev/null && sudo ufw status | grep -q 'Status: active'; then
-    [ "\${MODE}" = "full" ] && sudo ufw allow ${VAULT_PORT}/tcp
-    sudo ufw allow ${WEB3SIGNER_PORT}/tcp
-    sudo ufw allow ${WEB3SIGNER_METRICS_PORT}/tcp
-fi
+cp /tmp/cryfttee-deploy/import-key.sh ${SCRIPTS_DIR}/
+cp /tmp/cryfttee-deploy/status.sh ${SCRIPTS_DIR}/
+chmod +x ${SCRIPTS_DIR}/*.sh
 
 echo "[+] Pulling Docker images..."
 
 # Retry wrapper for network operations
 retry_pull() {
-    local image="\$1"
+    local image="$1"
     local attempt=1
     while true; do
-        echo "    Pulling \${image} (attempt \${attempt})..."
-        if sudo docker pull "\${image}"; then
-            echo "    ✓ Successfully pulled \${image}"
+        echo "    Pulling ${image} (attempt ${attempt})..."
+        if docker pull "${image}"; then
+            echo "    ✓ Successfully pulled ${image}"
             return 0
         fi
         echo ""
-        echo "    ⚠ Failed to pull \${image}"
+        echo "    ⚠ Failed to pull ${image}"
         echo ""
         echo "    Options: [r]etry, [s]kip, [a]bort"
         read -p "    Choose: " -n 1 choice
         echo ""
-        case "\${choice}" in
+        case "${choice}" in
             r|R) ((attempt++)) ;;
-            s|S) echo "    Skipping \${image}"; return 1 ;;
+            s|S) echo "    Skipping ${image}"; return 1 ;;
             a|A) echo "    Aborted"; exit 1 ;;
             *) echo "    Invalid choice" ;;
         esac
     done
 }
 
-if [ "\${MODE}" = "full" ]; then
+if [ "${MODE}" = "full" ]; then
     retry_pull "hashicorp/vault:${VAULT_VERSION}"
 fi
 retry_pull "postgres:15-alpine"
 retry_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
 
 echo "[+] Stopping existing services..."
-sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+systemctl --user stop cryfttee-keyvault 2>/dev/null || true
 
 # Clean up any orphaned containers from previous deployments
 echo "[+] Cleaning up old containers..."
-sudo docker stop cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
-sudo docker rm -f cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+docker stop cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+docker rm -f cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
 
 # Remove old networks (will be recreated by docker-compose)
-sudo docker network rm config_cryfttee-keyvault config_cryftee-net 2>/dev/null || true
+docker network rm cryfttee-keyvault 2>/dev/null || true
+
+echo "[+] Enabling lingering for user systemd services..."
+# This allows user services to run without being logged in
+loginctl enable-linger $(whoami) 2>/dev/null || echo "[i] Linger may already be enabled or require admin"
 
 echo "[+] Starting services..."
-sudo systemctl daemon-reload
-sudo systemctl enable cryfttee-keyvault
-sudo systemctl start cryfttee-keyvault
+systemctl --user daemon-reload
+systemctl --user enable cryfttee-keyvault
+systemctl --user start cryfttee-keyvault
 
 # Wait for PostgreSQL to be healthy
 echo "[+] Waiting for PostgreSQL to be ready..."
 for i in 1 2 3 4 5 6 7 8 9 10; do
-    if sudo docker exec cryfttee-postgres pg_isready -U web3signer -d web3signer >/dev/null 2>&1; then
+    if docker exec cryfttee-postgres pg_isready -U web3signer -d web3signer >/dev/null 2>&1; then
         echo "[+] PostgreSQL is ready!"
         break
     fi
-    echo "[i] Waiting for PostgreSQL (attempt \$i/10)..."
+    echo "[i] Waiting for PostgreSQL (attempt $i/10)..."
     sleep 2
 done
 
 # Initialize slashing protection schema if needed
 echo "[+] Checking slashing protection database schema..."
-if ! sudo docker exec cryfttee-postgres psql -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
+if ! docker exec cryfttee-postgres psql -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
     echo "[+] Initializing slashing protection schema..."
-    sudo docker exec -i cryfttee-postgres psql -U web3signer -d web3signer << 'SQLEOF'
+    docker exec -i cryfttee-postgres psql -U web3signer -d web3signer << 'SQLEOF'
 -- Web3Signer Slashing Protection Schema v12
 CREATE TABLE IF NOT EXISTS database_version (
     id INTEGER PRIMARY KEY,
@@ -2548,12 +2538,12 @@ else
 fi
 
 # Handle password reset if needed (after PostgreSQL is running)
-if [ "\${RESET_PASSWORD_ONLY}" = "true" ]; then
+if [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
     echo "[+] Resetting PostgreSQL password..."
-    sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '\${NEW_POSTGRES_PASSWORD}';" && {
+    docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${NEW_POSTGRES_PASSWORD}';" && {
         echo "[+] PostgreSQL password updated successfully!"
         # Restart web3signer to use the new password
-        sudo docker restart cryfttee-web3signer
+        docker restart cryfttee-web3signer
         echo "[+] Web3Signer restarted with new credentials"
     } || {
         echo "[!] Warning: Failed to update PostgreSQL password"
@@ -2565,6 +2555,25 @@ rm -rf /tmp/cryfttee-deploy
 
 echo "[+] Deployment complete!"
 DEPLOYEOF
+
+    # Replace placeholders with actual values in deploy.sh
+    sed -i "s|__MODE__|${mode}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__RESET_POSTGRES__|${RESET_POSTGRES}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__RESET_PASSWORD_ONLY__|${RESET_PASSWORD_ONLY}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__POSTGRES_PASSWORD__|${POSTGRES_PASSWORD}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__VAULT_VERSION__|${VAULT_VERSION}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__WEB3SIGNER_VERSION__|${WEB3SIGNER_VERSION}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__VAULT_PORT__|${VAULT_PORT}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__WEB3SIGNER_PORT__|${WEB3SIGNER_PORT}|g" "${LOCAL_TMP}/deploy.sh"
+    sed -i "s|__WEB3SIGNER_METRICS_PORT__|${WEB3SIGNER_METRICS_PORT}|g" "${LOCAL_TMP}/deploy.sh"
+    
+    # Replace placeholders in docker-compose.yml
+    sed -i "s|__POSTGRES_PASSWORD__|${POSTGRES_PASSWORD}|g" "${LOCAL_TMP}/docker-compose.yml"
+    sed -i "s|__VAULT_VERSION__|${VAULT_VERSION}|g" "${LOCAL_TMP}/docker-compose.yml"
+    sed -i "s|__WEB3SIGNER_VERSION__|${WEB3SIGNER_VERSION}|g" "${LOCAL_TMP}/docker-compose.yml"
+    sed -i "s|__VAULT_PORT__|${VAULT_PORT}|g" "${LOCAL_TMP}/docker-compose.yml"
+    sed -i "s|__WEB3SIGNER_PORT__|${WEB3SIGNER_PORT}|g" "${LOCAL_TMP}/docker-compose.yml"
+    sed -i "s|__WEB3SIGNER_METRICS_PORT__|${WEB3SIGNER_METRICS_PORT}|g" "${LOCAL_TMP}/docker-compose.yml"
 
     # Upload files
     step "Uploading files to ${KEYVAULT_HOST}..."
@@ -2615,7 +2624,7 @@ DEPLOYEOF
         echo "  1. SSH to ${KEYVAULT_HOST}"
         echo "  2. Watch vault-init logs: docker logs -f cryfttee-vault-init"
         echo "  3. Copy the Root Token and Unseal Key shown in the logs"
-        echo "  4. Run backup script: sudo ${SCRIPTS_DIR}/backup-credentials.sh"
+        echo "  4. Run backup script: ${SCRIPTS_DIR}/backup-credentials.sh"
         echo "     (Options: GPG-encrypted file or USB drive)"
         echo ""
     fi
@@ -2624,8 +2633,8 @@ DEPLOYEOF
     echo "│                                                                │"
     echo "│  1. Import a key:                                              │"
     echo "│     ssh ${KEYVAULT_USER}@${KEYVAULT_HOST}"
-    echo "│     sudo ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>"
-    echo "│     sudo docker restart cryfttee-web3signer"
+    echo "│     ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>"
+    echo "│     docker restart cryfttee-web3signer"
     echo "│                                                                │"
     echo "│  2. Configure CryftTEE:                                        │"
     echo "│     export CRYFTTEE_WEB3SIGNER_URL=http://${KEYVAULT_HOST}:${WEB3SIGNER_PORT}"
@@ -2638,14 +2647,14 @@ DEPLOYEOF
     echo ""
     
     info "Useful commands (on keyvault host):"
-    echo "  Status:      sudo ${SCRIPTS_DIR}/status.sh"
-    echo "  Import key:  sudo ${SCRIPTS_DIR}/import-key.sh <type> <keystore> <password>"
-    echo "  List keys:   sudo ${SCRIPTS_DIR}/import-key.sh list"
-    echo "  Logs:        sudo journalctl -u cryfttee-keyvault -f"
-    echo "  Restart:     sudo systemctl restart cryfttee-keyvault"
+    echo "  Status:      ${SCRIPTS_DIR}/status.sh"
+    echo "  Import key:  ${SCRIPTS_DIR}/import-key.sh <type> <keystore> <password>"
+    echo "  List keys:   ${SCRIPTS_DIR}/import-key.sh list"
+    echo "  Logs:        journalctl --user -u cryfttee-keyvault -f"
+    echo "  Restart:     systemctl --user restart cryfttee-keyvault"
     if [ "${mode}" = "full" ]; then
-        echo "  Unseal:      sudo ${SCRIPTS_DIR}/unseal-vault.sh"
-        echo "  Backup:      sudo ${SCRIPTS_DIR}/backup-credentials.sh"
+        echo "  Unseal:      ${SCRIPTS_DIR}/unseal-vault.sh"
+        echo "  Backup:      ${SCRIPTS_DIR}/backup-credentials.sh"
     fi
 }
 
@@ -2654,7 +2663,7 @@ check_status() {
     # For status check, establish master connection first
     start_ssh_master "${KEYVAULT_USER}@${KEYVAULT_HOST}"
     trap "stop_ssh_master '${KEYVAULT_USER}@${KEYVAULT_HOST}'" EXIT
-    ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo ${SCRIPTS_DIR}/status.sh 2>/dev/null || echo 'Stack not deployed'"
+    ssh_cmd -t "${KEYVAULT_USER}@${KEYVAULT_HOST}" "${SCRIPTS_DIR}/status.sh 2>/dev/null || echo 'Stack not deployed'"
 }
 
 generate_env() {
@@ -2792,8 +2801,8 @@ deploy_local() {
     echo ""
     
     # Check if running as root or with sudo
-    if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
-        warn "This script requires sudo access for local deployment"
+    if [ "$EUID" -ne 0 ] && ! true 2>/dev/null; then
+# warn "This script requires sudo access for local deployment"
     fi
     
     # Check Docker
@@ -2830,7 +2839,7 @@ deploy_local() {
     if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
         step "Retrieving existing PostgreSQL credentials..."
         if [ -f "${CONFIG_DIR}/.postgres-password" ]; then
-            LOCAL_PG_PASSWORD=$(sudo cat "${CONFIG_DIR}/.postgres-password" 2>/dev/null || true)
+            LOCAL_PG_PASSWORD=$(cat "${CONFIG_DIR}/.postgres-password" 2>/dev/null || true)
             if [ -n "${LOCAL_PG_PASSWORD}" ]; then
                 POSTGRES_PASSWORD="${LOCAL_PG_PASSWORD}"
                 info "Using existing PostgreSQL password"
@@ -2921,8 +2930,8 @@ deploy_local() {
                 exit 1
             fi
             step "Removing existing deployment..."
-            sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
-            sudo rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true
+            systemctl --user stop cryfttee-keyvault 2>/dev/null || true
+            rm -rf ${CONFIG_DIR} ${SCRIPTS_DIR} 2>/dev/null || true
             info "Clean slate ready for fresh installation."
             EXISTING_DEPLOYMENT=false
         elif [ "${FORCE_UPGRADE}" = "true" ]; then
@@ -2962,28 +2971,28 @@ deploy_local() {
             # Create backup of existing config
             step "Backing up existing configuration..."
             BACKUP_DIR="${CONFIG_DIR}/backup-$(date +%Y%m%d-%H%M%S)"
-            sudo mkdir -p "${BACKUP_DIR}"
-            sudo cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl "${BACKUP_DIR}/" 2>/dev/null || true
-            sudo cp -r ${SCRIPTS_DIR}/*.sh "${BACKUP_DIR}/" 2>/dev/null || true
+            mkdir -p "${BACKUP_DIR}"
+            cp -r ${CONFIG_DIR}/*.yml ${CONFIG_DIR}/*.yaml ${CONFIG_DIR}/*.hcl "${BACKUP_DIR}/" 2>/dev/null || true
+            cp -r ${SCRIPTS_DIR}/*.sh "${BACKUP_DIR}/" 2>/dev/null || true
             info "Backup created at ${BACKUP_DIR}"
             
             # Stop services before upgrade
             step "Stopping services for upgrade..."
-            sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+            systemctl --user stop cryfttee-keyvault 2>/dev/null || true
         fi
     fi
     
     # Handle PostgreSQL reset if requested
     if [ "${RESET_POSTGRES}" = "true" ]; then
         step "Resetting PostgreSQL database as requested..."
-        sudo docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
-        sudo rm -rf ${POSTGRES_DATA}
+        docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
+        rm -rf ${POSTGRES_DATA}
         info "PostgreSQL data cleared."
     elif [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
         step "Resetting PostgreSQL password only (preserving data)..."
         # If postgres is running, update the password in-place
-        if sudo docker ps | grep -q cryfttee-postgres; then
-            sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${POSTGRES_PASSWORD}';" && {
+        if docker ps | grep -q cryfttee-postgres; then
+            docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${POSTGRES_PASSWORD}';" && {
                 info "PostgreSQL password updated in running database."
             } || {
                 warn "Could not update password in running PostgreSQL. Will update on restart."
@@ -2993,47 +3002,48 @@ deploy_local() {
     
     # Create directories
     step "Creating directories..."
-    sudo mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
-    sudo chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys 2>/dev/null || true
+    mkdir -p ${DATA_DIR}/{vault/data,vault/logs,vault/init,web3signer,postgres,keys,config,scripts}
+    mkdir -p ${HOME}/.config/systemd/user
+    chmod 700 ${DATA_DIR}/vault ${DATA_DIR}/keys 2>/dev/null || true
     
     # Vault container runs as uid 100 (vault user) - must own its data directories
     step "Setting Vault data ownership (uid 100)..."
-    sudo chown -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init 2>/dev/null || true
+    # chown not needed - user owns directory -R 100:100 ${DATA_DIR}/vault/data ${DATA_DIR}/vault/logs ${DATA_DIR}/vault/init 2>/dev/null || true
     
     # Web3Signer container runs as uid 1000 - must own its data directory for slashing DB
     step "Setting Web3Signer data ownership (uid 1000)..."
-    sudo chown -R 1000:1000 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
-    sudo chmod 755 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
+    # chown not needed - user owns directory -R 1000:1000 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
+    chmod 755 ${DATA_DIR}/web3signer ${DATA_DIR}/keys 2>/dev/null || true
     
     # PostgreSQL container runs as uid 70 (postgres user in alpine) - must own its data directory
     step "Setting PostgreSQL data ownership (uid 70)..."
-    sudo chown -R 70:70 ${DATA_DIR}/postgres 2>/dev/null || true
-    sudo chmod 700 ${DATA_DIR}/postgres 2>/dev/null || true
+    # chown not needed - user owns directory -R 70:70 ${DATA_DIR}/postgres 2>/dev/null || true
+    chmod 700 ${DATA_DIR}/postgres 2>/dev/null || true
     
     # Generate and install configs
     step "Generating configuration files..."
     
     if [ "${mode}" = "full" ]; then
-        generate_docker_compose_full | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
-        generate_vault_config | sudo tee ${CONFIG_DIR}/vault.hcl > /dev/null
-        generate_vault_init_script | sudo tee ${CONFIG_DIR}/vault-init.sh > /dev/null
-        generate_init_vault_script | sudo tee ${SCRIPTS_DIR}/init-vault.sh > /dev/null
-        generate_unseal_vault_script | sudo tee ${SCRIPTS_DIR}/unseal-vault.sh > /dev/null
-        generate_backup_credentials_script | sudo tee ${SCRIPTS_DIR}/backup-credentials.sh > /dev/null
-        sudo chmod +x ${CONFIG_DIR}/vault-init.sh ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh ${SCRIPTS_DIR}/backup-credentials.sh
+        generate_docker_compose_full | tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
+        generate_vault_config | tee ${CONFIG_DIR}/vault.hcl > /dev/null
+        generate_vault_init_script | tee ${CONFIG_DIR}/vault-init.sh > /dev/null
+        generate_init_vault_script | tee ${SCRIPTS_DIR}/init-vault.sh > /dev/null
+        generate_unseal_vault_script | tee ${SCRIPTS_DIR}/unseal-vault.sh > /dev/null
+        generate_backup_credentials_script | tee ${SCRIPTS_DIR}/backup-credentials.sh > /dev/null
+        chmod +x ${CONFIG_DIR}/vault-init.sh ${SCRIPTS_DIR}/init-vault.sh ${SCRIPTS_DIR}/unseal-vault.sh ${SCRIPTS_DIR}/backup-credentials.sh
     else
-        generate_docker_compose_web3signer | sudo tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
+        generate_docker_compose_web3signer | tee ${CONFIG_DIR}/docker-compose.yml > /dev/null
     fi
     
-    generate_web3signer_config | sudo tee ${CONFIG_DIR}/web3signer.yaml > /dev/null
-    generate_systemd_service | sudo tee /etc/systemd/system/cryfttee-keyvault.service > /dev/null
-    generate_import_key_script | sudo tee ${SCRIPTS_DIR}/import-key.sh > /dev/null
-    generate_status_script | sudo tee ${SCRIPTS_DIR}/status.sh > /dev/null
-    sudo chmod +x ${SCRIPTS_DIR}/*.sh
+    generate_web3signer_config | tee ${CONFIG_DIR}/web3signer.yaml > /dev/null
+    generate_systemd_service | tee ${HOME}/.config/systemd/user/cryfttee-keyvault.service > /dev/null
+    generate_import_key_script | tee ${SCRIPTS_DIR}/import-key.sh > /dev/null
+    generate_status_script | tee ${SCRIPTS_DIR}/status.sh > /dev/null
+    chmod +x ${SCRIPTS_DIR}/*.sh
     
     # Save PostgreSQL password for recovery (restricted permissions)
-    echo "${POSTGRES_PASSWORD}" | sudo tee ${CONFIG_DIR}/.postgres-password > /dev/null
-    sudo chmod 600 ${CONFIG_DIR}/.postgres-password
+    echo "${POSTGRES_PASSWORD}" | tee ${CONFIG_DIR}/.postgres-password > /dev/null
+    chmod 600 ${CONFIG_DIR}/.postgres-password
     
     # Pull images
     step "Pulling Docker images..."
@@ -3045,26 +3055,30 @@ deploy_local() {
     
     # Stop existing services
     step "Stopping existing services..."
-    sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+    systemctl --user stop cryfttee-keyvault 2>/dev/null || true
     
     # Clean up any orphaned containers from previous deployments
     step "Cleaning up old containers..."
-    sudo docker stop cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
-    sudo docker rm -f cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+    docker stop cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+    docker rm -f cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
     
     # Remove old networks (will be recreated by docker-compose)
-    sudo docker network rm config_cryfttee-keyvault config_cryftee-net 2>/dev/null || true
+    docker network rm config_cryfttee-keyvault config_cryftee-net 2>/dev/null || true
     
     # Start services
     step "Starting services..."
-    sudo systemctl daemon-reload
-    sudo systemctl enable cryfttee-keyvault
-    sudo systemctl start cryfttee-keyvault
+    
+    # Enable linger so user services persist after logout
+    loginctl enable-linger $(whoami) 2>/dev/null || echo "[i] Linger may already be enabled or require admin"
+    
+    systemctl --user daemon-reload
+    systemctl --user enable cryfttee-keyvault
+    systemctl --user start cryfttee-keyvault
     
     # Wait for PostgreSQL to be healthy
     step "Waiting for PostgreSQL to be ready..."
     for i in 1 2 3 4 5 6 7 8 9 10; do
-        if sudo docker exec cryfttee-postgres pg_isready -U web3signer -d web3signer >/dev/null 2>&1; then
+        if docker exec cryfttee-postgres pg_isready -U web3signer -d web3signer >/dev/null 2>&1; then
             info "PostgreSQL is ready!"
             break
         fi
@@ -3074,9 +3088,9 @@ deploy_local() {
     
     # Initialize slashing protection schema if needed
     step "Checking slashing protection database schema..."
-    if ! sudo docker exec cryfttee-postgres psql -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
+    if ! docker exec cryfttee-postgres psql -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
         info "Initializing slashing protection schema..."
-        sudo docker exec -i cryfttee-postgres psql -U web3signer -d web3signer << 'SQLEOF'
+        docker exec -i cryfttee-postgres psql -U web3signer -d web3signer << 'SQLEOF'
 -- Web3Signer Slashing Protection Schema v12
 CREATE TABLE IF NOT EXISTS database_version (
     id INTEGER PRIMARY KEY,
@@ -3123,10 +3137,10 @@ SQLEOF
     # Handle password reset if needed (after PostgreSQL is running)
     if [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
         step "Resetting PostgreSQL password..."
-        sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${POSTGRES_PASSWORD}';" && {
+        docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${POSTGRES_PASSWORD}';" && {
             info "PostgreSQL password updated successfully!"
             # Restart web3signer to use the new password
-            sudo docker restart cryfttee-web3signer
+            docker restart cryfttee-web3signer
             info "Web3Signer restarted with new credentials"
         } || {
             warn "Failed to update PostgreSQL password"
@@ -3141,7 +3155,7 @@ SQLEOF
     if curl -sf http://localhost:${WEB3SIGNER_PORT}/upcheck >/dev/null 2>&1; then
         log "Web3Signer is healthy!"
     else
-        warn "Web3Signer may still be starting... check with: sudo ${SCRIPTS_DIR}/status.sh"
+        warn "Web3Signer may still be starting... check with: ${SCRIPTS_DIR}/status.sh"
     fi
     
     # Print summary
@@ -3174,7 +3188,7 @@ SQLEOF
         echo "│       - Unseal Key                                             │"
         echo "│                                                                │"
         echo "│  Backup credentials NOW:                                       │"
-        echo "│    sudo ${SCRIPTS_DIR}/backup-credentials.sh                   │"
+        echo "│    ${SCRIPTS_DIR}/backup-credentials.sh                       │"
         echo "│                                                                │"
         echo "│  Options: GPG-encrypted file or USB drive                      │"
         echo "│                                                                │"
@@ -3182,10 +3196,10 @@ SQLEOF
         echo ""
         echo "┌─ Store Keys in Vault (Recommended) ───────────────────────────┐"
         echo "│                                                                │"
-        echo "│  sudo ${SCRIPTS_DIR}/import-key.sh \\                          │"
+        echo "│  ${SCRIPTS_DIR}/import-key.sh \\                            │"
         echo "│       vault-bls my-validator 0x<private-key-hex>              │"
         echo "│                                                                │"
-        echo "│  sudo ${SCRIPTS_DIR}/import-key.sh \\                          │"
+        echo "│  ${SCRIPTS_DIR}/import-key.sh \\                            │"
         echo "│       vault-tls my-tls-key 0x<private-key-hex>                │"
         echo "│                                                                │"
         echo "└────────────────────────────────────────────────────────────────┘"
@@ -3205,22 +3219,22 @@ SQLEOF
     
     echo "┌─ Import Keys (File-based alternative) ────────────────────────┐"
     echo "│                                                                │"
-    echo "│  sudo ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>   │"
-    echo "│  sudo docker restart cryfttee-web3signer                       │"
+    echo "│  ${SCRIPTS_DIR}/import-key.sh bls <keystore.json> <pw>       │"
+    echo "│  docker restart cryfttee-web3signer                       │"
     echo "│                                                                │"
     echo "└────────────────────────────────────────────────────────────────┘"
     echo ""
     
     info "Useful commands:"
-    echo "  Status:       sudo ${SCRIPTS_DIR}/status.sh"
-    echo "  List keys:    sudo ${SCRIPTS_DIR}/import-key.sh list"
+    echo "  Status:       ${SCRIPTS_DIR}/status.sh"
+    echo "  List keys:    ${SCRIPTS_DIR}/import-key.sh list"
     if [ "${mode}" = "full" ]; then
-        echo "  Vault keys:   sudo ${SCRIPTS_DIR}/import-key.sh list-vault"
+        echo "  Vault keys:   ${SCRIPTS_DIR}/import-key.sh list-vault"
     fi
-    echo "  Logs:         sudo journalctl -u cryfttee-keyvault -f"
-    echo "  Restart:      sudo systemctl restart cryfttee-keyvault"
+    echo "  Logs:         journalctl --user -u cryfttee-keyvault -f"
+    echo "  Restart:      systemctl --user restart cryfttee-keyvault"
     if [ "${mode}" = "full" ]; then
-        echo "  Unseal:       sudo ${SCRIPTS_DIR}/unseal-vault.sh"
+        echo "  Unseal:       ${SCRIPTS_DIR}/unseal-vault.sh"
     fi
 }
 
@@ -3318,14 +3332,14 @@ case "${1:-}" in
         echo "║     $0 --local-full                                          ║"
         echo "║                                                              ║"
         echo "║     Vault auto-initializes and unseals on first start!       ║"
-        echo "║     Root token saved to: /opt/cryfttee-keyvault/vault/init/  ║"
+        echo "║     Root token saved to: ~/.cryfttee-keyvault/vault/init/  ║"
         echo "║                                                              ║"
         echo "║  2. Store keys in Vault:                                     ║"
-        echo "║     sudo /opt/cryfttee-keyvault/scripts/import-key.sh \\     ║"
+        echo "║     ~/.cryfttee-keyvault/scripts/import-key.sh \\     ║"
         echo "║          vault-bls my-validator 0x1234...abcd                ║"
         echo "║                                                              ║"
         echo "║  3. OR import file-based keys:                               ║"
-        echo "║     sudo /opt/cryfttee-keyvault/scripts/import-key.sh \\     ║"
+        echo "║     ~/.cryfttee-keyvault/scripts/import-key.sh \\     ║"
         echo "║          bls keystore.json password                          ║"
         echo "║                                                              ║"
         echo "║  4. Start CryftTEE (no env vars needed!):                    ║"
