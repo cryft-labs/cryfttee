@@ -305,45 +305,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Database Migration - Initialize slashing protection schema
-  db-migration:
-    image: consensys/web3signer:${WEB3SIGNER_VERSION}
-    container_name: cryfttee-db-migration
-    depends_on:
-      postgres:
-        condition: service_healthy
-    user: root
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        echo "=== Database Setup ==="
-        apt-get update -qq && apt-get install -qq -y postgresql-client >/dev/null 2>&1
-        export PGPASSWORD='${POSTGRES_PASSWORD}'
-        
-        echo "Waiting for PostgreSQL..."
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-          if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
-            echo "PostgreSQL is ready!"
-            break
-          fi
-          echo "Waiting for PostgreSQL (attempt \$i/10)..."
-          sleep 3
-        done
-        
-        # Test final connection
-        if ! psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
-          echo "ERROR: Could not connect to PostgreSQL after 10 attempts"
-          exit 1
-        fi
-        
-        echo "Database connection verified."
-        echo "Web3Signer will handle schema migrations automatically on startup."
-        echo "=== Database setup completed successfully! ==="
-    networks:
-      - cryfttee-keyvault
-    restart: "no"
-
   # HashiCorp Vault - Secrets Management
   vault:
     image: hashicorp/vault:${VAULT_VERSION}
@@ -389,6 +350,7 @@ services:
     restart: "no"
 
   # Web3Signer - Ethereum Signing with Vault backend
+  # Note: Web3Signer handles its own database migrations automatically
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
@@ -398,8 +360,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      db-migration:
-        condition: service_completed_successfully
     ports:
       - "${WEB3SIGNER_PORT}:9000"
       - "${WEB3SIGNER_METRICS_PORT}:9001"
@@ -468,48 +428,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Database Migration - Initialize slashing protection schema
-  db-migration:
-    image: consensys/web3signer:${WEB3SIGNER_VERSION}
-    container_name: cryfttee-db-migration
-    depends_on:
-      postgres:
-        condition: service_healthy
-    user: root
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        echo "=== Database Setup ==="
-        
-        apt-get update -qq && apt-get install -qq -y postgresql-client >/dev/null 2>&1
-        
-        export PGPASSWORD='${POSTGRES_PASSWORD}'
-        
-        echo "Waiting for PostgreSQL..."
-        for i in 1 2 3 4 5 6 7 8 9 10; do
-          if psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
-            echo "PostgreSQL is ready!"
-            break
-          fi
-          echo "Waiting for PostgreSQL (attempt \$i/10)..."
-          sleep 3
-        done
-        
-        # Test final connection
-        if ! psql -h postgres -U web3signer -d web3signer -c "SELECT 1" >/dev/null 2>&1; then
-          echo "ERROR: Could not connect to PostgreSQL after 10 attempts"
-          exit 1
-        fi
-        
-        echo "Database connection verified."
-        echo "Web3Signer will handle schema migrations automatically on startup."
-        echo "=== Database setup completed successfully! ==="
-    networks:
-      - cryfttee-keyvault
-    restart: "no"
-
   # Web3Signer - Ethereum Signing Service
+  # Note: Web3Signer handles its own database migrations automatically
   web3signer:
     image: consensys/web3signer:${WEB3SIGNER_VERSION}
     container_name: cryfttee-web3signer
@@ -517,8 +437,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      db-migration:
-        condition: service_completed_successfully
     ports:
       - "${WEB3SIGNER_PORT}:9000"
       - "${WEB3SIGNER_METRICS_PORT}:9001"
