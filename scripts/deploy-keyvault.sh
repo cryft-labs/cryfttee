@@ -94,9 +94,35 @@ POSTGRES_DATA="${DATA_DIR}/postgres"
 CONFIG_DIR="${DATA_DIR}/config"
 KEYS_DIR="${DATA_DIR}/keys"
 SCRIPTS_DIR="${DATA_DIR}/scripts"
+SECRETS_FILE="${DATA_DIR}/.secrets"
 
-# PostgreSQL credentials (generate random password if not set)
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)}"
+# PostgreSQL credentials - load from secrets file if exists, or generate new
+load_or_generate_secrets() {
+    if [[ -f "$SECRETS_FILE" ]]; then
+        source "$SECRETS_FILE"
+        info "Loaded existing secrets from $SECRETS_FILE"
+    fi
+    
+    # Generate password only if not already set (from file or env)
+    if [[ -z "$POSTGRES_PASSWORD" ]]; then
+        POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+        info "Generated new PostgreSQL password"
+    fi
+}
+
+save_secrets() {
+    # Save secrets to file (only readable by root)
+    cat > "$SECRETS_FILE" << EOF
+# CryftTEE KeyVault Secrets - DO NOT DELETE
+# Generated: $(date -Iseconds)
+POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
+EOF
+    chmod 600 "$SECRETS_FILE"
+    info "Saved secrets to $SECRETS_FILE"
+}
+
+# Load secrets early
+load_or_generate_secrets
 
 # Deploy mode: "full" (Vault + Web3Signer) or "web3signer" (Web3Signer only)
 DEPLOY_MODE="${DEPLOY_MODE:-full}"
@@ -2136,6 +2162,7 @@ deploy_remote() {
     EXISTING_VAULT_DATA=false
     EXISTING_POSTGRES_DATA=false
     RESET_POSTGRES=false
+    RESET_PASSWORD_ONLY=false
     
     if ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "[ -f ${CONFIG_DIR}/docker-compose.yml ]" 2>/dev/null; then
         EXISTING_DEPLOYMENT=true
@@ -2149,6 +2176,18 @@ deploy_remote() {
         EXISTING_POSTGRES_DATA=true
     fi
     
+    # If PostgreSQL data exists, try to retrieve the existing password
+    if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
+        step "Retrieving existing PostgreSQL credentials..."
+        REMOTE_PG_PASSWORD=$(ssh_cmd "${KEYVAULT_USER}@${KEYVAULT_HOST}" "sudo cat ${CONFIG_DIR}/.postgres-password 2>/dev/null || true")
+        if [ -n "${REMOTE_PG_PASSWORD}" ]; then
+            POSTGRES_PASSWORD="${REMOTE_PG_PASSWORD}"
+            info "Using existing PostgreSQL password from remote host"
+        else
+            warn "Could not retrieve existing password - PostgreSQL may need to be reset"
+        fi
+    fi
+    
     # Check if PostgreSQL data exists and prompt user
     if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
         echo ""
@@ -2158,25 +2197,44 @@ deploy_remote() {
         echo ""
         info "Found existing PostgreSQL data at: ${POSTGRES_DATA}"
         info "This contains the slashing protection database."
+        if [ -n "${POSTGRES_PASSWORD}" ]; then
+            info "Existing password retrieved successfully."
+        else
+            warn "Could not retrieve existing password!"
+        fi
         echo ""
         echo "Options:"
-        echo "  [k] KEEP existing database (recommended for upgrades)"
+        echo "  [k] KEEP database and password (recommended for upgrades)"
         echo "      - Preserves all slashing protection history"
-        echo "      - Web3Signer will use existing data"
+        echo "      - Uses existing credentials"
         echo ""
-        echo "  [r] RESET database (fresh start)"
+        echo "  [p] RESET PASSWORD ONLY (if password is lost/mismatched)"
+        echo "      - Generates new password"
+        echo "      - Updates PostgreSQL user password in-place"
+        echo "      - Preserves all data"
+        echo ""
+        echo "  [r] RESET DATABASE AND PASSWORD (fresh start)"
         echo "      - Deletes all slashing protection history"
-        echo "      - Creates new empty database"
+        echo "      - Creates new empty database with new password"
         echo "      - ⚠️  Only use for fresh validator deployments!"
         echo ""
-        read -p "Keep or Reset PostgreSQL database? [K/r] " -n 1 -r
+        read -p "Keep, reset Password, or Reset all? [K/p/r] " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Rr]$ ]]; then
-            warn "PostgreSQL database will be RESET!"
+            warn "PostgreSQL database AND password will be RESET!"
             RESET_POSTGRES=true
-        else
-            info "PostgreSQL database will be PRESERVED."
+            POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+            info "Generated new PostgreSQL password"
+        elif [[ $REPLY =~ ^[Pp]$ ]]; then
+            warn "PostgreSQL password will be RESET (data preserved)"
             RESET_POSTGRES=false
+            RESET_PASSWORD_ONLY=true
+            POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+            info "Generated new PostgreSQL password"
+        else
+            info "PostgreSQL database and password will be PRESERVED."
+            RESET_POSTGRES=false
+            RESET_PASSWORD_ONLY=false
         fi
         echo ""
     fi
@@ -2279,6 +2337,8 @@ set -e
 
 MODE="${mode}"
 RESET_POSTGRES="${RESET_POSTGRES}"
+RESET_PASSWORD_ONLY="${RESET_PASSWORD_ONLY}"
+NEW_POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
 
 # Handle PostgreSQL reset if requested
 if [ "\${RESET_POSTGRES}" = "true" ]; then
@@ -2286,6 +2346,15 @@ if [ "\${RESET_POSTGRES}" = "true" ]; then
     sudo docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
     sudo rm -rf ${POSTGRES_DATA}
     echo "[+] PostgreSQL data cleared."
+elif [ "\${RESET_PASSWORD_ONLY}" = "true" ]; then
+    echo "[!] Resetting PostgreSQL password only (preserving data)..."
+    # Wait for postgres to be up and change the password
+    if sudo docker ps | grep -q cryfttee-postgres; then
+        sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '\${NEW_POSTGRES_PASSWORD}';" || {
+            echo "[!] Warning: Could not update password in running PostgreSQL. Will update on restart."
+        }
+    fi
+    echo "[+] Password will be updated in config files."
 fi
 
 echo "[+] Creating directories..."
@@ -2629,6 +2698,7 @@ deploy_local() {
     EXISTING_VAULT_DATA=false
     EXISTING_POSTGRES_DATA=false
     RESET_POSTGRES=false
+    RESET_PASSWORD_ONLY=false
     
     if [ -f "${CONFIG_DIR}/docker-compose.yml" ]; then
         EXISTING_DEPLOYMENT=true
@@ -2642,6 +2712,22 @@ deploy_local() {
         EXISTING_POSTGRES_DATA=true
     fi
     
+    # If PostgreSQL data exists, try to retrieve the existing password
+    if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
+        step "Retrieving existing PostgreSQL credentials..."
+        if [ -f "${CONFIG_DIR}/.postgres-password" ]; then
+            LOCAL_PG_PASSWORD=$(sudo cat "${CONFIG_DIR}/.postgres-password" 2>/dev/null || true)
+            if [ -n "${LOCAL_PG_PASSWORD}" ]; then
+                POSTGRES_PASSWORD="${LOCAL_PG_PASSWORD}"
+                info "Using existing PostgreSQL password"
+            else
+                warn "Could not read existing password - PostgreSQL may need to be reset"
+            fi
+        else
+            warn "Password file not found - PostgreSQL may need to be reset"
+        fi
+    fi
+    
     # Check if PostgreSQL data exists and prompt user
     if [ "${EXISTING_POSTGRES_DATA}" = "true" ]; then
         echo ""
@@ -2651,25 +2737,44 @@ deploy_local() {
         echo ""
         info "Found existing PostgreSQL data at: ${POSTGRES_DATA}"
         info "This contains the slashing protection database."
+        if [ -n "${POSTGRES_PASSWORD}" ]; then
+            info "Existing password retrieved successfully."
+        else
+            warn "Could not retrieve existing password!"
+        fi
         echo ""
         echo "Options:"
-        echo "  [k] KEEP existing database (recommended for upgrades)"
+        echo "  [k] KEEP database and password (recommended for upgrades)"
         echo "      - Preserves all slashing protection history"
-        echo "      - Web3Signer will use existing data"
+        echo "      - Uses existing credentials"
         echo ""
-        echo "  [r] RESET database (fresh start)"
+        echo "  [p] RESET PASSWORD ONLY (if password is lost/mismatched)"
+        echo "      - Generates new password"
+        echo "      - Updates PostgreSQL user password in-place"
+        echo "      - Preserves all data"
+        echo ""
+        echo "  [r] RESET DATABASE AND PASSWORD (fresh start)"
         echo "      - Deletes all slashing protection history"
-        echo "      - Creates new empty database"
+        echo "      - Creates new empty database with new password"
         echo "      - ⚠️  Only use for fresh validator deployments!"
         echo ""
-        read -p "Keep or Reset PostgreSQL database? [K/r] " -n 1 -r
+        read -p "Keep, reset Password, or Reset all? [K/p/r] " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Rr]$ ]]; then
-            warn "PostgreSQL database will be RESET!"
+            warn "PostgreSQL database AND password will be RESET!"
             RESET_POSTGRES=true
-        else
-            info "PostgreSQL database will be PRESERVED."
+            POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+            info "Generated new PostgreSQL password"
+        elif [[ $REPLY =~ ^[Pp]$ ]]; then
+            warn "PostgreSQL password will be RESET (data preserved)"
             RESET_POSTGRES=false
+            RESET_PASSWORD_ONLY=true
+            POSTGRES_PASSWORD="$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)"
+            info "Generated new PostgreSQL password"
+        else
+            info "PostgreSQL database and password will be PRESERVED."
+            RESET_POSTGRES=false
+            RESET_PASSWORD_ONLY=false
         fi
         echo ""
     fi
@@ -2749,6 +2854,16 @@ deploy_local() {
         sudo docker rm -f cryfttee-postgres cryfttee-db-migration 2>/dev/null || true
         sudo rm -rf ${POSTGRES_DATA}
         info "PostgreSQL data cleared."
+    elif [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
+        step "Resetting PostgreSQL password only (preserving data)..."
+        # If postgres is running, update the password in-place
+        if sudo docker ps | grep -q cryfttee-postgres; then
+            sudo docker exec cryfttee-postgres psql -U postgres -c "ALTER USER web3signer PASSWORD '${POSTGRES_PASSWORD}';" && {
+                info "PostgreSQL password updated in running database."
+            } || {
+                warn "Could not update password in running PostgreSQL. Will update on restart."
+            }
+        fi
     fi
     
     # Create directories
