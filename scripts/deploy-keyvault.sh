@@ -98,6 +98,9 @@ SECRETS_FILE="${DATA_DIR}/.secrets"
 
 # PostgreSQL credentials - load from secrets file if exists, or generate new
 load_or_generate_secrets() {
+    # Initialize to empty if not set (prevents unbound variable error)
+    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+    
     if [[ -f "$SECRETS_FILE" ]]; then
         source "$SECRETS_FILE"
         info "Loaded existing secrets from $SECRETS_FILE"
