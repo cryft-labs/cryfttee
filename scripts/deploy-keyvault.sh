@@ -406,7 +406,6 @@ services:
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
       - --slashing-protection-db-password=${POSTGRES_PASSWORD}
-      - --Xslashing-protection-db-health-check-enabled=true
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -483,7 +482,6 @@ services:
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
       - --slashing-protection-db-password=${POSTGRES_PASSWORD}
-      - --Xslashing-protection-db-health-check-enabled=true
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
