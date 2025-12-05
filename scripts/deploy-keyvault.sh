@@ -2800,11 +2800,6 @@ deploy_local() {
     info "Mode: ${mode}"
     echo ""
     
-    # Check if running as root or with sudo
-    if [ "$EUID" -ne 0 ] && ! true 2>/dev/null; then
-# warn "This script requires sudo access for local deployment"
-    fi
-    
     # Check Docker
     step "Checking Docker..."
     if ! command -v docker &>/dev/null; then
