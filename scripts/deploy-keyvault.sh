@@ -406,6 +406,7 @@ services:
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
       - --slashing-protection-db-password=${POSTGRES_PASSWORD}
+      - --Xslashing-protection-db-health-check-enabled=true
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -482,6 +483,7 @@ services:
       - --slashing-protection-db-url=jdbc:postgresql://postgres:5432/web3signer
       - --slashing-protection-db-username=web3signer
       - --slashing-protection-db-password=${POSTGRES_PASSWORD}
+      - --Xslashing-protection-db-health-check-enabled=true
       - --slashing-protection-pruning-enabled=true
       - --slashing-protection-pruning-epochs-to-keep=500
     environment:
@@ -2445,10 +2447,21 @@ fi
 retry_pull "postgres:15-alpine"
 retry_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
 
+echo "[+] Stopping existing services..."
+sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+
+# Clean up any orphaned containers from previous deployments
+echo "[+] Cleaning up old containers..."
+sudo docker stop cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+sudo docker rm -f cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+
+# Remove old networks (will be recreated by docker-compose)
+sudo docker network rm config_cryfttee-keyvault config_cryftee-net 2>/dev/null || true
+
 echo "[+] Starting services..."
 sudo systemctl daemon-reload
 sudo systemctl enable cryfttee-keyvault
-sudo systemctl restart cryfttee-keyvault
+sudo systemctl start cryfttee-keyvault
 
 # Wait for PostgreSQL to be healthy
 echo "[+] Waiting for PostgreSQL to be ready..."
@@ -2460,6 +2473,54 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
     echo "[i] Waiting for PostgreSQL (attempt \$i/10)..."
     sleep 2
 done
+
+# Initialize slashing protection schema if needed
+echo "[+] Checking slashing protection database schema..."
+if ! sudo docker exec cryfttee-postgres psql -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
+    echo "[+] Initializing slashing protection schema..."
+    sudo docker exec -i cryfttee-postgres psql -U web3signer -d web3signer << 'SQLEOF'
+-- Web3Signer Slashing Protection Schema v12
+CREATE TABLE IF NOT EXISTS database_version (
+    id INTEGER PRIMARY KEY,
+    version INTEGER NOT NULL
+);
+INSERT INTO database_version (id, version) VALUES (1, 12) ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS validators (
+    id SERIAL PRIMARY KEY,
+    public_key BYTEA NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS signed_blocks (
+    validator_id INTEGER NOT NULL REFERENCES validators(id),
+    slot BIGINT NOT NULL,
+    signing_root BYTEA,
+    PRIMARY KEY (validator_id, slot)
+);
+
+CREATE TABLE IF NOT EXISTS signed_attestations (
+    validator_id INTEGER NOT NULL REFERENCES validators(id),
+    source_epoch BIGINT NOT NULL,
+    target_epoch BIGINT NOT NULL,
+    signing_root BYTEA,
+    PRIMARY KEY (validator_id, target_epoch)
+);
+
+CREATE INDEX IF NOT EXISTS idx_signed_blocks_slot ON signed_blocks(slot);
+CREATE INDEX IF NOT EXISTS idx_signed_attestations_source ON signed_attestations(source_epoch);
+CREATE INDEX IF NOT EXISTS idx_signed_attestations_target ON signed_attestations(target_epoch);
+
+CREATE TABLE IF NOT EXISTS low_watermarks (
+    validator_id INTEGER NOT NULL REFERENCES validators(id) PRIMARY KEY,
+    slot BIGINT,
+    source_epoch BIGINT,
+    target_epoch BIGINT
+);
+SQLEOF
+    echo "[+] Schema initialized successfully!"
+else
+    echo "[+] Schema already exists."
+fi
 
 # Handle password reset if needed (after PostgreSQL is running)
 if [ "\${RESET_PASSWORD_ONLY}" = "true" ]; then
@@ -2946,11 +3007,23 @@ deploy_local() {
     docker_pull "postgres:15-alpine"
     docker_pull "consensys/web3signer:${WEB3SIGNER_VERSION}"
     
+    # Stop existing services
+    step "Stopping existing services..."
+    sudo systemctl stop cryfttee-keyvault 2>/dev/null || true
+    
+    # Clean up any orphaned containers from previous deployments
+    step "Cleaning up old containers..."
+    sudo docker stop cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+    sudo docker rm -f cryfttee-web3signer cryfttee-postgres cryfttee-vault cryfttee-vault-init 2>/dev/null || true
+    
+    # Remove old networks (will be recreated by docker-compose)
+    sudo docker network rm config_cryfttee-keyvault config_cryftee-net 2>/dev/null || true
+    
     # Start services
     step "Starting services..."
     sudo systemctl daemon-reload
     sudo systemctl enable cryfttee-keyvault
-    sudo systemctl restart cryfttee-keyvault
+    sudo systemctl start cryfttee-keyvault
     
     # Wait for PostgreSQL to be healthy
     step "Waiting for PostgreSQL to be ready..."
@@ -2962,6 +3035,54 @@ deploy_local() {
         echo "  Waiting for PostgreSQL (attempt $i/10)..."
         sleep 2
     done
+    
+    # Initialize slashing protection schema if needed
+    step "Checking slashing protection database schema..."
+    if ! sudo docker exec cryfttee-postgres psql -U web3signer -d web3signer -c "SELECT version FROM database_version LIMIT 1" >/dev/null 2>&1; then
+        info "Initializing slashing protection schema..."
+        sudo docker exec -i cryfttee-postgres psql -U web3signer -d web3signer << 'SQLEOF'
+-- Web3Signer Slashing Protection Schema v12
+CREATE TABLE IF NOT EXISTS database_version (
+    id INTEGER PRIMARY KEY,
+    version INTEGER NOT NULL
+);
+INSERT INTO database_version (id, version) VALUES (1, 12) ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS validators (
+    id SERIAL PRIMARY KEY,
+    public_key BYTEA NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS signed_blocks (
+    validator_id INTEGER NOT NULL REFERENCES validators(id),
+    slot BIGINT NOT NULL,
+    signing_root BYTEA,
+    PRIMARY KEY (validator_id, slot)
+);
+
+CREATE TABLE IF NOT EXISTS signed_attestations (
+    validator_id INTEGER NOT NULL REFERENCES validators(id),
+    source_epoch BIGINT NOT NULL,
+    target_epoch BIGINT NOT NULL,
+    signing_root BYTEA,
+    PRIMARY KEY (validator_id, target_epoch)
+);
+
+CREATE INDEX IF NOT EXISTS idx_signed_blocks_slot ON signed_blocks(slot);
+CREATE INDEX IF NOT EXISTS idx_signed_attestations_source ON signed_attestations(source_epoch);
+CREATE INDEX IF NOT EXISTS idx_signed_attestations_target ON signed_attestations(target_epoch);
+
+CREATE TABLE IF NOT EXISTS low_watermarks (
+    validator_id INTEGER NOT NULL REFERENCES validators(id) PRIMARY KEY,
+    slot BIGINT,
+    source_epoch BIGINT,
+    target_epoch BIGINT
+);
+SQLEOF
+        info "Schema initialized successfully!"
+    else
+        info "Schema already exists."
+    fi
     
     # Handle password reset if needed (after PostgreSQL is running)
     if [ "${RESET_PASSWORD_ONLY}" = "true" ]; then
