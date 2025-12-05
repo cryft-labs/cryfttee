@@ -314,7 +314,7 @@ install_docker_remote() {
 # =============================================================================
 
 # Docker Compose - Full Stack (Vault + Web3Signer)
-# Note: Uses relative paths from ~/.cryfttee-keyvault (no sudo required)
+# Note: Uses relative paths from config/ directory where compose file lives
 # Placeholders like __POSTGRES_PASSWORD__ are replaced by the deploy script
 generate_docker_compose_full() {
     cat << 'COMPOSEEOF'
@@ -327,7 +327,7 @@ services:
     container_name: cryfttee-postgres
     restart: unless-stopped
     volumes:
-      - ./postgres:/var/lib/postgresql/data
+      - ../postgres:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=web3signer
       - POSTGRES_USER=web3signer
@@ -356,10 +356,10 @@ services:
     ports:
       - "__VAULT_PORT__:8200"
     volumes:
-      - ./vault/data:/vault/data
-      - ./vault/logs:/vault/logs
-      - ./config/vault.hcl:/vault/config/vault.hcl:ro
-      - ./vault/init:/vault/init
+      - ../vault/data:/vault/data
+      - ../vault/logs:/vault/logs
+      - ./vault.hcl:/vault/config/vault.hcl:ro
+      - ../vault/init:/vault/init
     environment:
       - VAULT_ADDR=http://127.0.0.1:8200
       - VAULT_API_ADDR=http://0.0.0.0:8200
@@ -381,8 +381,8 @@ services:
       vault:
         condition: service_healthy
     volumes:
-      - ./vault/init:/vault/init
-      - ./config/vault-init.sh:/vault-init.sh:ro
+      - ../vault/init:/vault/init
+      - ./vault-init.sh:/vault-init.sh:ro
     environment:
       - VAULT_ADDR=http://vault:8200
     entrypoint: ["/bin/sh", "/vault-init.sh"]
@@ -404,9 +404,9 @@ services:
       - "__WEB3SIGNER_PORT__:9000"
       - "__WEB3SIGNER_METRICS_PORT__:9001"
     volumes:
-      - ./web3signer:/data
-      - ./config/web3signer.yaml:/config/web3signer.yaml:ro
-      - ./vault/init:/vault-init:ro
+      - ../web3signer:/data
+      - ./web3signer.yaml:/config/web3signer.yaml:ro
+      - ../vault/init:/vault-init:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
@@ -438,7 +438,7 @@ COMPOSEEOF
 }
 
 # Docker Compose - Web3Signer Only (recommended for CryftTEE)
-# Note: Uses relative paths from ~/.cryfttee-keyvault (no sudo required)
+# Note: Uses relative paths from config/ directory where compose file lives
 generate_docker_compose_web3signer() {
     cat << 'COMPOSEEOF'
 version: '3.8'
@@ -450,7 +450,7 @@ services:
     container_name: cryfttee-postgres
     restart: unless-stopped
     volumes:
-      - ./postgres:/var/lib/postgresql/data
+      - ../postgres:/var/lib/postgresql/data
     environment:
       - POSTGRES_DB=web3signer
       - POSTGRES_USER=web3signer
@@ -481,8 +481,8 @@ services:
       - "__WEB3SIGNER_PORT__:9000"
       - "__WEB3SIGNER_METRICS_PORT__:9001"
     volumes:
-      - ./web3signer:/data
-      - ./config/web3signer.yaml:/config/web3signer.yaml:ro
+      - ../web3signer:/data
+      - ./web3signer.yaml:/config/web3signer.yaml:ro
     command:
       - --data-path=/data
       - --config-file=/config/web3signer.yaml
