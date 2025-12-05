@@ -395,6 +395,7 @@ services:
     image: consensys/web3signer:__WEB3SIGNER_VERSION__
     container_name: cryfttee-web3signer
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       vault:
         condition: service_healthy
@@ -425,7 +426,7 @@ services:
     networks:
       - cryfttee-keyvault
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/upcheck"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/upcheck || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -474,6 +475,7 @@ services:
     image: consensys/web3signer:__WEB3SIGNER_VERSION__
     container_name: cryfttee-web3signer
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -502,7 +504,7 @@ services:
         aliases:
           - web3signer
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/upcheck"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/upcheck || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
