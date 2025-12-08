@@ -15,6 +15,7 @@ use clap::Parser;
 
 pub mod config;
 pub mod http;
+pub mod limits;
 pub mod runtime;
 pub mod signing;
 pub mod storage;
@@ -144,6 +145,16 @@ pub struct Args {
     #[arg(long, env = "CRYFTTEE_NODE_ID")]
     pub node_id: Option<String>,
 
+    /// Expected BLS public key (set by CryftGo on restart to verify availability)
+    /// Format: hex with 0x prefix
+    #[arg(long, env = "CRYFTTEE_EXPECTED_BLS_PUBKEY")]
+    pub expected_bls_pubkey: Option<String>,
+
+    /// Expected TLS/ECDSA public key (set by CryftGo on restart to verify availability)
+    /// Format: hex with 0x prefix
+    #[arg(long, env = "CRYFTTEE_EXPECTED_TLS_PUBKEY")]
+    pub expected_tls_pubkey: Option<String>,
+
     // =========================================================================
     // Logging
     // =========================================================================
@@ -195,6 +206,12 @@ pub struct ModuleInitConfig {
     
     /// Node ID for derivation path
     pub node_id: Option<String>,
+    
+    /// Expected BLS public key (for restart verification)
+    pub expected_bls_pubkey: Option<String>,
+    
+    /// Expected TLS public key (for restart verification)
+    pub expected_tls_pubkey: Option<String>,
 }
 
 impl From<&Args> for ModuleInitConfig {
@@ -206,6 +223,8 @@ impl From<&Args> for ModuleInitConfig {
             vault_token: args.vault_token.clone(),
             key_seed: args.key_seed.clone(),
             node_id: args.node_id.clone(),
+            expected_bls_pubkey: args.expected_bls_pubkey.clone(),
+            expected_tls_pubkey: args.expected_tls_pubkey.clone(),
         }
     }
 }

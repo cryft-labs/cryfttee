@@ -322,6 +322,14 @@ impl CryftteeConfig {
             self.node_id = Some(v.clone());
         }
 
+        // Expected keys (set by CryftGo on restart)
+        if let Some(ref v) = args.expected_bls_pubkey {
+            self.expected_bls_pubkey = Some(v.clone());
+        }
+        if let Some(ref v) = args.expected_tls_pubkey {
+            self.expected_tls_pubkey = Some(v.clone());
+        }
+
         // Logging
         if let Some(ref v) = args.log_level {
             self.log_level = v.clone();
@@ -391,6 +399,18 @@ impl CryftteeConfig {
 
         if config.vault_url.is_some() {
             info!("  Vault: enabled");
+        }
+
+        // Log expected keys (for CryftGo restart verification)
+        if let Some(ref bls) = config.expected_bls_pubkey {
+            info!("  Expected BLS key: {}...{}", &bls[..10.min(bls.len())], &bls[bls.len().saturating_sub(6)..]);
+        }
+        if let Some(ref tls) = config.expected_tls_pubkey {
+            info!("  Expected TLS key: {}...{}", &tls[..10.min(tls.len())], &tls[tls.len().saturating_sub(6)..]);
+        }
+
+        if config.node_id.is_some() {
+            info!("  Node ID: configured");
         }
 
         debug!("Trust policy: enforce_known_publishers={}, enforce_signatures={}, strict_manifest={}",

@@ -10,12 +10,15 @@ use serde_json::{json, Value};
 use tracing::{info, error, warn};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
+use crate::limits::{
+    validate_bls_message_size, validate_tls_digest_size, validate_key_handle,
+    validate_module_id, MAX_BLS_MESSAGE_SIZE, MAX_TLS_DIGEST_SIZE,
+};
 use crate::wasm_api::staking::{
     BlsRegisterRequest, BlsRegisterResponse, BlsSignRequest, BlsSignResponse,
     TlsRegisterRequest, TlsRegisterResponse, TlsSignRequest, TlsSignResponse,
     StatusResponse, ModuleStatusEntry, Web3SignerStatus, WasmRuntimeStatus,
-    parse_key_mode, mode_requires_public_key, mode_is_generation,
-    KEY_MODE_VERIFY, KEY_MODE_GENERATE, KEY_MODE_PERSISTENT,
+    parse_key_mode, mode_is_generation, KEY_MODE_VERIFY,
 };
 use crate::runtime::Dispatcher;
 use crate::CRYFTTEE_VERSION;
@@ -167,6 +170,21 @@ pub async fn bls_sign(
     State(state): State<AppState>,
     Json(request): Json<BlsSignRequest>,
 ) -> Result<Json<BlsSignResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Input validation (Power of Ten Rule 5: assertions/validation)
+    validate_key_handle(&request.key_handle)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: "Invalid key handle".to_string(),
+            details: Some(e.to_string()),
+        })))?;
+
+    if let Some(ref module_id) = request.module_id {
+        validate_module_id(module_id)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                error: "Invalid module ID".to_string(),
+                details: Some(e.to_string()),
+            })))?;
+    }
+
     info!("BLS sign request: handle={}", request.key_handle);
 
     let registry = state.registry.read().await;
@@ -177,6 +195,13 @@ pub async fn bls_sign(
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
             error: "Invalid message encoding".to_string(),
             details: Some(e.to_string()),
+        })))?;
+
+    // Validate message size (Power of Ten Rule 2: bounded operations)
+    validate_bls_message_size(message.len())
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: "Message too large".to_string(),
+            details: Some(format!("{} (max {} bytes)", e, MAX_BLS_MESSAGE_SIZE)),
         })))?;
 
     let result = dispatcher.dispatch_bls_sign(
@@ -327,6 +352,21 @@ pub async fn tls_sign(
     State(state): State<AppState>,
     Json(request): Json<TlsSignRequest>,
 ) -> Result<Json<TlsSignResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Input validation (Power of Ten Rule 5: assertions/validation)
+    validate_key_handle(&request.key_handle)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: "Invalid key handle".to_string(),
+            details: Some(e.to_string()),
+        })))?;
+
+    if let Some(ref module_id) = request.module_id {
+        validate_module_id(module_id)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                error: "Invalid module ID".to_string(),
+                details: Some(e.to_string()),
+            })))?;
+    }
+
     info!("TLS sign request: handle={}", request.key_handle);
 
     let registry = state.registry.read().await;
@@ -337,6 +377,13 @@ pub async fn tls_sign(
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
             error: "Invalid digest encoding".to_string(),
             details: Some(e.to_string()),
+        })))?;
+
+    // Validate digest size (Power of Ten Rule 2: bounded operations)
+    validate_tls_digest_size(digest.len())
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: "Invalid digest size".to_string(),
+            details: Some(format!("{} (max {} bytes)", e, MAX_TLS_DIGEST_SIZE)),
         })))?;
 
     let result = dispatcher.dispatch_tls_sign(

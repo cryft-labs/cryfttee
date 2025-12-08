@@ -361,12 +361,21 @@ fn normalize_pubkey(key: &str) -> String {
 }
 
 /// Truncate a key for display (first 10 chars...last 6 chars)
+/// Uses safe slicing to prevent panics on invalid UTF-8 boundaries
 fn truncate_key(key: &str) -> String {
-    if key.len() > 20 {
-        format!("{}...{}", &key[..10], &key[key.len()-6..])
-    } else {
-        key.to_string()
+    const PREFIX_LEN: usize = 10;
+    const SUFFIX_LEN: usize = 6;
+    const MIN_LEN: usize = PREFIX_LEN + SUFFIX_LEN + 3; // 3 for "..."
+    
+    if key.len() <= MIN_LEN {
+        return key.to_string();
     }
+    
+    // Use get() for safe slicing that returns None on invalid boundaries
+    let prefix = key.get(..PREFIX_LEN).unwrap_or(key);
+    let suffix = key.get(key.len().saturating_sub(SUFFIX_LEN)..).unwrap_or("");
+    
+    format!("{}...{}", prefix, suffix)
 }
 
 impl Default for RuntimeState {

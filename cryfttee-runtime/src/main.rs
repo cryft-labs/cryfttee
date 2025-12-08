@@ -50,6 +50,8 @@ async fn main() -> Result<()> {
         vault_token: config.vault_token.clone(),
         key_seed: config.key_seed.clone(),
         node_id: config.node_id.clone(),
+        expected_bls_pubkey: config.expected_bls_pubkey.clone(),
+        expected_tls_pubkey: config.expected_tls_pubkey.clone(),
     };
 
     // Initialize runtime state

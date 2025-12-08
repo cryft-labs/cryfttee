@@ -313,6 +313,12 @@ pub struct CryftteeConfig {
     /// Node ID for key derivation
     pub node_id: Option<String>,
 
+    /// Expected BLS public key (set by CryftGo on restart)
+    pub expected_bls_pubkey: Option<String>,
+
+    /// Expected TLS public key (set by CryftGo on restart)
+    pub expected_tls_pubkey: Option<String>,
+
     /// Require attestation
     pub require_attestation: bool,
 
@@ -356,6 +362,8 @@ impl Default for CryftteeConfig {
             vault_token: None,
             key_seed: None,
             node_id: None,
+            expected_bls_pubkey: None,
+            expected_tls_pubkey: None,
             require_attestation: false,
             enabled_modules: None,
             module_config: HashMap::new(),
