@@ -113,9 +113,14 @@ copy_wasm_file() {
     local wasm_file=$(find "$wasm_dir" -maxdepth 1 -name "*.wasm" 2>/dev/null | head -1)
     
     if [[ -n "$wasm_file" && -f "$wasm_file" ]]; then
-        local wasm_name=$(basename "$wasm_file")
-        cp "$wasm_file" "$module_dir/"
-        print_success "Copied $wasm_name to modules/$module_name/"
+        # Always copy as module.wasm (canonical name expected by manifest)
+        cp "$wasm_file" "$module_dir/module.wasm"
+        local orig_name=$(basename "$wasm_file")
+        if [[ "$orig_name" != "module.wasm" ]]; then
+            print_success "Copied $orig_name -> modules/$module_name/module.wasm"
+        else
+            print_success "Copied module.wasm to modules/$module_name/"
+        fi
     else
         print_warning "No .wasm file found for $module_name"
     fi
