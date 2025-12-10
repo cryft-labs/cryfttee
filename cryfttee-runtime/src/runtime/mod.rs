@@ -142,6 +142,8 @@ pub struct RuntimeState {
     pub attestation: Option<RuntimeAttestation>,
     /// Web3Signer connection status
     pub web3signer_reachable: bool,
+    /// Currently active Web3Signer URL (may be primary or fallback)
+    pub web3signer_active_url: Option<String>,
     /// Last Web3Signer error
     pub web3signer_last_error: Option<String>,
     /// WASM runtime health
@@ -156,6 +158,7 @@ impl RuntimeState {
         Self {
             attestation: None,
             web3signer_reachable: false,
+            web3signer_active_url: None,
             web3signer_last_error: None,
             wasm_runtime_healthy: true,
             wasm_runtime_last_error: None,
@@ -221,8 +224,8 @@ impl RuntimeState {
         Ok(format!("sha256:{}", hex::encode(Sha256::digest(&binary))))
     }
 
-    /// Check Web3Signer health and update state
-    pub async fn check_web3signer_health(&mut self, url: &str) {
+    /// Check Web3Signer health and update state (single URL)
+    async fn check_single_web3signer(&self, url: &str) -> Result<(), String> {
         let upcheck_url = format!("{}/upcheck", url.trim_end_matches('/'));
         
         match reqwest::Client::new()
@@ -233,21 +236,58 @@ impl RuntimeState {
         {
             Ok(response) => {
                 if response.status().is_success() {
-                    self.web3signer_reachable = true;
-                    self.web3signer_last_error = None;
-                    tracing::debug!("Web3Signer health check passed");
+                    Ok(())
                 } else {
-                    self.web3signer_reachable = false;
-                    self.web3signer_last_error = Some(format!("HTTP {}", response.status()));
-                    tracing::warn!("Web3Signer returned error: {}", response.status());
+                    Err(format!("HTTP {}", response.status()))
                 }
             }
-            Err(e) => {
-                self.web3signer_reachable = false;
-                self.web3signer_last_error = Some(e.to_string());
-                tracing::debug!("Web3Signer health check failed: {}", e);
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Check Web3Signer health with fallback support
+    /// Tries primary URL first, then each fallback URL in order
+    pub async fn check_web3signer_health_with_fallbacks(
+        &mut self,
+        primary_url: &str,
+        fallback_urls: &[String],
+    ) {
+        // Build list of all URLs to try (primary first)
+        let mut urls_to_try = vec![primary_url.to_string()];
+        urls_to_try.extend(fallback_urls.iter().cloned());
+
+        let mut last_error = None;
+
+        for url in &urls_to_try {
+            match self.check_single_web3signer(url).await {
+                Ok(()) => {
+                    self.web3signer_reachable = true;
+                    self.web3signer_active_url = Some(url.clone());
+                    self.web3signer_last_error = None;
+                    
+                    if url != primary_url {
+                        tracing::info!("Web3Signer connected via fallback: {}", url);
+                    } else {
+                        tracing::debug!("Web3Signer health check passed: {}", url);
+                    }
+                    return;
+                }
+                Err(e) => {
+                    tracing::debug!("Web3Signer not reachable at {}: {}", url, e);
+                    last_error = Some(e);
+                }
             }
         }
+
+        // All URLs failed
+        self.web3signer_reachable = false;
+        self.web3signer_active_url = None;
+        self.web3signer_last_error = last_error;
+    }
+
+    /// Check Web3Signer health (single URL, legacy method)
+    pub async fn check_web3signer_health(&mut self, url: &str) {
+        self.check_web3signer_health_with_fallbacks(url, &[]).await;
     }
 
     /// Fetch list of BLS public keys from Web3Signer

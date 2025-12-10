@@ -61,6 +61,13 @@ json  = false
 # Deploy with: ./scripts/deploy-keyvault.sh --web3signer-only
 url = "http://localhost:9000"
 
+# Fallback URLs to try if primary is unreachable (in order)
+# Useful for high-availability setups or remote signers
+fallback-urls = [
+    # "http://web3signer.internal:9000",
+    # "https://signer.cryft.network:9443"
+]
+
 # Request timeout in seconds
 timeout = 30
 

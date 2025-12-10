@@ -199,6 +199,9 @@ impl CryftteeConfig {
         if let Some(ref v) = file.web3signer.url {
             self.web3signer_url = v.clone();
         }
+        if !file.web3signer.fallback_urls.is_empty() {
+            self.web3signer_fallback_urls = file.web3signer.fallback_urls.clone();
+        }
         if let Some(v) = file.web3signer.timeout {
             self.web3signer_timeout = v;
         }
@@ -386,6 +389,9 @@ impl CryftteeConfig {
         info!("  HTTP address: {}", config.http_addr);
         info!("  UI address: {}", config.ui_addr);
         info!("  Web3Signer URL: {}", config.web3signer_url);
+        if !config.web3signer_fallback_urls.is_empty() {
+            info!("  Web3Signer fallbacks: {:?}", config.web3signer_fallback_urls);
+        }
         info!("  Log level: {}", config.log_level);
         
         if config.verified_binary_hash.is_some() {

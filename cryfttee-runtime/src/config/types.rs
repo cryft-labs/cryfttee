@@ -102,9 +102,13 @@ pub struct ModulesConfigFile {
 /// Web3Signer section in config file
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Web3SignerConfigFile {
-    /// Web3Signer URL
+    /// Web3Signer URL (primary)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+
+    /// Fallback Web3Signer URLs (tried in order if primary fails)
+    #[serde(rename = "fallback-urls", default, skip_serializing_if = "Vec::is_empty")]
+    pub fallback_urls: Vec<String>,
 
     /// Request timeout in seconds
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -292,8 +296,11 @@ pub struct CryftteeConfig {
     /// Loaded trust configuration
     pub trust: TrustConfigFile,
 
-    /// Web3Signer URL
+    /// Web3Signer URL (primary)
     pub web3signer_url: String,
+
+    /// Fallback Web3Signer URLs (tried in order if primary fails)
+    pub web3signer_fallback_urls: Vec<String>,
 
     /// Web3Signer request timeout (seconds)
     pub web3signer_timeout: u64,
@@ -356,6 +363,7 @@ impl Default for CryftteeConfig {
             log_json: false,
             trust: TrustConfigFile::default(),
             web3signer_url: "http://localhost:9000".to_string(),
+            web3signer_fallback_urls: Vec::new(),
             web3signer_timeout: 30,
             web3signer_health_check_interval: 10,
             vault_url: None,

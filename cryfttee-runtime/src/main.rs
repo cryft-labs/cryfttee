@@ -86,27 +86,39 @@ async fn main() -> Result<()> {
         runtime_state: runtime_state.clone(),
     };
 
-    // Initial Web3Signer health check
+    // Initial Web3Signer health check (with fallbacks)
     {
         let mut state = runtime_state.write().await;
-        state.check_web3signer_health(&config.web3signer_url).await;
+        state.check_web3signer_health_with_fallbacks(
+            &config.web3signer_url,
+            &config.web3signer_fallback_urls,
+        ).await;
+        
         if state.web3signer_reachable {
-            info!("Web3Signer connected at {}", config.web3signer_url);
+            if let Some(ref active_url) = state.web3signer_active_url {
+                info!("Web3Signer connected at {}", active_url);
+            }
         } else {
-            warn!("Web3Signer not reachable at {} - signing operations will fail", config.web3signer_url);
+            let urls_tried = if config.web3signer_fallback_urls.is_empty() {
+                config.web3signer_url.clone()
+            } else {
+                format!("{} (+ {} fallbacks)", config.web3signer_url, config.web3signer_fallback_urls.len())
+            };
+            warn!("Web3Signer not reachable at {} - signing operations will fail", urls_tried);
         }
     }
 
     // Start background Web3Signer health checker
     let health_check_state = runtime_state.clone();
     let health_check_url = config.web3signer_url.clone();
+    let health_check_fallbacks = config.web3signer_fallback_urls.clone();
     let health_check_interval = config.web3signer_health_check_interval;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(health_check_interval));
         loop {
             interval.tick().await;
             let mut state = health_check_state.write().await;
-            state.check_web3signer_health(&health_check_url).await;
+            state.check_web3signer_health_with_fallbacks(&health_check_url, &health_check_fallbacks).await;
         }
     });
 
