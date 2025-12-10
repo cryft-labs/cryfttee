@@ -9,6 +9,7 @@ This workspace contains **cryfttee** - a Rust-based TEE-style sidecar applicatio
 - Exposes a versioned API (`/v1/...`) over UDS (default) or HTTPS
 - Provides a kiosk web UI on port 3232 for module management
 - Integrates with Web3Signer and cryftgo staking/TLS wiring
+- **Follows Power of Ten rules** for safe, verifiable code
 
 ## Architecture
 
@@ -17,6 +18,7 @@ This workspace contains **cryfttee** - a Rust-based TEE-style sidecar applicatio
 - **cryfttee-runtime/**: Main Rust application
   - `src/main.rs` - Application entry point, API listeners, UI server
   - `src/lib.rs` - Core runtime logic exports
+  - `src/limits.rs` - **Power of Ten static bounds for runtime**
   - `src/runtime/` - Module registry, loader, and dispatch
   - `src/wasm_api/` - WASM module traits and ABIs
   - `src/storage/` - Module metadata, hashes, signatures indexing
@@ -26,10 +28,18 @@ This workspace contains **cryfttee** - a Rust-based TEE-style sidecar applicatio
 
 - **modules/**: WASM module directory
   - `manifest.json` - Global module registry
-  - `bls_tls_signer_v1/` - First signing module
+  - `bls_tls_signer_v1/` - BLS/TLS signing module
+  - `debug_v1/` - Debug and diagnostics module
+  - `llm_chat_v1/` - LLM chat integration module
+  - `ipfs_v1/` - IPFS storage module
+  - `redeemable_codes_v1/` - Redeemable codes module
 
 - **ui/**: Kiosk web interface assets
-- **config/**: Configuration examples
+- **config/**: Configuration files
+  - `cryftee.example.toml` - Main configuration template
+  - `trust.toml` - Publisher trust configuration
+- **scripts/**: Build and deployment scripts
+  - `build.sh` - Module build script (produces `module.wasm`)
 
 ## Key Design Principles
 
@@ -38,6 +48,62 @@ This workspace contains **cryfttee** - a Rust-based TEE-style sidecar applicatio
 3. **Safe**: Module load/unload failures never crash the core; graceful error handling
 4. **Auditable**: Runtime hashes and receipts for public verification
 5. **Versioned**: Schema-driven compatibility with `minCryftteeVersion` enforcement
+6. **Power of Ten Compliant**: Static bounds, no unsafe code, comprehensive linting
+
+## Power of Ten Rules Implementation
+
+CryftTEE implements NASA/JPL's Power of Ten rules for safety-critical code:
+
+### Clippy Lints (Cargo.toml)
+
+```toml
+[lints.rust]
+unsafe_code = "forbid"          # No unsafe code allowed
+missing_docs = "warn"           # Document public APIs
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+unwrap_used = "warn"            # Prefer proper error handling
+expect_used = "warn"            # Prefer proper error handling  
+panic = "warn"                  # No panics in production code
+indexing_slicing = "warn"       # Use .get() for safe access
+arithmetic_side_effects = "warn" # Check for overflow
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+float_arithmetic = "warn"       # Avoid floats in safety-critical code
+```
+
+### Self-Contained Limits Architecture
+
+**Critical Design Decision**: Each component declares its own limits internally:
+
+- **Runtime** (`src/limits.rs`): HTTP, module management, config, backend limits
+- **Each WASM Module** (`lib.rs`): Domain-specific limits declared at top of file
+
+The runtime does NOT enforce module-specific limits. Each module is responsible for:
+- Input validation against its declared bounds
+- Output size limiting
+- Resource consumption control
+
+Example from `bls_tls_signer_v1/src/lib.rs`:
+```rust
+// MODULE LIMITS (Power of Ten Rule 2: Fixed Bounds)
+const MAX_BLS_MESSAGE_SIZE: usize = 32 * 1024;
+const MAX_TLS_DIGEST_SIZE: usize = 64;
+const MAX_KEY_LABEL_LEN: usize = 128;
+const MAX_BLS_KEYS: usize = 100;
+// ... etc
+```
+
+### Key Runtime Limits (`src/limits.rs`)
+
+- `MAX_REQUEST_BODY_SIZE`: 1 MB
+- `MAX_WASM_SIZE`: 10 MB
+- `MAX_MODULES`: 100
+- `MAX_CONFIG_SIZE`: 1 MB
+- `WEB3SIGNER_TIMEOUT_SECS`: 30s
 
 ## Version Constant
 
@@ -57,19 +123,83 @@ All endpoints available over both UDS and HTTPS:
 - `GET /v1/runtime/attestation` - Runtime hashes and receipts
 - `GET /v1/schema/modules` - Module compatibility schema
 - `POST /v1/admin/reload-modules` - Reload module registry
+- `GET /v1/modules` - List available modules
+- `POST /v1/modules/{id}/enable` - Enable a module
+- `POST /v1/modules/{id}/disable` - Disable a module
+- `POST /v1/modules/{id}/invoke` - Invoke module endpoint
 
 ## Environment Variables
 
+### Core Configuration
 - `CRYFTTEE_MODULE_DIR` - Root path for modules/
 - `CRYFTTEE_MANIFEST_PATH` - Path to manifest.json
 - `CRYFTTEE_UI_DIR` - Path to UI static assets
-- `CRYFTTEE_TRUST_CONFIG` - Path to trust roots (publisher keys)
+
+### Trust Configuration
+- `CRYFTTEE_TRUST_CONFIG` - Path to trust roots (default: `config/trust.toml`)
+
+### Transport Configuration
 - `CRYFTTEE_API_TRANSPORT` - "uds" (default) or "https"
 - `CRYFTTEE_UDS_PATH` - UDS socket path (default: /var/run/cryfttee.sock)
 - `CRYFTTEE_HTTP_ADDR` - HTTP bind address (default: 0.0.0.0:3232)
 - `CRYFTTEE_TLS_CERT` - TLS certificate path
 - `CRYFTTEE_TLS_KEY` - TLS private key path
+
+### Web3Signer Configuration
+- `CRYFTTEE_WEB3SIGNER_URL` - Primary Web3Signer URL (default: http://localhost:9000)
+- `CRYFTTEE_WEB3SIGNER_FALLBACK_URLS` - Comma-separated fallback URLs
+
+### Binary Attestation
 - `CRYFTTEE_VERIFIED_BINARY_HASH` - Externally-verified binary hash (set by cryftgo)
+
+## Web3Signer Fallback Support
+
+CryftTEE supports automatic failover between Web3Signer instances:
+
+### Configuration
+
+```toml
+[web3signer]
+url = "http://localhost:9000"
+fallback_urls = ["http://100.111.2.1:9000"]
+```
+
+### Behavior
+
+1. On startup, runtime checks primary URL health
+2. If primary fails, tries each fallback URL in order
+3. First healthy URL becomes `web3signer_active_url`
+4. Periodic health checks (every 30s) can switch back to primary
+5. Status endpoint reports which URL is currently active
+
+### Default Configuration
+
+- Primary: `http://localhost:9000`
+- Fallback: `http://100.111.2.1:9000` (Cryft remote signer)
+
+## Trust Configuration
+
+The trust system controls module signature and publisher verification:
+
+### Default Path
+
+`config/trust.toml` (automatically loaded if exists)
+
+### Configuration Options
+
+```toml
+[trust_policy]
+enforce_known_publishers = false  # Require known publisher IDs
+enforce_signatures = false        # Require valid signatures
+
+[publishers]
+# Publisher ID to public key mappings
+"cryft-labs" = "ed25519:abc123..."
+```
+
+### Development Mode
+
+For development, both enforcement flags default to `false`, allowing unsigned modules.
 
 ## Binary Attestation (cryftgo Integration)
 
@@ -99,10 +229,71 @@ Each module in `manifest.json` requires:
 - `capabilities`, `defaultFor`, `description`
 - `publisherId`, `hash`, `signature`
 
+Each module directory contains:
+- `module.json` - Module metadata
+- `module.wasm` - Compiled WASM binary (canonical filename)
+- `gui/index.html` - Optional module-specific UI
+- `src/lib.rs` - Rust source with Power of Ten limits
+
+## Module Lifecycle
+
+### Loading
+1. Runtime reads `manifest.json`
+2. For each module, validates `minCryftteeVersion` compatibility
+3. Loads `module.json` from module directory
+4. Optionally verifies hash and signature (based on trust config)
+5. Loads WASM binary into wasmtime
+
+### Enable/Disable
+- `POST /v1/modules/{id}/enable` - Marks module as active
+- `POST /v1/modules/{id}/disable` - Marks module as inactive
+- State persisted in module registry
+- Trust verification re-checked on enable
+
+### Dispatch
+- `POST /v1/modules/{id}/invoke` with `{"endpoint": "...", "data": {...}}`
+- Runtime routes to correct WASM module
+- Module returns JSON response
+
+## Build System
+
+### Building Modules
+
+```bash
+./scripts/build.sh [module_name]
+```
+
+The build script:
+1. Compiles Rust to `wasm32-unknown-unknown`
+2. Renames output to canonical `module.wasm`
+3. Removes old WASM files if renamed
+
+### Output Convention
+
+All modules produce `module.wasm` (not `module_name.wasm`) for consistency.
+
 ## Development Guidelines
 
+### Code Quality
 - Use Rust 2021 edition with stable toolchain
-- Prefer small, well-structured modules
+- Run `cargo clippy` and fix all warnings before committing
+- Follow Power of Ten limits pattern in all modules
+- Prefer `.get()` over indexing, `?` over `.unwrap()`
+
+### Module Development
+- Declare all limits as `const` at top of `lib.rs`
+- Comment limits with Power of Ten rule reference
+- Validate all inputs against declared bounds
+- Return structured JSON errors, never panic
+
+### Security
 - Keep secrets out of logs, API responses, and UI
-- All WASM loading uses wasmtime
+- All WASM loading uses wasmtime sandboxing
 - Signatures use Ed25519/BLS verification
+- Trust config controls signature enforcement
+
+### Testing
+- Test module load/unload cycles
+- Test with both local and remote Web3Signer
+- Test trust config enforcement modes
+- Verify Power of Ten bounds are enforced
