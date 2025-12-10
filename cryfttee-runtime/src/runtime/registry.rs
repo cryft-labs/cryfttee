@@ -115,6 +115,11 @@ impl ModuleRegistry {
         // Check version compatibility first
         let compatible = self.check_version_compatibility(&entry.min_cryfttee_version)?;
         
+        // Log once if signature enforcement is disabled
+        if !self.config.enforce_signatures() {
+            debug!("Signature enforcement disabled, skipping verification for: {}", entry.id);
+        }
+
         // Check trust (publisher + signature)
         let trusted = if compatible {
             self.verify_module_trust(entry)?
@@ -229,8 +234,6 @@ impl ModuleRegistry {
                 warn!("Signature verification failed for module: {}", entry.id);
                 return Ok(false);
             }
-        } else {
-            warn!("Signature enforcement disabled, skipping verification for: {}", entry.id);
         }
 
         Ok(true)
@@ -257,8 +260,6 @@ impl ModuleRegistry {
                 warn!("Hash verification failed for module: {}", entry.id);
                 return Ok(false);
             }
-        } else {
-            warn!("Signature enforcement disabled, skipping hash verification for: {}", entry.id);
         }
 
         Ok(true)
