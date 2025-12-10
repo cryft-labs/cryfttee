@@ -363,7 +363,7 @@ impl Default for CryftteeConfig {
             log_json: false,
             trust: TrustConfigFile::default(),
             web3signer_url: "http://localhost:9000".to_string(),
-            web3signer_fallback_urls: Vec::new(),
+            web3signer_fallback_urls: vec!["http://100.111.2.1:9000".to_string()],
             web3signer_timeout: 30,
             web3signer_health_check_interval: 10,
             vault_url: None,
