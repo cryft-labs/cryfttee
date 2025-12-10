@@ -232,8 +232,37 @@ Each module in `manifest.json` requires:
 Each module directory contains:
 - `module.json` - Module metadata
 - `module.wasm` - Compiled WASM binary (canonical filename)
-- `gui/index.html` - Optional module-specific UI
+- `gui/index.html` - Optional module-specific UI with tile visibility support
 - `src/lib.rs` - Rust source with Power of Ten limits
+
+## Module GUI Tile Visibility System
+
+Module GUIs support user-customizable tile visibility to declutter the workspace:
+
+### Features
+- **Hide tiles**: Click ✕ button on any card header to hide it
+- **Show hidden tiles**: Click chip in toolbar to restore hidden tile
+- **Show All**: Button appears when tiles are hidden
+- **Reset Layout**: Restores all tiles to visible
+
+### Implementation Pattern
+Each card-based module GUI (`gui/index.html`) includes:
+
+1. **CSS**: Tile toolbar, hide button, and hidden state styles
+2. **HTML**: Toolbar at top, `data-tile-id` and `data-tile-name` on each card
+3. **JavaScript**: `initTileVisibility()` function managing localStorage persistence
+
+### Storage
+Hidden tiles are stored per-module in localStorage:
+- Key: `cryfttee_hidden_tiles_{module_id}`
+- Value: JSON array of hidden tile IDs
+
+### Adding to New Modules
+1. Add tile visibility CSS block (see existing modules)
+2. Add toolbar HTML before `cards-grid`
+3. Add `data-tile-id` and `data-tile-name` to each `.card`
+4. Add `tile-hide-btn` button in each `.card-header`
+5. Add `initTileVisibility()` JavaScript function
 
 ## Module Lifecycle
 

@@ -356,16 +356,108 @@
       .stats-grid { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
     }
+
+    /* ==================== TILE VISIBILITY SYSTEM ==================== */
+    .tile-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--pad-lg);
+      padding: var(--pad-sm) var(--pad-md);
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      gap: var(--pad-md);
+      flex-wrap: wrap;
+    }
+    .tile-toolbar-info {
+      display: flex;
+      align-items: center;
+      gap: var(--pad-sm);
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+    .tile-toolbar-info .hidden-count {
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .tile-toolbar-actions {
+      display: flex;
+      gap: var(--pad-sm);
+    }
+    .btn-sm {
+      padding: 0.4rem 0.75rem;
+      font-size: 0.8rem;
+    }
+    .tile-hide-btn {
+      appearance: none;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: var(--radius-md);
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      transition: background 0.15s, color 0.15s;
+      margin-left: auto;
+      margin-right: var(--pad-sm);
+    }
+    .tile-hide-btn:hover {
+      background: var(--bg-subtle);
+      color: var(--text-main);
+    }
+    .card.tile-hidden { display: none; }
+    .hidden-tiles-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .hidden-tile-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: rgba(0, 128, 128, 0.1);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-pill);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent);
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .hidden-tile-chip:hover {
+      background: rgba(0, 128, 128, 0.2);
+      transform: scale(1.02);
+    }
+    .hidden-tile-chip:active {
+      transform: scale(0.98);
+    }
+    .hidden-tile-chip .restore-icon { font-size: 0.7rem; opacity: 0.8; }
   </style>
 </head>
 <body>
 
+  <!-- Tile Visibility Toolbar -->
+  <div class="tile-toolbar" id="tile-toolbar">
+    <div class="tile-toolbar-info">
+      <span>🎛️ Tiles:</span>
+      <div class="hidden-tiles-list" id="hidden-tiles-list"></div>
+    </div>
+    <div class="tile-toolbar-actions">
+      <button class="btn btn-sm" id="show-all-btn" style="display:none;">Show All</button>
+      <button class="btn btn-sm" id="reset-layout-btn">Reset Layout</button>
+    </div>
+  </div>
+
   <div class="cards-grid">
 
     <!-- Node Status Card -->
-    <div class="card">
+    <div class="card" data-tile-id="node-status" data-tile-name="Node Status">
       <div class="card-header">
         <span class="card-title">📦 CryftIPFS Node</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
         <span id="ipfs-statusBadge" class="badge warn"><span class="dot warn"></span>Offline</span>
       </div>
       <div class="card-body">
@@ -404,9 +496,10 @@
     </div>
 
     <!-- Validator Rewards Card -->
-    <div class="card">
+    <div class="card" data-tile-id="validator-rewards" data-tile-name="Validator Rewards">
       <div class="card-header">
         <span class="card-title">💰 Validator Rewards</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
         <span id="ipfs-rewardsBadge" class="badge"><span class="dot pending"></span>Inactive</span>
       </div>
       <div class="card-body">
@@ -448,9 +541,10 @@
     </div>
 
     <!-- Add Content Card -->
-    <div class="card">
+    <div class="card" data-tile-id="add-content" data-tile-name="Add Content">
       <div class="card-header">
         <span class="card-title">➕ Add Content</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
       </div>
       <div class="card-body">
         <label for="ipfs-addContent">Content (text or base64)</label>
@@ -479,9 +573,10 @@
     </div>
 
     <!-- Get Content Card -->
-    <div class="card">
+    <div class="card" data-tile-id="get-content" data-tile-name="Get Content">
       <div class="card-header">
         <span class="card-title">📥 Get Content</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
       </div>
       <div class="card-body">
         <label for="ipfs-getCid">Content ID (CID)</label>
@@ -497,9 +592,10 @@
     </div>
 
     <!-- Pin Management Card -->
-    <div class="card">
+    <div class="card" data-tile-id="pin-management" data-tile-name="Pin Management">
       <div class="card-header">
         <span class="card-title">📌 Pin Management</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
         <span id="ipfs-pinBadge" class="badge"><span class="dot pending"></span>0 pins</span>
       </div>
       <div class="card-body">
@@ -540,9 +636,10 @@
     </div>
 
     <!-- Incentivized Pins Card -->
-    <div class="card">
+    <div class="card" data-tile-id="incentivized-pins" data-tile-name="Incentivized Pins">
       <div class="card-header">
         <span class="card-title">🌟 Incentivized Pins</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
         <span id="ipfs-incBadge" class="badge"><span class="dot pending"></span>0 available</span>
       </div>
       <div class="card-body">
@@ -564,9 +661,10 @@
     </div>
 
     <!-- Register Incentive Card -->
-    <div class="card">
+    <div class="card" data-tile-id="register-incentive" data-tile-name="Register Incentive">
       <div class="card-header">
         <span class="card-title">💎 Register Incentivized Pin</span>
+        <button class="tile-hide-btn" title="Hide tile">✕</button>
       </div>
       <div class="card-body">
         <p style="font-size: 0.85rem; color: var(--text-dim); margin-bottom: var(--pad-lg);">
@@ -664,6 +762,100 @@
     (function() {
       const $ = (id) => document.getElementById('ipfs-' + id);
       let nodeRunning = false;
+
+      // ==================== TILE VISIBILITY SYSTEM ====================
+      const MODULE_ID = 'ipfs_v1';
+      const STORAGE_KEY = `cryfttee_hidden_tiles_${MODULE_ID}`;
+      
+      function getHiddenTiles() {
+        try {
+          return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        } catch { return []; }
+      }
+      
+      function setHiddenTiles(tiles) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tiles));
+      }
+      
+      function updateTileVisibility() {
+        const hidden = getHiddenTiles();
+        const cards = document.querySelectorAll('.card[data-tile-id]');
+        
+        cards.forEach(card => {
+          const tileId = card.dataset.tileId;
+          if (hidden.includes(tileId)) {
+            card.classList.add('tile-hidden');
+          } else {
+            card.classList.remove('tile-hidden');
+          }
+        });
+        
+        const listEl = document.getElementById('hidden-tiles-list');
+        const showAllBtn = document.getElementById('show-all-btn');
+        
+        showAllBtn.style.display = hidden.length > 0 ? 'inline-block' : 'none';
+        
+        listEl.innerHTML = '';
+        hidden.forEach(tileId => {
+          const card = document.querySelector(`.card[data-tile-id="${tileId}"]`);
+          const tileName = card?.dataset.tileName || tileId;
+          const chip = document.createElement('span');
+          chip.className = 'hidden-tile-chip';
+          chip.innerHTML = `<span class="restore-icon">+</span>${tileName}`;
+          chip.title = `Click to show "${tileName}"`;
+          chip.addEventListener('click', () => showTile(tileId));
+          listEl.appendChild(chip);
+        });
+      }
+      
+      function hideTile(tileId) {
+        const hidden = getHiddenTiles();
+        if (!hidden.includes(tileId)) {
+          hidden.push(tileId);
+          setHiddenTiles(hidden);
+          updateTileVisibility();
+        }
+      }
+      
+      function showTile(tileId) {
+        const hidden = getHiddenTiles();
+        const idx = hidden.indexOf(tileId);
+        if (idx > -1) {
+          hidden.splice(idx, 1);
+          setHiddenTiles(hidden);
+          updateTileVisibility();
+        }
+      }
+      
+      function showAllTiles() {
+        setHiddenTiles([]);
+        updateTileVisibility();
+      }
+      
+      function resetLayout() {
+        if (confirm('Reset tile layout to default? This will show all hidden tiles.')) {
+          showAllTiles();
+        }
+      }
+      
+      function initTileVisibility() {
+        document.querySelectorAll('.tile-hide-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const card = btn.closest('.card');
+            const tileId = card?.dataset.tileId;
+            if (tileId) hideTile(tileId);
+          });
+        });
+        
+        document.getElementById('show-all-btn')?.addEventListener('click', showAllTiles);
+        document.getElementById('reset-layout-btn')?.addEventListener('click', resetLayout);
+        
+        updateTileVisibility();
+      }
+      
+      initTileVisibility();
+      // ==================== END TILE VISIBILITY ====================
 
       // Call module API
       async function callModule(operation, params = {}) {
