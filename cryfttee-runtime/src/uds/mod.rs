@@ -16,6 +16,8 @@ use tokio::net::UnixListener;
 use hyper_util::rt::TokioIo;
 
 use crate::http::AppState;
+#[cfg(unix)]
+use crate::http::build_router;
 
 /// Serve API over Unix Domain Socket
 #[cfg(unix)]
