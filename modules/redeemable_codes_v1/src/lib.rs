@@ -25,6 +25,47 @@ use alloc::format;
 use core::cell::UnsafeCell;
 
 // ============================================================================
+// MODULE LIMITS (Power of Ten Rule 2: Fixed Bounds)
+// ============================================================================
+// All limits are self-declared within this module for standalone operation.
+
+/// Maximum code length (alphanumeric gift code)
+const MAX_CODE_LEN: usize = 64;
+
+/// Maximum number of codes per batch
+const MAX_CODES_PER_BATCH: usize = 10000;
+
+/// Maximum total codes in registry
+const MAX_TOTAL_CODES: usize = 1_000_000;
+
+/// Maximum content ID length for redemption mapping
+const MAX_CONTENT_ID_LEN: usize = 256;
+
+/// Maximum metadata size per code
+const MAX_CODE_METADATA_SIZE: usize = 4096;
+
+/// Maximum salt length for hash computation
+const MAX_SALT_LEN: usize = 64;
+
+/// Maximum hash output size
+const MAX_HASH_SIZE: usize = 64;
+
+/// Maximum JSON input size
+const MAX_JSON_INPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum JSON output size
+const MAX_JSON_OUTPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum redemption records to retain
+const MAX_REDEMPTION_LOG: usize = 100000;
+
+/// Maximum pending blockchain transactions
+const MAX_PENDING_TXS: usize = 100;
+
+/// Code expiration maximum (10 years in seconds)
+const MAX_EXPIRATION_SECS: u64 = 10 * 365 * 24 * 60 * 60;
+
+// ============================================================================
 // WASM Memory Management
 // ============================================================================
 

@@ -1,4 +1,8 @@
 //! API handlers for /v1 endpoints
+//!
+//! The runtime validates only core API concerns (request sizes, module IDs).
+//! Module-specific validation (BLS message sizes, TLS digest sizes) is
+//! delegated to the modules themselves.
 
 use axum::{
     extract::State,
@@ -10,10 +14,7 @@ use serde_json::{json, Value};
 use tracing::{info, error, warn};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
-use crate::limits::{
-    validate_bls_message_size, validate_tls_digest_size, validate_key_handle,
-    validate_module_id, MAX_BLS_MESSAGE_SIZE, MAX_TLS_DIGEST_SIZE,
-};
+use crate::limits::validate_module_id;
 use crate::wasm_api::staking::{
     BlsRegisterRequest, BlsRegisterResponse, BlsSignRequest, BlsSignResponse,
     TlsRegisterRequest, TlsRegisterResponse, TlsSignRequest, TlsSignResponse,
@@ -170,13 +171,7 @@ pub async fn bls_sign(
     State(state): State<AppState>,
     Json(request): Json<BlsSignRequest>,
 ) -> Result<Json<BlsSignResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Input validation (Power of Ten Rule 5: assertions/validation)
-    validate_key_handle(&request.key_handle)
-        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
-            error: "Invalid key handle".to_string(),
-            details: Some(e.to_string()),
-        })))?;
-
+    // Validate module ID if provided (core API concern)
     if let Some(ref module_id) = request.module_id {
         validate_module_id(module_id)
             .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
@@ -197,13 +192,7 @@ pub async fn bls_sign(
             details: Some(e.to_string()),
         })))?;
 
-    // Validate message size (Power of Ten Rule 2: bounded operations)
-    validate_bls_message_size(message.len())
-        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
-            error: "Message too large".to_string(),
-            details: Some(format!("{} (max {} bytes)", e, MAX_BLS_MESSAGE_SIZE)),
-        })))?;
-
+    // Note: BLS message size validation is the module's responsibility
     let result = dispatcher.dispatch_bls_sign(
         &request.key_handle,
         &message,
@@ -352,13 +341,7 @@ pub async fn tls_sign(
     State(state): State<AppState>,
     Json(request): Json<TlsSignRequest>,
 ) -> Result<Json<TlsSignResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Input validation (Power of Ten Rule 5: assertions/validation)
-    validate_key_handle(&request.key_handle)
-        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
-            error: "Invalid key handle".to_string(),
-            details: Some(e.to_string()),
-        })))?;
-
+    // Validate module ID if provided (core API concern)
     if let Some(ref module_id) = request.module_id {
         validate_module_id(module_id)
             .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
@@ -379,13 +362,7 @@ pub async fn tls_sign(
             details: Some(e.to_string()),
         })))?;
 
-    // Validate digest size (Power of Ten Rule 2: bounded operations)
-    validate_tls_digest_size(digest.len())
-        .map_err(|e| (StatusCode::BAD_REQUEST, Json(ErrorResponse {
-            error: "Invalid digest size".to_string(),
-            details: Some(format!("{} (max {} bytes)", e, MAX_TLS_DIGEST_SIZE)),
-        })))?;
-
+    // Note: TLS digest size validation is the module's responsibility
     let result = dispatcher.dispatch_tls_sign(
         &request.key_handle,
         &digest,

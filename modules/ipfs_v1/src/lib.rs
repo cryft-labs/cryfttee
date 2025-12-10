@@ -25,6 +25,44 @@ use core::slice;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
+// MODULE LIMITS (Power of Ten Rule 2: Fixed Bounds)
+// ============================================================================
+// All limits are self-declared within this module for standalone operation.
+
+/// Maximum file/content size (16 MB)
+const MAX_CONTENT_SIZE: usize = 16 * 1024 * 1024;
+
+/// Maximum block/chunk size (256 KB)
+const MAX_BLOCK_SIZE: usize = 256 * 1024;
+
+/// Maximum CID length
+const MAX_CID_LEN: usize = 128;
+
+/// Maximum filename/path length
+const MAX_PATH_LEN: usize = 4096;
+
+/// Maximum number of pinned items
+const MAX_PINNED_ITEMS: usize = 10000;
+
+/// Maximum metadata size per item
+const MAX_METADATA_SIZE: usize = 4096;
+
+/// Maximum concurrent peers for gossip
+const MAX_PEERS: usize = 100;
+
+/// Maximum JSON input size
+const MAX_JSON_INPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum JSON output size
+const MAX_JSON_OUTPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum directory entries
+const MAX_DIR_ENTRIES: usize = 10000;
+
+/// Maximum link depth for DAG traversal
+const MAX_DAG_DEPTH: usize = 100;
+
+// ============================================================================
 // Global Allocator for no_std WASM
 // ============================================================================
 

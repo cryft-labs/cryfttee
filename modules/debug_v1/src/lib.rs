@@ -22,6 +22,38 @@ use alloc::format;
 use core::cell::UnsafeCell;
 
 // ============================================================================
+// MODULE LIMITS (Power of Ten Rule 2: Fixed Bounds)
+// ============================================================================
+// All limits are self-declared within this module for standalone operation.
+
+/// Maximum echo message size
+const MAX_ECHO_SIZE: usize = 64 * 1024;
+
+/// Maximum log entries to retain
+const MAX_LOG_ENTRIES: usize = 1000;
+
+/// Maximum benchmark iterations
+const MAX_BENCHMARK_ITERATIONS: usize = 10000;
+
+/// Maximum memory test allocation size
+const MAX_MEMORY_TEST_SIZE: usize = 256 * 1024;
+
+/// Maximum JSON input size
+const MAX_JSON_INPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum JSON output size  
+const MAX_JSON_OUTPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum key length for diagnostics map
+const MAX_DIAG_KEY_LEN: usize = 256;
+
+/// Maximum value length for diagnostics
+const MAX_DIAG_VALUE_LEN: usize = 4096;
+
+/// Maximum number of diagnostic entries
+const MAX_DIAG_ENTRIES: usize = 100;
+
+// ============================================================================
 // WASM Memory Management
 // ============================================================================
 

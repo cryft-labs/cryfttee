@@ -25,6 +25,56 @@ use alloc::format;
 use core::cell::UnsafeCell;
 
 // ============================================================================
+// MODULE LIMITS (Power of Ten Rule 2: Fixed Bounds)
+// ============================================================================
+// All limits are self-declared within this module for standalone operation.
+
+/// Maximum BLS message size for signing (32 KB)
+const MAX_BLS_MESSAGE_SIZE: usize = 32 * 1024;
+
+/// Maximum TLS digest size (SHA-512 = 64 bytes)
+const MAX_TLS_DIGEST_SIZE: usize = 64;
+
+/// Maximum key label length
+const MAX_KEY_LABEL_LEN: usize = 128;
+
+/// Maximum number of BLS keys to manage
+const MAX_BLS_KEYS: usize = 100;
+
+/// Maximum number of TLS keys to manage
+const MAX_TLS_KEYS: usize = 100;
+
+/// Maximum signature log entries (audit trail)
+const MAX_SIGNATURE_LOG: usize = 1000;
+
+/// Maximum URL length for backend configuration
+const MAX_URL_LEN: usize = 2048;
+
+/// Maximum token/secret length
+const MAX_TOKEN_LEN: usize = 4096;
+
+/// Maximum JSON input size
+const MAX_JSON_INPUT_SIZE: usize = 64 * 1024;
+
+/// Maximum JSON output size
+const MAX_JSON_OUTPUT_SIZE: usize = 64 * 1024;
+
+/// BLS public key size (BLS12-381 compressed)
+const BLS_PUBKEY_SIZE: usize = 48;
+
+/// BLS signature size
+const BLS_SIGNATURE_SIZE: usize = 96;
+
+/// BLS private key size (scalar)
+const BLS_PRIVKEY_SIZE: usize = 32;
+
+/// Maximum retry attempts for backend operations
+const MAX_BACKEND_RETRIES: usize = 3;
+
+/// Maximum pending HTTP requests
+const MAX_PENDING_REQUESTS: usize = 10;
+
+// ============================================================================
 // WASM Memory Management
 // ============================================================================
 

@@ -26,6 +26,56 @@ use alloc::format;
 use core::cell::UnsafeCell;
 
 // ============================================================================
+// MODULE LIMITS (Power of Ten Rule 2: Fixed Bounds)
+// ============================================================================
+// All limits are self-declared within this module for standalone operation.
+
+/// Maximum user message length (16 KB)
+const MAX_USER_MESSAGE_LEN: usize = 16 * 1024;
+
+/// Maximum assistant response length (64 KB)
+const MAX_RESPONSE_LEN: usize = 64 * 1024;
+
+/// Maximum system prompt length (8 KB)
+const MAX_SYSTEM_PROMPT_LEN: usize = 8 * 1024;
+
+/// Maximum messages per conversation
+const MAX_MESSAGES_PER_CONVERSATION: usize = 500;
+
+/// Maximum concurrent conversations/sessions
+const MAX_CONVERSATIONS: usize = 50;
+
+/// Maximum context window tokens (model-specific, but bounded)
+const MAX_CONTEXT_TOKENS: usize = 128_000;
+
+/// Maximum model name length
+const MAX_MODEL_NAME_LEN: usize = 128;
+
+/// Maximum API key length
+const MAX_API_KEY_LEN: usize = 256;
+
+/// Maximum provider URL length
+const MAX_PROVIDER_URL_LEN: usize = 2048;
+
+/// Maximum JSON input size
+const MAX_JSON_INPUT_SIZE: usize = 128 * 1024;
+
+/// Maximum JSON output size
+const MAX_JSON_OUTPUT_SIZE: usize = 128 * 1024;
+
+/// Maximum streaming chunks to buffer
+const MAX_STREAM_CHUNKS: usize = 1000;
+
+/// Maximum retry attempts for API calls
+const MAX_API_RETRIES: usize = 3;
+
+/// Maximum temperature value (0.0 - 2.0)
+const MAX_TEMPERATURE: f32 = 2.0;
+
+/// Maximum top_p value (0.0 - 1.0)
+const MAX_TOP_P: f32 = 1.0;
+
+// ============================================================================
 // WASM Memory Management
 // ============================================================================
 
