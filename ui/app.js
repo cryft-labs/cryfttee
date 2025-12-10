@@ -1008,8 +1008,7 @@ function createBasicSignerPanel(module) {
                     type: 'status_indicator', 
                     status: web3signerConnected === true ? 'ok' : web3signerConnected === false ? 'error' : 'pending', 
                     message: `Web3Signer: ${web3signerConnected === true ? 'Connected' : web3signerConnected === false ? 'Disconnected' : 'Unknown'}`
-                },
-                { type: 'status_indicator', status: 'pending', message: 'Status panel not implemented' }
+                }
             ]
         }
     ];
