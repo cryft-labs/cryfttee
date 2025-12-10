@@ -163,11 +163,11 @@ pub struct TrustPolicy {
     pub min_cryfttee_version: String,
 
     /// If true, reject modules with unknown publisherId
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub enforce_known_publishers: bool,
 
     /// If true, verify signatures for all modules before loading
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub enforce_signatures: bool,
 
     /// If true, refuse to start if ANY module fails verification
@@ -179,8 +179,8 @@ impl Default for TrustPolicy {
     fn default() -> Self {
         Self {
             min_cryfttee_version: "0.4.0".to_string(),
-            enforce_known_publishers: true,
-            enforce_signatures: true,
+            enforce_known_publishers: false,  // Default false for dev convenience
+            enforce_signatures: false,        // Default false for dev convenience
             strict_manifest: false,
         }
     }
@@ -340,8 +340,6 @@ pub struct CryftteeConfig {
 // Default values
 // =============================================================================
 
-fn default_true() -> bool { true }
-
 impl Default for CryftteeConfig {
     fn default() -> Self {
         Self {
@@ -350,7 +348,7 @@ impl Default for CryftteeConfig {
             module_dir: PathBuf::from("modules"),
             manifest_path: None,
             ui_dir: PathBuf::from("ui"),
-            trust_config_path: None,
+            trust_config_path: Some(PathBuf::from("config/trust.toml")),
             api_transport: "uds".to_string(),
             api_base_path: "/v1".to_string(),
             uds_path: "/tmp/cryfttee.sock".to_string(),
