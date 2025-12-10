@@ -151,6 +151,7 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
+    /// Create a new runtime state with default values
     pub fn new() -> Self {
         Self {
             attestation: None,

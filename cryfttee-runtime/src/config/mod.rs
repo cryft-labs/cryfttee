@@ -21,8 +21,11 @@ use tracing::{info, warn, debug};
 /// Supported config file formats
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConfigFormat {
+    /// JSON format (.json)
     Json,
+    /// YAML format (.yaml, .yml)
     Yaml,
+    /// TOML format (.toml)
     Toml,
 }
 

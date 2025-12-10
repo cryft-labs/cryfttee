@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use anyhow::{Result, anyhow};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use serde::Deserialize;
 
 use crate::wasm_api::WasmModule;
@@ -16,6 +16,7 @@ pub struct Web3SignerClient {
 }
 
 impl Web3SignerClient {
+    /// Create a new Web3Signer client
     pub fn new(base_url: &str, timeout_secs: u64) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
@@ -196,7 +197,9 @@ fn normalize_pubkey(key: &str) -> String {
 /// Result of BLS key lookup/generation
 #[derive(Debug)]
 pub struct BlsKeyResult {
+    /// BLS public key (hex-encoded with 0x prefix)
     pub pubkey: String,
+    /// Key handle for subsequent operations
     pub key_handle: String,
 }
 
@@ -327,8 +330,8 @@ impl<'a> Dispatcher<'a> {
     pub async fn dispatch_tls_register(
         &self,
         mode: u32,
-        key_material: Option<&[u8]>,
-        csr_pem: Option<&str>,
+        _key_material: Option<&[u8]>,
+        _csr_pem: Option<&str>,
         module_id: Option<&str>,
     ) -> Result<TlsRegisterResult> {
         let module = self.get_tls_module(module_id)?;
@@ -442,33 +445,47 @@ impl<'a> Dispatcher<'a> {
 /// Result of BLS register operation
 #[derive(Debug)]
 pub struct BlsRegisterResult {
+    /// Key handle for subsequent signing operations
     pub key_handle: String,
+    /// BLS public key bytes
     pub public_key: Vec<u8>,
+    /// Module that handled the registration
     pub module_id: String,
+    /// Version of the handling module
     pub module_version: String,
 }
 
 /// Result of BLS sign operation
 #[derive(Debug)]
 pub struct BlsSignResult {
+    /// BLS signature bytes
     pub signature: Vec<u8>,
+    /// Module that performed the signing
     pub module_id: String,
+    /// Version of the signing module
     pub module_version: String,
 }
 
 /// Result of TLS register operation
 #[derive(Debug)]
 pub struct TlsRegisterResult {
+    /// Key handle for subsequent signing operations
     pub key_handle: String,
+    /// PEM-encoded certificate chain
     pub cert_chain_pem: String,
+    /// Module that handled the registration
     pub module_id: String,
+    /// Version of the handling module
     pub module_version: String,
 }
 
 /// Result of TLS sign operation
 #[derive(Debug)]
 pub struct TlsSignResult {
+    /// TLS signature bytes
     pub signature: Vec<u8>,
+    /// Module that performed the signing
     pub module_id: String,
+    /// Version of the signing module
     pub module_version: String,
 }

@@ -3,6 +3,9 @@
 mod api;
 mod kiosk;
 
+// Re-export public items from submodules
+// Note: Both api and kiosk have `reload_modules` - use qualified paths (api::reload_modules)
+#[allow(ambiguous_glob_reexports)]
 pub use api::*;
 pub use kiosk::*;
 
@@ -26,11 +29,14 @@ use tracing::info;
 use crate::config::CryftteeConfig;
 use crate::runtime::{ModuleRegistry, RuntimeState};
 
-/// Shared application state
+/// Shared application state for HTTP handlers
 #[derive(Clone)]
 pub struct AppState {
+    /// Runtime configuration
     pub config: CryftteeConfig,
+    /// WASM module registry
     pub registry: Arc<RwLock<ModuleRegistry>>,
+    /// Runtime state (attestation, health status)
     pub runtime_state: Arc<RwLock<RuntimeState>>,
 }
 

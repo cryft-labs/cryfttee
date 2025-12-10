@@ -279,10 +279,15 @@ impl BlockchainState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainInfo {
+    /// Chain identifier (e.g., "mainnet", "testnet")
     pub chain_id: String,
+    /// Last synchronized block number
     pub last_sync_block: u64,
+    /// Whether RPC connection is active
     pub rpc_connected: bool,
+    /// Number of registered publishers
     pub publisher_count: usize,
+    /// Number of verified modules
     pub verified_count: usize,
 }
 

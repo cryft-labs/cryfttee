@@ -17,8 +17,10 @@ pub struct WasmModule {
     /// Compiled WASM module
     module: Module,
     /// WASM store (holds instance state)
+    #[allow(dead_code)]
     store: Store<()>,
     /// Linker for host function binding
+    #[allow(dead_code)]
     linker: Linker<()>,
 }
 
@@ -98,21 +100,27 @@ pub trait TlsCapability: SigningCapability {
 /// Error type for WASM operations
 #[derive(Debug, thiserror::Error)]
 pub enum WasmError {
+    /// WASM execution failed
     #[error("WASM execution error: {0}")]
     Execution(String),
 
+    /// Invalid parameter provided to WASM function
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
+    /// Requested key was not found
     #[error("Key not found: {0}")]
     KeyNotFound(String),
 
+    /// Module does not support the requested capability
     #[error("Capability not supported: {0}")]
     UnsupportedCapability(String),
 
+    /// WASM memory allocation or access error
     #[error("Memory error: {0}")]
     Memory(String),
 
+    /// Internal runtime error
     #[error("Internal error: {0}")]
     Internal(String),
 }

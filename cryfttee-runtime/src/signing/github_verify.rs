@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use anyhow::{Result, anyhow, Context};
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
-use tracing::{info, warn, debug, error};
+use tracing::info;
 
 /// GitHub verification configuration for a publisher
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -332,7 +332,7 @@ impl GitHubVerifier {
         publisher_id: &str,
         repo: &str,
         tag: &str,
-        expected_hash: &str,
+        _expected_hash: &str,
     ) -> Result<GitHubVerificationResult> {
         let config = self.publishers.get(publisher_id)
             .ok_or_else(|| anyhow!("Unknown GitHub publisher: {}", publisher_id))?;
@@ -477,7 +477,7 @@ impl GitHubVerifier {
         });
         
         // Check 6: GitHub Actions build (if required)
-        let actions_check_passed = if config.require_actions_build {
+        let _actions_check_passed = if config.require_actions_build {
             match self.verify_actions_build(&config.github_org, repo, &commit_sha, &config.allowed_workflows).await {
                 Ok(run) => {
                     checks.push(VerificationCheck {

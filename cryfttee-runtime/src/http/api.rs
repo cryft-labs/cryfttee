@@ -27,10 +27,12 @@ use crate::CRYFTTEE_VERSION;
 /// Shared application state - re-imported from mod.rs
 pub type AppState = super::AppState;
 
-/// Error response structure
+/// Error response structure for API errors
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
+    /// Human-readable error message
     pub error: String,
+    /// Additional error details (optional)
     pub details: Option<String>,
 }
 
