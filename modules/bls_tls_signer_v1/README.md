@@ -1,69 +1,252 @@
-# BLS/TLS Signing Module v1
+# BLS/TLS Signing Module v2
 
-This module provides BLS and TLS key management and signing operations via Web3Signer integration.
+This module provides BLS and TLS key management and signing operations with **automatic TLS-first Node ID derivation** for multi-device support.
 
-## Key Generation Flow
+## Storage Backends
 
-The module implements **automatic key provisioning** to simplify validator setup:
+The module supports three storage backends for key persistence:
+
+| Backend | Setting | Description | Password Protection |
+|---------|---------|-------------|---------------------|
+| **Vault** | `storageBackend: "vault"` | HashiCorp Vault (recommended for production) | N/A (Vault handles auth) |
+| **Local Keystore** | `storageBackend: "local"` | EIP-2335 compatible JSON files | Optional password encryption |
+| **Memory** | `storageBackend: "memory"` | No persistence (testing only) | N/A |
+
+### Local Keystore Configuration
+
+For environments without Vault access, use local keystore files with optional password protection:
+
+```go
+// Initialize with local keystore (password-protected)
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "initialize",
+    "storageBackend": "local",
+    "keystorePath": "/var/lib/cryfttee/keys",
+    "keystorePassword": "your-secure-password",  // HIGHLY RECOMMENDED
+    "web3signerUrl": "http://web3signer:9000",
+    "deviceName": "Validator Node 1",
+})
+// Creates: /var/lib/cryfttee/keys/NodeID-abc.../tls_node-identity.json
+```
+
+**Security Warning**: Without a password, keys are stored in plaintext. Always use password protection in production!
+
+### Local Keystore File Structure
+
+```
+{keystorePath}/
+├── NodeID-abc123.../
+│   ├── tls_node-identity.json    # TLS identity key
+│   ├── bls_primary.json          # Primary BLS key
+│   └── bls_backup.json           # Backup BLS key
+└── NodeID-def456.../
+    └── ...
+```
+
+### Keystore File Format (EIP-2335 Compatible)
+
+```json
+{
+  "crypto": {
+    "kdf": { "function": "scrypt", "params": { "n": 16384, "r": 8, "p": 1, "salt": "..." } },
+    "checksum": { "function": "sha256", "message": "..." },
+    "cipher": { "function": "aes-128-ctr", "params": { "iv": "..." }, "message": "..." }
+  },
+  "pubkey": "02abc123...",
+  "uuid": "...",
+  "version": 4,
+  "keyType": "tls",
+  "encrypted": true
+}
+```
+
+## Auto-Bootstrap on Initialize
+
+The module **automatically generates a TLS key and derives a Node ID** when you call `initialize` without providing an existing identity. This simplifies the setup flow:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Key Registration Flow                                 │
+│                     Automatic TLS Bootstrap Flow                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  1. cryftgo calls: ensureBlsKey(publicKey?)                                │
-│         │                                                                   │
-│         ▼                                                                   │
-│  2. Module checks: Does publicKey exist locally?                           │
-│         │                                                                   │
-│    ┌────┴────┐                                                             │
-│    │ Yes     │ No                                                          │
-│    ▼         ▼                                                             │
-│  Return   3. Check Web3Signer: GET /api/v1/eth2/publicKeys                 │
-│  existing    │                                                             │
-│              ├─── Key found ──► Return success                             │
-│              │                                                             │
-│              └─── Key missing ─► 4. Generate new BLS key pair              │
-│                                      │                                     │
-│                                      ▼                                     │
-│                                 5. Import to Web3Signer                    │
-│                                    POST /eth/v1/keystores                  │
-│                                      │                                     │
-│                                      ▼                                     │
-│                                 6. (Optional) Store in Vault               │
-│                                      │                                     │
-│                                      ▼                                     │
-│                                 Return new publicKey                       │
+│  initialize() called with:                                                  │
+│    ├── nodeId provided?        → Reconnect with existing identity          │
+│    ├── tlsPublicKey provided?  → Derive nodeId from known pubkey           │
+│    └── Neither provided?       → AUTO-BOOTSTRAP NEW TLS KEY                │
+│                                                                             │
+│  Auto-Bootstrap Flow:                                                       │
+│  1. Generate TLS keypair (SECP256K1)                                       │
+│  2. Derive Node ID: "NodeID-" + SHA256(pubkey)[0:40]                       │
+│  3. Store TLS key in Vault (if enabled)                                    │
+│  4. Return: { nodeId, tlsPublicKey, isNewBootstrap: true }                 │
+│                                                                             │
+│  Now BLS keys can be provisioned (ensureBlsKey)                            │
+│  Keys are namespaced: cryfttee/data/keys/bls/{NodeID}/{keyName}            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Usage from cryftgo
+### Why TLS First?
+
+1. **Node Identity**: The TLS public key uniquely identifies each CryftTEE instance
+2. **Multi-Device Support**: Multiple devices can share one Vault, each with its own Node ID namespace
+3. **Key Isolation**: Each device's keys are isolated under its Node ID path
+4. **Reconnection**: Devices reconnect using their previously derived Node ID or TLS public key
+
+## Usage from cryftgo
+
+### New Device with Vault (Auto-Bootstrap)
 
 ```go
-// Initialize the module with backend configuration
-cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+// Just call initialize - TLS key is auto-generated if no identity provided
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
     "action": "initialize",
+    "storageBackend": "vault",           // or omit for auto-detect
+    "vaultUrl": "http://vault:8200",
+    "vaultToken": "hvs.xxx",
     "web3signerUrl": "http://web3signer:9000",
-    "vaultUrl": "http://vault:8200",  // optional
-    "vaultEnabled": false,
+    "deviceName": "Validator Node 1",
 })
+// Returns: {
+//   "success": true,
+//   "initialized": true,
+//   "isNewBootstrap": true,              // indicates TLS was auto-generated
+//   "nodeId": "NodeID-a1b2c3d4e5f6...",  // 47 chars total
+//   "tlsPublicKey": "02abc123...",       // 33 bytes compressed
+//   "storageBackend": "vault",
+//   "vaultEnabled": true
+// }
 
-// Option 1: Let module generate keys automatically
+// SAVE nodeId OR tlsPublicKey for subsequent sessions!
+savedNodeId := result["nodeId"]
+savedTlsPublicKey := result["tlsPublicKey"]
+```
+
+### New Device with Local Keystore (Password Protected)
+
+```go
+// Initialize with local keystore - no Vault needed
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "initialize",
+    "storageBackend": "local",
+    "keystorePath": "/var/lib/cryfttee/keys",
+    "keystorePassword": "my-secure-password-123",  // RECOMMENDED
+    "web3signerUrl": "http://web3signer:9000",
+    "deviceName": "Validator Node 1",
+})
+// Returns: {
+//   "success": true,
+//   "initialized": true,
+//   "isNewBootstrap": true,
+//   "nodeId": "NodeID-a1b2c3d4e5f6...",
+//   "storageBackend": "local",
+//   "keystorePath": "/var/lib/cryfttee/keys",
+//   "keystoreEncrypted": true           // password protection active
+// }
+```
+
+### Provision BLS Keys
+
+```go
+// Generate or ensure BLS key exists
 result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
     "action": "ensureBlsKey",
-    "label": "validator-1",
+    "label": "validator-primary",
+    "keyName": "primary",
 })
-// Returns: {"success":true,"action":"generated","keyId":"bls_...","publicKey":"0x..."}
+// For local keystore, creates: {keystorePath}/NodeID-abc.../bls_primary.json
+// Returns: {
+//   "success": true,
+//   "action": "generated",
+//   "keyId": "NodeID-abc...:bls:primary",
+//   "publicKey": "0x1234...",
+//   "proofOfPossession": "0xabcd...",   // 96 bytes - required for validator registration
+//   "nodeId": "NodeID-abc...",
+//   "storageBackend": "local",
+//   "keystoreEncrypted": true,
+//   "keystoreWritten": true
+// }
+```
 
-// Option 2: Check if existing key is available
+#### Proof of Possession (PoP)
+
+All BLS key generation now follows the **AvalancheGo pattern** by returning a Proof of Possession:
+
+- **What**: A signature of the public key using the BLS PoP ciphersuite
+- **Why**: Proves the caller controls the private key without exposing it
+- **Used for**: Validator registration on Avalanche and Cryft networks
+- **Ciphersuite**: `BLS_POP_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`
+
+```go
+// The proofOfPossession field is included in all BLS key responses:
+// - ensureBlsKey (generated/loaded_from_vault/loaded_from_keystore)
+// - generateBlsKey
+// - status (for each BLS key listed)
+
+// Use proofOfPossession when registering with the P-Chain:
+registrationData := map[string]interface{}{
+    "nodeID":            result["nodeId"],
+    "blsPublicKey":      result["publicKey"],
+    "blsProofOfPossession": result["proofOfPossession"],  // Required!
+}
+```
+
+### Reconnect Existing Device
+
+```go
+// Option 1: Reconnect with Vault storage
 result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
-    "action": "ensureBlsKey",
-    "publicKey": "0x1234...",  // from cryftgo's local store
-    "label": "validator-1",
+    "action": "initialize",
+    "nodeId": savedNodeId,  // "NodeID-a1b2c3d4e5f6..."
+    "storageBackend": "vault",
+    "vaultUrl": "http://vault:8200",
+    "vaultToken": "hvs.xxx",
+    "loadKeysFromVault": true,
 })
-// If found: {"success":true,"action":"found_web3signer","publicKey":"0x1234..."}
-// If missing: {"success":true,"action":"generated_replacement","keyId":"bls_...","publicKey":"0xnew..."}
+
+// Option 2: Reconnect with local keystore (password required if encrypted)
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "initialize",
+    "nodeId": savedNodeId,
+    "storageBackend": "local",
+    "keystorePath": "/var/lib/cryfttee/keys",
+    "keystorePassword": "my-secure-password-123",  // Required for encrypted keystores
+    "loadKeysFromKeystore": true,
+})
+
+// Option 3: Reconnect with TLS public key (nodeId is derived)
+result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
+    "action": "initialize",
+    "tlsPublicKey": savedTlsPublicKey,  // "02abc123..."
+    "storageBackend": "local",
+    "keystorePath": "/var/lib/cryfttee/keys",
+    "keystorePassword": "my-secure-password-123",
+    "loadKeysFromKeystore": true,
+})
+```
+```
+
+## Multi-Device Vault Structure
+
+When multiple CryftTEE instances share a single Vault:
+
+```
+cryfttee/data/keys/
+├── tls/
+│   ├── NodeID-abc123.../
+│   │   └── node-identity    # Device 1 TLS key
+│   ├── NodeID-def456.../
+│   │   └── node-identity    # Device 2 TLS key
+│   └── NodeID-789xyz.../
+│       └── node-identity    # Device 3 TLS key
+└── bls/
+    ├── NodeID-abc123.../
+    │   ├── primary          # Device 1 primary BLS key
+    │   └── backup           # Device 1 backup BLS key
+    ├── NodeID-def456.../
+    │   └── primary          # Device 2 primary BLS key
+    └── NodeID-789xyz.../
+        └── primary          # Device 3 primary BLS key
 ```
 
 ## Key Management Architecture
@@ -71,33 +254,122 @@ result := cryfttee.Invoke("bls_tls_signer_v1", map[string]interface{}{
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   CryftGo       │────▶│   CryftTEE      │────▶│  Web3Signer     │
-│  (Validator)    │     │  (WASM Runtime) │     │  (Key Manager)  │
+│  (Validator)    │     │  (WASM Runtime) │     │  (BLS Signing)  │
 └─────────────────┘     └─────────────────┘     └────────┬────────┘
-                                                         │
-                                                         ▼
-                                               ┌─────────────────┐
-                                               │ HashiCorp Vault │
-                                               │  (Key Storage)  │
-                                               │   (Optional)    │
-                                               └─────────────────┘
+                              │                          │
+                              │                          ▼
+                              │                 ┌─────────────────┐
+                              └────────────────▶│ HashiCorp Vault │
+                                                │  (Key Storage)  │
+                                                │  {NodeID}/keys  │
+                                                └─────────────────┘
 ```
 
-Keys are stored and managed by **Web3Signer**, which can optionally use **HashiCorp Vault** as a secure key storage backend.
+---
+
+## API Reference
+
+### Bootstrap Actions
+
+#### `bootstrapTls` - Generate TLS Identity (Required First Step)
+
+```json
+{
+  "action": "bootstrapTls",
+  "vaultUrl": "http://vault:8200",      // optional
+  "vaultToken": "hvs.xxx",              // optional
+  "vaultPath": "cryfttee/data/keys",    // optional, default path
+  "web3signerUrl": "http://...",        // optional
+  "deviceName": "My Validator"          // optional
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "nodeId": "NodeID-a1b2c3d4e5f67890...",
+  "deviceId": "NodeID-a1b2c3d4e5f67890...",
+  "publicKey": "02abc123...",
+  "certificate": "-----BEGIN CERTIFICATE-----...",
+  "keyId": "NodeID-abc...:tls:node-identity",
+  "vaultEnabled": true
+}
+```
+
+#### `initialize` - Reconnect with Existing Node ID
+
+```json
+{
+  "action": "initialize",
+  "nodeId": "NodeID-a1b2c3d4e5f67890...",  // required
+  "vaultUrl": "http://vault:8200",
+  "vaultToken": "hvs.xxx",
+  "loadKeysFromVault": true                 // optional: reload keys
+}
+```
+
+### Key Provisioning Actions
+
+#### `ensureBlsKey` - Provision BLS Key
+
+```json
+{
+  "action": "ensureBlsKey",
+  "publicKey": "0x1234...",   // optional: verify existing key
+  "label": "validator-1",     // optional: human-readable label
+  "keyName": "primary"        // optional: Vault key name
+}
+```
+
+#### `ensureTlsKey` - Generate Additional TLS Key
+
+```json
+{
+  "action": "ensureTlsKey",
+  "subject": "service.example.com",  // optional
+  "keyName": "api-client"            // required: cannot be "node-identity"
+}
+```
+
+### Status Actions
+
+#### `status` - Get Module Status
+
+```json
+{ "action": "status" }
+```
+
+Response:
+```json
+{
+  "success": true,
+  "nodeId": "NodeID-abc...",
+  "isBootstrapped": true,
+  "initialized": true,
+  "blsKeyCount": 2,
+  "tlsKeyCount": 1,
+  "deviceCount": 1,
+  "web3signerConfigured": true,
+  "vaultEnabled": true
+}
+```
+
+#### `listKeys` - List All Keys
+
+```json
+{ "action": "listKeys" }
+```
+
+#### `listDevices` - List Registered Devices
+
+```json
+{ "action": "listDevices" }
+```
 
 ---
 
 ## Manual Key Generation
-
-### Option 1: Generate BLS Keys with eth2.0-deposit-cli
-
-```bash
-# Install eth2.0-deposit-cli
-pip install eth2-deposit-cli
-
-# Generate validator keys
-eth2_deposit_cli new-mnemonic --num_validators 1 --chain mainnet
-
-# Output: validator_keys/ directory containing:
 #   - keystore-*.json (encrypted private key)
 #   - deposit_data-*.json (deposit transaction data)
 ```

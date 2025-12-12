@@ -1,28 +1,71 @@
 {
   "id": "bls_tls_signer_v1",
-  "version": "2.0.0",
-  "description": "Self-contained BLS/TLS signing module with in-memory key management. All cryptographic operations happen within WASM.",
+  "version": "3.1.0",
+  "description": "Complete cryptographic key management: Ed25519 TLS identity (ACP-20 Node ID), BLS12-381 consensus signing with PoP, and SECP256K1 for EVM/C-Chain compatibility. Supports HashiCorp Vault, local keystore (EIP-2335), or in-memory storage.",
   "capabilities": [
+    "bootstrap_tls",
+    "ed25519_tls",
+    "acp20_node_id",
+    "derive_node_id",
+    "ensure_bls_key",
+    "ensure_tls_key",
+    "ensure_evm_key",
     "bls_generate",
     "bls_sign",
     "bls_verify",
+    "bls_proof_of_possession",
+    "ed25519_sign",
+    "secp256k1_generate",
+    "secp256k1_sign",
+    "secp256k1_verify",
+    "evm_personal_sign",
+    "evm_sign_transaction",
+    "eth_address_derivation",
     "list_keys",
+    "list_devices",
     "lock_key",
     "unlock_key",
     "delete_key",
     "sign_module",
-    "export_state"
+    "export_state",
+    "status",
+    "local_keystore",
+    "password_encryption"
   ],
   "selfContained": true,
   "hostCallsRequired": [
     "get_random_seed",
+    "http_get",
+    "http_post",
     "persist_state",
-    "load_state"
+    "load_state",
+    "write_file",
+    "read_file",
+    "create_dir"
   ],
+  "storageBackends": {
+    "vault": {
+      "description": "HashiCorp Vault KV v2 (recommended for production)",
+      "configKeys": ["vaultUrl", "vaultToken", "vaultPath"]
+    },
+    "local": {
+      "description": "Local EIP-2335 compatible keystore files",
+      "configKeys": ["keystorePath", "keystorePassword"],
+      "encryption": "scrypt + AES-128-CTR (optional password)"
+    },
+    "memory": {
+      "description": "In-memory only (no persistence, testing)",
+      "configKeys": []
+    }
+  },
   "keyManagement": {
-    "storage": "in-module",
+    "storage": "multi-backend (vault|local|memory)",
+    "nodeIdDerivation": "SHA256(TLS_pubkey)[0:40]",
+    "vaultPathFormat": "cryfttee/data/keys/{key_type}/{node_id}/{key_name}",
+    "localPathFormat": "{keystorePath}/{node_id}/{key_type}_{key_name}.json",
     "supportedKeyTypes": {
-      "bls": "BLS12-381 (simplified for WASM)",
+      "bls": "BLS12-381 for staking signatures",
+      "tls": "SECP256K1 for node identity and TLS",
       "module_signing": "BLS-based module signatures"
     }
   },
@@ -30,7 +73,7 @@
   "guiPath": "gui",
   "abi": {
     "type": "signing",
-    "schemaVersion": "2.0.0",
+    "schemaVersion": "2.1.0",
     "entrypoint": "invoke",
     "memoryExports": ["alloc", "dealloc", "get_output_ptr"]
   },
